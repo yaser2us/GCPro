@@ -1,0 +1,554 @@
+version: 1
+name: table-registry
+db: mysql
+style: linux-plugin
+notes:
+  - "Each table has exactly one owner."
+  - "Non-owners must not write tables; only interact via command APIs or events."
+  - "Outbox is platform-owned (Foundation)."
+
+pillars:
+
+  foundation:
+    description: "Platform primitives used by all pillars."
+    tables:
+      audit_log:
+        classification: operational
+        system_of_record: true
+        pii: possible
+      outbox_event:
+        classification: operational
+        system_of_record: true
+        pii: possible
+      outbox_event_consume:
+        classification: operational
+        system_of_record: true
+        pii: false
+      resource_ref:
+        classification: operational
+        system_of_record: true
+        pii: false
+
+  identity:
+    description: "Users/people/accounts identity and onboarding records."
+    tables:
+      user:
+        classification: pii
+        system_of_record: true
+        pii: true
+      user_credential:
+        classification: secret
+        system_of_record: true
+        pii: true
+      person:
+        classification: pii
+        system_of_record: true
+        pii: true
+      person_identity:
+        classification: pii
+        system_of_record: true
+        pii: true
+      person_relationship:
+        classification: pii
+        system_of_record: true
+        pii: true
+      account:
+        classification: pii
+        system_of_record: true
+        pii: true
+      account_person:
+        classification: pii
+        system_of_record: true
+        pii: true
+      address:
+        classification: pii
+        system_of_record: true
+        pii: true
+      device_token:
+        classification: pii
+        system_of_record: true
+        pii: true
+      registration_token:
+        classification: pii
+        system_of_record: true
+        pii: true
+      verification_status:
+        classification: pii
+        system_of_record: true
+        pii: true
+
+  iam:
+    description: "Authorization model (roles/permissions)."
+    tables:
+      role:
+        classification: operational
+        system_of_record: true
+        pii: false
+      permission:
+        classification: operational
+        system_of_record: true
+        pii: false
+      role_permission:
+        classification: operational
+        system_of_record: true
+        pii: false
+      user_role:
+        classification: pii
+        system_of_record: true
+        pii: true
+      user_permission:
+        classification: pii
+        system_of_record: true
+        pii: true
+
+  files:
+    description: "File uploads, versions, tokens, scanning, linking."
+    tables:
+      file_upload:
+        classification: pii
+        system_of_record: true
+        pii: possible
+      file_version:
+        classification: pii
+        system_of_record: true
+        pii: possible
+      file_event:
+        classification: operational
+        system_of_record: true
+        pii: possible
+      file_access_token:
+        classification: secret
+        system_of_record: true
+        pii: possible
+      file_scan_result:
+        classification: operational
+        system_of_record: true
+        pii: false
+      file_tag:
+        classification: operational
+        system_of_record: true
+        pii: false
+      file_upload_tag:
+        classification: operational
+        system_of_record: true
+        pii: false
+      file_link:
+        classification: pii
+        system_of_record: true
+        pii: possible
+
+  guidelines:
+    description: "Compliance documents and acceptance tracking."
+    tables:
+      guideline_document:
+        classification: operational
+        system_of_record: true
+        pii: false
+      guideline_version:
+        classification: operational
+        system_of_record: true
+        pii: false
+      guideline_acceptance:
+        classification: pii
+        system_of_record: true
+        pii: true
+
+  geo:
+    description: "Reference data."
+    tables:
+      geo_state:
+        classification: reference
+        system_of_record: true
+        pii: false
+
+  policy:
+    description: "Policy, product/package, pricing, entitlements, billing."
+    tables:
+      policy:
+        classification: pii
+        system_of_record: true
+        pii: true
+      policy_package:
+        classification: operational
+        system_of_record: true
+        pii: false
+      age_band:
+        classification: reference
+        system_of_record: true
+        pii: false
+      smoker_profile:
+        classification: reference
+        system_of_record: true
+        pii: false
+      policy_package_rate:
+        classification: financial
+        system_of_record: true
+        pii: false
+      policy_member:
+        classification: pii
+        system_of_record: true
+        pii: true
+      policy_deposit_requirement:
+        classification: financial
+        system_of_record: true
+        pii: false
+      policy_billing_plan:
+        classification: financial
+        system_of_record: true
+        pii: false
+      policy_installment:
+        classification: financial
+        system_of_record: true
+        pii: true
+      policy_status_event:
+        classification: operational
+        system_of_record: true
+        pii: possible
+      policy_remediation_case:
+        classification: operational
+        system_of_record: true
+        pii: possible
+      discount_program:
+        classification: operational
+        system_of_record: true
+        pii: false
+      policy_discount_applied:
+        classification: financial
+        system_of_record: true
+        pii: true
+      benefit_catalog:
+        classification: operational
+        system_of_record: true
+        pii: false
+      benefit_level:
+        classification: operational
+        system_of_record: true
+        pii: false
+      benefit_catalog_item:
+        classification: operational
+        system_of_record: true
+        pii: false
+      policy_benefit_entitlement:
+        classification: financial
+        system_of_record: true
+        pii: true
+      policy_benefit_usage:
+        classification: financial
+        system_of_record: true
+        pii: true
+      policy_benefit_usage_event:
+        classification: financial
+        system_of_record: true
+        pii: true
+
+  claims:
+    description: "Claim lifecycle, review, documents, settlement flags."
+    tables:
+      claim:
+        classification: pii
+        system_of_record: true
+        pii: true
+      claim_number_sequence:
+        classification: operational
+        system_of_record: true
+        pii: false
+      claim_event:
+        classification: operational
+        system_of_record: true
+        pii: possible
+      claim_review:
+        classification: pii
+        system_of_record: true
+        pii: true
+      claim_document:
+        classification: pii
+        system_of_record: true
+        pii: possible
+      claim_fraud_signal:
+        classification: financial
+        system_of_record: true
+        pii: possible
+      claim_link:
+        classification: operational
+        system_of_record: true
+        pii: possible
+      claim_settlement_flag:
+        classification: financial
+        system_of_record: true
+        pii: possible
+
+  crowd:
+    description: "CrowdShare period engine, runs, charges, payouts."
+    tables:
+      crowd_period:
+        classification: financial
+        system_of_record: true
+        pii: false
+      crowd_package_bucket:
+        classification: financial
+        system_of_record: true
+        pii: false
+      crowd_period_member:
+        classification: pii
+        system_of_record: true
+        pii: true
+      crowd_period_claim:
+        classification: pii
+        system_of_record: true
+        pii: true
+      crowd_member_charge:
+        classification: financial
+        system_of_record: true
+        pii: true
+      crowd_claim_payout:
+        classification: financial
+        system_of_record: true
+        pii: true
+      crowd_period_event:
+        classification: operational
+        system_of_record: true
+        pii: possible
+      crowd_period_run:
+        classification: operational
+        system_of_record: true
+        pii: false
+      crowd_period_run_lock:
+        classification: operational
+        system_of_record: true
+        pii: false
+
+  wallet_ledger:
+    description: "Wallet containers + ledger source of truth."
+    tables:
+      wallet:
+        classification: financial
+        system_of_record: true
+        pii: true
+      wallet_balance_snapshot:
+        classification: financial
+        system_of_record: false
+        pii: true
+      ledger_txn:
+        classification: financial
+        system_of_record: true
+        pii: possible
+      ledger_entry:
+        classification: financial
+        system_of_record: true
+        pii: possible
+      wallet_hold:
+        classification: financial
+        system_of_record: true
+        pii: true
+      wallet_policy_gate:
+        classification: financial
+        system_of_record: true
+        pii: false
+      wallet_rule_set:
+        classification: operational
+        system_of_record: true
+        pii: false
+      wallet_threshold_rule:
+        classification: operational
+        system_of_record: true
+        pii: false
+      wallet_threshold_event:
+        classification: operational
+        system_of_record: true
+        pii: possible
+      wallet_deposit_intent:
+        classification: financial
+        system_of_record: true
+        pii: true
+      wallet_spend_intent:
+        classification: financial
+        system_of_record: true
+        pii: true
+      wallet_withdrawal_request:
+        classification: financial
+        system_of_record: true
+        pii: true
+      wallet_batch:
+        classification: financial
+        system_of_record: true
+        pii: false
+      wallet_batch_item:
+        classification: financial
+        system_of_record: true
+        pii: true
+      receipt:
+        classification: financial
+        system_of_record: true
+        pii: possible
+
+  payments:
+    description: "Payment orchestration (intent/attempt/method)."
+    tables:
+      payment_method:
+        classification: pii
+        system_of_record: true
+        pii: true
+      payment_intent:
+        classification: financial
+        system_of_record: true
+        pii: true
+      payment_attempt:
+        classification: financial
+        system_of_record: true
+        pii: true
+
+  notifications:
+    description: "Templates, messages, delivery attempts."
+    tables:
+      notification_preference:
+        classification: pii
+        system_of_record: true
+        pii: true
+      notification_channel_pref:
+        classification: pii
+        system_of_record: true
+        pii: true
+      notification_template:
+        classification: operational
+        system_of_record: true
+        pii: false
+      notification_message:
+        classification: pii
+        system_of_record: true
+        pii: possible
+      notification_schedule:
+        classification: operational
+        system_of_record: true
+        pii: false
+      notification_delivery_attempt:
+        classification: operational
+        system_of_record: true
+        pii: possible
+
+  commission:
+    description: "Commission programs, rules, accrual, payout."
+    tables:
+      commission_program:
+        classification: financial
+        system_of_record: true
+        pii: false
+      commission_rule:
+        classification: financial
+        system_of_record: true
+        pii: false
+      commission_participant:
+        classification: pii
+        system_of_record: true
+        pii: true
+      commission_accrual:
+        classification: financial
+        system_of_record: true
+        pii: true
+      commission_payout_batch:
+        classification: financial
+        system_of_record: true
+        pii: false
+      commission_payout_item:
+        classification: financial
+        system_of_record: true
+        pii: true
+      commission_payout_item_accrual:
+        classification: financial
+        system_of_record: true
+        pii: true
+      referral_program:
+        classification: operational
+        system_of_record: true
+        pii: false
+      referral_rule:
+        classification: operational
+        system_of_record: true
+        pii: false
+      referral_code:
+        classification: pii
+        system_of_record: true
+        pii: true
+      referral_invite:
+        classification: pii
+        system_of_record: true
+        pii: true
+
+  missions:
+    description: "Mission definition, assignments, progress events, submissions, rewards."
+    tables:
+      mission_definition:
+        classification: operational
+        system_of_record: true
+        pii: false
+      mission_assignment:
+        classification: pii
+        system_of_record: true
+        pii: true
+      mission_progress:
+        classification: operational
+        system_of_record: true
+        pii: possible
+      mission_event:
+        classification: operational
+        system_of_record: true
+        pii: possible
+      mission_submission:
+        classification: pii
+        system_of_record: true
+        pii: possible
+      mission_submission_file:
+        classification: pii
+        system_of_record: true
+        pii: possible
+      mission_reward_grant:
+        classification: financial
+        system_of_record: true
+        pii: true
+
+  survey:
+    description: "Survey catalog and versions."
+    tables:
+      survey:
+        classification: operational
+        system_of_record: true
+        pii: false
+      survey_version:
+        classification: operational
+        system_of_record: true
+        pii: false
+
+  medical:
+    description: "Medical providers, cases, underwriting."
+    tables:
+      medical_provider:
+        classification: operational
+        system_of_record: true
+        pii: false
+      medical_case:
+        classification: pii
+        system_of_record: true
+        pii: true
+      medical_case_event:
+        classification: operational
+        system_of_record: true
+        pii: possible
+      guarantee_letter:
+        classification: pii
+        system_of_record: true
+        pii: true
+      medical_underwriting_case:
+        classification: pii
+        system_of_record: true
+        pii: true
+      medical_underwriting_outcome:
+        classification: operational
+        system_of_record: true
+        pii: possible
+      medical_underwriting_term:
+        classification: operational
+        system_of_record: true
+        pii: possible
+      medical_underwriting_current:
+        classification: operational
+        system_of_record: true
+        pii: possible
