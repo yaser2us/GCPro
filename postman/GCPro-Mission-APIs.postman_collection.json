@@ -1,0 +1,477 @@
+{
+  "info": {
+    "name": "GCPro - Mission APIs",
+    "description": "Complete Postman collection for testing Mission APIs\n\n**Available APIs:**\n1. Mission.Publish - Publish a draft/paused mission\n2. Mission.ApproveSubmission - Approve a mission submission\n\n**Authentication:**\n- X-User-Id: User ID header\n- X-User-Role: User role (ADMIN, REVIEWER, USER)\n\n**Setup:**\n1. Update {{base_url}} variable to your server URL\n2. Run SQL scripts to insert test data\n3. Update mission_id, submission_id variables with your test data",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Mission.Publish",
+      "item": [
+        {
+          "name": "1. Publish Draft Mission (Success)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}",
+                "description": "Admin user ID"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN",
+                "description": "User role (ADMIN, REVIEWER, USER)"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idempotency_key\": \"publish_test_{{$timestamp}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/missions/{{mission_id}}/publish",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "missions", "{{mission_id}}", "publish"]
+            },
+            "description": "Publishes a draft mission.\n\n**Prerequisites:**\n- Mission must exist with status='DRAFT'\n- Mission must not be expired\n\n**Expected Response:**\n```json\n{\n  \"mission_id\": \"123e4567-e89b-12d3-a456-426614174000\",\n  \"status\": \"PUBLISHED\"\n}\n```"
+          },
+          "response": []
+        },
+        {
+          "name": "2. Idempotency Test (Same Key)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idempotency_key\": \"publish_test_idempotency_001\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/missions/{{mission_id}}/publish",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "missions", "{{mission_id}}", "publish"]
+            },
+            "description": "Call this twice with the SAME idempotency_key.\n\nFirst call: Publishes mission\nSecond call: Returns cached response, no database changes!\n\n**Expected:** Same response both times"
+          },
+          "response": []
+        },
+        {
+          "name": "3. Already Published (Error)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idempotency_key\": \"publish_test_{{$timestamp}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/missions/{{published_mission_id}}/publish",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "missions", "{{published_mission_id}}", "publish"]
+            },
+            "description": "Try to publish a mission that's already PUBLISHED.\n\n**Expected Response:** 409 Conflict\n```json\n{\n  \"statusCode\": 409,\n  \"message\": \"MISSION_NOT_PUBLISHABLE\",\n  \"error\": \"Conflict\"\n}\n```"
+          },
+          "response": []
+        },
+        {
+          "name": "4. Permission Denied (Error)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "regular-user-123"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "USER",
+                "description": "Regular USER role (not ADMIN/MANAGER)"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idempotency_key\": \"publish_test_{{$timestamp}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/missions/{{mission_id}}/publish",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "missions", "{{mission_id}}", "publish"]
+            },
+            "description": "Try to publish as a regular USER (without admin permissions).\n\n**Expected Response:** 403 Forbidden\n```json\n{\n  \"statusCode\": 403,\n  \"message\": \"User lacks required permissions. Needs one of: missions:admin, missions:manage\",\n  \"error\": \"Forbidden\"\n}\n```"
+          },
+          "response": []
+        },
+        {
+          "name": "5. Mission Not Found (Error)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idempotency_key\": \"publish_test_{{$timestamp}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/missions/nonexistent-id/publish",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "missions", "nonexistent-id", "publish"]
+            },
+            "description": "Try to publish a non-existent mission.\n\n**Expected Response:** 404 Not Found\n```json\n{\n  \"statusCode\": 404,\n  \"message\": \"MISSION_NOT_FOUND\",\n  \"error\": \"Not Found\"\n}\n```"
+          },
+          "response": []
+        }
+      ],
+      "description": "Mission.Publish API - Publishes a draft or paused mission\n\n**Endpoint:** POST /v1/missions/{mission_id}/publish\n**Permissions:** missions:admin OR missions:manage\n**Spec Reference:** mission.pillar.yml lines 254-298"
+    },
+    {
+      "name": "Mission.ApproveSubmission",
+      "item": [
+        {
+          "name": "1. Approve Submission (Success)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idempotency_key\": \"approve_test_{{$timestamp}}\",\n  \"approval_note\": \"Great submission! Proof looks good.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/missions/{{mission_id}}/submissions/{{submission_id}}/approve",
+              "host": ["{{base_url}}"],
+              "path": [
+                "v1",
+                "missions",
+                "{{mission_id}}",
+                "submissions",
+                "{{submission_id}}",
+                "approve"
+              ]
+            },
+            "description": "Approves a pending mission submission.\n\n**Prerequisites:**\n- Submission must exist with status='PENDING'\n- Enrollment must have status='SUBMITTED'\n\n**Expected Response:**\n```json\n{\n  \"submission_id\": \"987f6543-e21b-43d1-b098-765432109876\",\n  \"submission_status\": \"APPROVED\",\n  \"enrollment_id\": \"456f7890-a12b-34c5-d678-901234567890\",\n  \"enrollment_status\": \"COMPLETED\"\n}\n```\n\n**Side Effects:**\n- Submission → APPROVED\n- Enrollment → COMPLETED\n- 3 events emitted (including MISSION_REWARD_REQUESTED)"
+          },
+          "response": []
+        },
+        {
+          "name": "2. Approve with Reviewer Role",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "reviewer-user-456"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "REVIEWER",
+                "description": "REVIEWER role also has permission"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idempotency_key\": \"approve_test_{{$timestamp}}\",\n  \"approval_note\": \"Approved by reviewer\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/missions/{{mission_id}}/submissions/{{submission_id}}/approve",
+              "host": ["{{base_url}}"],
+              "path": [
+                "v1",
+                "missions",
+                "{{mission_id}}",
+                "submissions",
+                "{{submission_id}}",
+                "approve"
+              ]
+            },
+            "description": "Test approval with REVIEWER role (not just ADMIN).\n\nREVIEWER role has 'missions:review' permission."
+          },
+          "response": []
+        },
+        {
+          "name": "3. Idempotency Test (Same Key)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idempotency_key\": \"approve_test_idempotency_001\",\n  \"approval_note\": \"First approval note\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/missions/{{mission_id}}/submissions/{{submission_id}}/approve",
+              "host": ["{{base_url}}"],
+              "path": [
+                "v1",
+                "missions",
+                "{{mission_id}}",
+                "submissions",
+                "{{submission_id}}",
+                "approve"
+              ]
+            },
+            "description": "Call this twice with the SAME idempotency_key.\n\nFirst call: Approves submission\nSecond call: Returns cached response\n\n**Note:** Even if approval_note is different in the second call, the first response is returned."
+          },
+          "response": []
+        },
+        {
+          "name": "4. Already Approved (Error)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idempotency_key\": \"approve_test_{{$timestamp}}\",\n  \"approval_note\": \"Trying to approve again\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/missions/{{mission_id}}/submissions/{{approved_submission_id}}/approve",
+              "host": ["{{base_url}}"],
+              "path": [
+                "v1",
+                "missions",
+                "{{mission_id}}",
+                "submissions",
+                "{{approved_submission_id}}",
+                "approve"
+              ]
+            },
+            "description": "Try to approve a submission that's already APPROVED.\n\n**Expected Response:** 409 Conflict\n```json\n{\n  \"statusCode\": 409,\n  \"message\": \"SUBMISSION_NOT_APPROVABLE: Submission status is APPROVED, expected PENDING\",\n  \"error\": \"Conflict\"\n}\n```"
+          },
+          "response": []
+        },
+        {
+          "name": "5. Permission Denied (Error)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "regular-user-123"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "USER",
+                "description": "Regular USER role (not ADMIN/REVIEWER)"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idempotency_key\": \"approve_test_{{$timestamp}}\",\n  \"approval_note\": \"Trying to approve\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/missions/{{mission_id}}/submissions/{{submission_id}}/approve",
+              "host": ["{{base_url}}"],
+              "path": [
+                "v1",
+                "missions",
+                "{{mission_id}}",
+                "submissions",
+                "{{submission_id}}",
+                "approve"
+              ]
+            },
+            "description": "Try to approve as a regular USER (without admin/review permissions).\n\n**Expected Response:** 403 Forbidden\n```json\n{\n  \"statusCode\": 403,\n  \"message\": \"User lacks required permissions. Needs one of: missions:admin, missions:review\",\n  \"error\": \"Forbidden\"\n}\n```"
+          },
+          "response": []
+        },
+        {
+          "name": "6. Submission Not Found (Error)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idempotency_key\": \"approve_test_{{$timestamp}}\",\n  \"approval_note\": \"Test\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/missions/{{mission_id}}/submissions/nonexistent-id/approve",
+              "host": ["{{base_url}}"],
+              "path": [
+                "v1",
+                "missions",
+                "{{mission_id}}",
+                "submissions",
+                "nonexistent-id",
+                "approve"
+              ]
+            },
+            "description": "Try to approve a non-existent submission.\n\n**Expected Response:** 404 Not Found\n```json\n{\n  \"statusCode\": 404,\n  \"message\": \"SUBMISSION_NOT_FOUND\",\n  \"error\": \"Not Found\"\n}\n```"
+          },
+          "response": []
+        }
+      ],
+      "description": "Mission.ApproveSubmission API - Approves a mission submission and completes enrollment\n\n**Endpoint:** POST /v1/missions/{mission_id}/submissions/{submission_id}/approve\n**Permissions:** missions:admin OR missions:review\n**Spec Reference:** mission.pillar.yml lines 514-613"
+    },
+    {
+      "name": "Database Setup Scripts",
+      "item": [
+        {
+          "name": "SQL - Insert Draft Mission",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}",
+              "host": ["{{base_url}}"]
+            },
+            "description": "Run this SQL in your MySQL database:\n\n```sql\nUSE GC_PRO;\n\n-- 1. Insert draft mission\nINSERT INTO missions.mission (\n  mission_id, status, title, description, starts_at, ends_at,\n  visibility, reward_json, created_by_user_id, created_at, updated_at\n) VALUES (\n  '123e4567-e89b-12d3-a456-426614174000',\n  'DRAFT',\n  'Complete 5 Policy Applications',\n  'Submit and get approved for 5 policy applications',\n  NOW(),\n  DATE_ADD(NOW(), INTERVAL 30 DAY),\n  'PUBLIC',\n  '{\"reward_type\":\"FIXED\",\"reward_money\":{\"currency\":\"MYR\",\"amount_minor\":5000},\"reward_reason\":\"MISSION_COMPLETION\"}',\n  'admin-user-123',\n  NOW(),\n  NOW()\n);\n```\n\nAfter running this:\n- Update {{mission_id}} variable to: 123e4567-e89b-12d3-a456-426614174000\n- Test Mission.Publish API"
+          },
+          "response": []
+        },
+        {
+          "name": "SQL - Insert Test Data for Approve",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}",
+              "host": ["{{base_url}}"]
+            },
+            "description": "Run this SQL in your MySQL database:\n\n```sql\nUSE GC_PRO;\n\n-- 1. Insert published mission\nINSERT INTO missions.mission (\n  mission_id, status, title, description, starts_at, ends_at,\n  visibility, reward_json, created_by_user_id, created_at, updated_at\n) VALUES (\n  '123e4567-e89b-12d3-a456-426614174000',\n  'PUBLISHED',\n  'Complete 5 Policy Applications',\n  'Submit and get approved for 5 policy applications',\n  NOW(),\n  DATE_ADD(NOW(), INTERVAL 30 DAY),\n  'PUBLIC',\n  '{\"reward_type\":\"FIXED\",\"reward_money\":{\"currency\":\"MYR\",\"amount_minor\":5000},\"reward_reason\":\"MISSION_COMPLETION\"}',\n  'admin-user-123',\n  NOW(),\n  NOW()\n);\n\n-- 2. Insert enrollment\nINSERT INTO missions.mission_enrollment (\n  enrollment_id, mission_id, participant_user_id,\n  status, enrolled_at, created_at, updated_at\n) VALUES (\n  '456f7890-a12b-34c5-d678-901234567890',\n  '123e4567-e89b-12d3-a456-426614174000',\n  'participant-user-456',\n  'SUBMITTED',\n  NOW(),\n  NOW(),\n  NOW()\n);\n\n-- 3. Insert submission\nINSERT INTO missions.mission_submission (\n  submission_id, mission_id, enrollment_id, participant_user_id,\n  status, proof_type, proof_payload_json, submitted_at,\n  created_at, updated_at\n) VALUES (\n  '987f6543-e21b-43d1-b098-765432109876',\n  '123e4567-e89b-12d3-a456-426614174000',\n  '456f7890-a12b-34c5-d678-901234567890',\n  'participant-user-456',\n  'PENDING',\n  'TEXT',\n  '{\"text\":\"I completed 5 applications!\"}',\n  NOW(),\n  NOW(),\n  NOW()\n);\n```\n\nAfter running this:\n- Update {{mission_id}} to: 123e4567-e89b-12d3-a456-426614174000\n- Update {{submission_id}} to: 987f6543-e21b-43d1-b098-765432109876\n- Test Mission.ApproveSubmission API"
+          },
+          "response": []
+        }
+      ],
+      "description": "SQL scripts to insert test data.\n\nRun these in your MySQL database before testing the APIs."
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "admin_user_id",
+      "value": "admin-user-123",
+      "type": "string"
+    },
+    {
+      "key": "mission_id",
+      "value": "123e4567-e89b-12d3-a456-426614174000",
+      "type": "string",
+      "description": "Update this after inserting test mission"
+    },
+    {
+      "key": "submission_id",
+      "value": "987f6543-e21b-43d1-b098-765432109876",
+      "type": "string",
+      "description": "Update this after inserting test submission"
+    },
+    {
+      "key": "published_mission_id",
+      "value": "update-me",
+      "type": "string",
+      "description": "ID of an already published mission (for testing errors)"
+    },
+    {
+      "key": "approved_submission_id",
+      "value": "update-me",
+      "type": "string",
+      "description": "ID of an already approved submission (for testing errors)"
+    }
+  ]
+}

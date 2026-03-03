@@ -1,0 +1,159 @@
+version: "1.0"
+spec_id: "gcpro.corekit.v1"
+domain: "corekit"
+owner:
+  plugin: "corekit"
+  shared_library: true
+
+storage_contract:
+  tables:
+    - name: "core.idempotency"
+      purpose: "Stores idempotency claims, fingerprints, and replayable responses."
+      required_uniques:
+        - "scope + idempotency_key"
+    - name: "core.outbox"
+      purpose: "Transactional outbox for domain events."
+      required_indexes:
+        - "status + occurred_at"
+        - "aggregate_type + aggregate_id"
+
+dtos:
+  OutboxEventEnvelope:
+    fields:
+      - { name: "event_name", type: "string", required: true }
+      - { name: "event_version", type: "int32", required: true }
+      - { name: "aggregate_type", type: "string", required: true }
+      - { name: "aggregate_id", type: "string", required: true }
+      - { name: "actor_user_id", type: "uuid", required: true }
+      - { name: "occurred_at", type: "datetime", required: true }
+      - { name: "correlation_id", type: "string", required: true }
+      - { name: "causation_id", type: "string", required: true }
+      - { name: "payload", type: "json", required: true }
+      - { name: "dedupe_key", type: "string", required: false }
+
+  IdempotencyClaimRequest:
+    fields:
+      - { name: "scope", type: "string", required: true }
+      - { name: "idempotency_key", type: "string", required: true }
+      - { name: "fingerprint", type: "string", required: true }
+      - { name: "ttl_seconds", type: "int32", required: false }
+
+  IdempotencyReplayResponse:
+    fields:
+      - { name: "is_replay", type: "bool", required: true }
+      - { name: "stored_http_status", type: "int32", required: false }
+      - { name: "stored_response_body", type: "json", required: false }
+
+  DomainErrorDto:
+    fields:
+      - { name: "code", type: "string", required: true }
+      - { name: "message", type: "string", required: true }
+      - { name: "details", type: "json", required: false }
+
+events:
+  - { name: "OUTBOX_EVENT_ENQUEUED", version: 1, aggregate_type: "OUTBOX" }
+  - { name: "OUTBOX_EVENT_PUBLISHED", version: 1, aggregate_type: "OUTBOX" }
+  - { name: "IDEMPOTENCY_CLAIMED", version: 1, aggregate_type: "IDEMPOTENCY" }
+  - { name: "IDEMPOTENCY_REPLAYED", version: 1, aggregate_type: "IDEMPOTENCY" }
+
+service_apis:
+  - service: "Transaction"
+    methods:
+      - name: "run"
+        purpose: "Execute fn in a DB transaction; commit on success, rollback on error."
+        steps: ["validate", "write", "commit"]
+        validate:
+          - expr: "fn != null"
+            error: { code: "TX_FN_REQUIRED" }
+        write:
+          - action: "begin_transaction"
+          - action: "execute_fn"
+          - action: "commit_or_rollback"
+
+  - service: "IdempotencyService"
+    methods:
+      - name: "claimOrReplay"
+        inputs: ["IdempotencyClaimRequest"]
+        outputs: ["IdempotencyReplayResponse"]
+        purpose: "Atomically claim an idempotency key or return stored response if already completed."
+        steps: ["validate", "write", "emit", "commit"]
+        validate:
+          - expr: "len(input.idempotency_key) > 0"
+            error: { code: "IDEMPOTENCY_KEY_REQUIRED" }
+          - expr: "len(input.scope) > 0"
+            error: { code: "IDEMPOTENCY_SCOPE_REQUIRED" }
+        write:
+          transaction: "Transaction.run"
+          steps:
+            - action: "select_for_update core.idempotency where scope+key"
+            - if_exists_completed:
+                then: "return stored response"
+            - if_exists_in_progress:
+                then: "return conflict or wait policy"
+            - if_not_exists:
+                then: "insert in_progress row"
+        emit:
+          - event: "IDEMPOTENCY_CLAIMED"
+            when: "first_claim"
+          - event: "IDEMPOTENCY_REPLAYED"
+            when: "replay_returned"
+
+      - name: "storeResult"
+        purpose: "Persist final response for replay (status + body) and mark completed."
+        steps: ["validate", "write", "commit"]
+        write:
+          transaction: "Transaction.run"
+          steps:
+            - action: "update core.idempotency set completed + stored_response"
+
+  - service: "OutboxService"
+    methods:
+      - name: "enqueue"
+        inputs: ["OutboxEventEnvelope"]
+        purpose: "Insert an outbox row inside the caller's transaction."
+        steps: ["validate", "write", "emit"]
+        validate:
+          - expr: "len(input.event_name) > 0"
+            error: { code: "EVENT_NAME_REQUIRED" }
+          - expr: "len(input.aggregate_id) > 0"
+            error: { code: "AGGREGATE_ID_REQUIRED" }
+        write:
+          - action: "insert core.outbox(row)"
+        emit:
+          - event: "OUTBOX_EVENT_ENQUEUED"
+
+      - name: "dispatchBatch"
+        purpose: "Worker method: read pending outbox rows, publish, mark published."
+        steps: ["validate", "write", "emit", "commit"]
+        write:
+          transaction: "Transaction.run"
+          steps:
+            - action: "select pending rows with limit N"
+            - action: "publish to message bus"
+            - action: "mark published (or mark failed with retry schedule)"
+        emit:
+          - event: "OUTBOX_EVENT_PUBLISHED"
+
+  - service: "Guard"
+    methods:
+      - name: "require"
+        purpose: "Throw DomainError when condition is false."
+        steps: ["validate"]
+        validate:
+          - expr: "condition == true"
+            error: { code: "GUARD_FAILED" }
+
+codegen:
+  language: "typescript"
+  framework: "nestjs"
+  outputs:
+    services:
+      - "src/corekit/transaction.generated.ts"
+      - "src/corekit/idempotency.service.generated.ts"
+      - "src/corekit/outbox.service.generated.ts"
+      - "src/corekit/guard.generated.ts"
+      - "src/corekit/domain-error.generated.ts"
+    tests:
+      - "test/corekit/idempotency.generated.spec.ts"
+      - "test/corekit/outbox.generated.spec.ts"
+      - "test/corekit/transaction.generated.spec.ts"
