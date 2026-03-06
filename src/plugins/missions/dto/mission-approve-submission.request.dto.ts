@@ -1,28 +1,15 @@
-import { IsString, IsOptional, MaxLength } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsOptional, IsString, MaxLength } from 'class-validator';
 
 /**
- * Mission Approve Submission Request DTO
- * Based on mission.pillar.yml MissionApproveSubmissionRequest
+ * Mission.ApproveSubmission Request DTO
+ * Source: specs/mission/mission.pillar.yml lines 104-106 & command lines 349-456
+ *
+ * HTTP: POST /v1/missions/submissions/{submission_id}/approve
+ * Idempotency: Via Idempotency-Key header (not in body)
  */
 export class MissionApproveSubmissionRequestDto {
-  @ApiProperty({
-    description: 'Idempotency key for this operation',
-    maxLength: 120,
-    example: 'approve_sub_xyz_20240315_001'
-  })
-  @IsString()
-  @MaxLength(120)
-  idempotency_key: string;
-
-  @ApiProperty({
-    description: 'Optional approval note',
-    required: false,
-    maxLength: 1000,
-    example: 'Great proof submission! Approved.'
-  })
   @IsOptional()
   @IsString()
-  @MaxLength(1000)
-  approval_note?: string;
+  @MaxLength(2000)
+  feedback?: string;
 }

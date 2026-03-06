@@ -2,368 +2,595 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
-import { v7 as uuidv7 } from 'uuid';
 import { TransactionService } from '../../../corekit/services/transaction.service';
-import { IdempotencyService } from '../../../corekit/services/idempotency.service';
 import { OutboxService } from '../../../corekit/services/outbox.service';
-import { MissionsRepository } from '../repositories/missions.repo';
-import { EnrollmentsRepository } from '../repositories/enrollments.repo';
-import { SubmissionsRepository } from '../repositories/submissions.repo';
+import { MissionDefinitionRepository } from '../repositories/mission-definition.repo';
+import { MissionAssignmentRepository } from '../repositories/mission-assignment.repo';
+import { MissionSubmissionRepository } from '../repositories/mission-submission.repo';
+import { MissionRewardGrantRepository } from '../repositories/mission-reward-grant.repo';
+import { MissionDefinitionCreateRequestDto } from '../dto/mission-definition-create.request.dto';
+import { MissionDefinitionPublishRequestDto } from '../dto/mission-definition-publish.request.dto';
+import { MissionAssignRequestDto } from '../dto/mission-assign.request.dto';
+import { MissionSubmitRequestDto } from '../dto/mission-submit.request.dto';
 import { MissionApproveSubmissionRequestDto } from '../dto/mission-approve-submission.request.dto';
-import { MissionPublishRequestDto } from '../dto/mission-publish.request.dto';
 import type { Actor } from '../../../corekit/types/actor.type';
 
 /**
  * Mission Workflow Service
- * Implements all mission commands following the workflow discipline:
+ * Implements mission commands following the workflow discipline:
  * Guard → Validate → Write → Emit → Commit
  *
- * Based on mission.pillar.yml
+ * Based on specs/mission/mission.pillar.yml
  */
 @Injectable()
 export class MissionsWorkflowService {
   constructor(
     private readonly txService: TransactionService,
-    private readonly idempotencyService: IdempotencyService,
     private readonly outboxService: OutboxService,
-    private readonly missionsRepo: MissionsRepository,
-    private readonly enrollmentsRepo: EnrollmentsRepository,
-    private readonly submissionsRepo: SubmissionsRepository,
+    private readonly missionDefRepo: MissionDefinitionRepository,
+    private readonly assignmentRepo: MissionAssignmentRepository,
+    private readonly submissionRepo: MissionSubmissionRepository,
+    private readonly rewardGrantRepo: MissionRewardGrantRepository,
   ) {}
 
   /**
-   * PUBLISH MISSION COMMAND
-   * Complete implementation following mission.pillar.yml lines 254-298
+   * MISSION DEFINITION.PUBLISH COMMAND
+   * Source: specs/mission/mission.pillar.yml lines 178-208
    *
-   * HTTP: POST /v1/missions/{mission_id}/publish
-   * Actor permissions: missions:admin OR missions:manage
+   * HTTP: POST /v1/missions/definitions/{id}/publish
+   * Idempotency: Via Idempotency-Key header
    *
    * Flow:
-   * 1. Idempotency check
-   * 2. Transaction wrapper
-   * 3. Load: mission
-   * 4. Guards: status == DRAFT or PAUSED, mission not ended
-   * 5. Write: update mission to PUBLISHED
-   * 6. Emit: MISSION_PUBLISHED event
-   * 7. Store idempotency response
+   * 1. Load: mission_definition by id
+   * 2. Guard: status in ['draft', 'paused']
+   * 3. Write: update status='published', published_at=now()
+   * 4. Emit: MISSION_DEFINITION_PUBLISHED event
    */
-  async publishMission(
-    mission_id: string,
-    request: MissionPublishRequestDto,
+  async publishMissionDefinition(
+    id: number,
+    request: MissionDefinitionPublishRequestDto,
     actor: Actor,
+    idempotencyKey: string,
   ) {
-    // ========== IDEMPOTENCY CHECK ==========
-    // Spec: line 263 - scope: "actor_user_id + command_name + mission_id"
-    const idempotencyScope = `${actor.actor_user_id}:Mission.Publish:${mission_id}`;
-
-    const idempotencyResult = await this.idempotencyService.claimOrReplay({
-      scope: idempotencyScope,
-      idempotency_key: request.idempotency_key,
-      fingerprint: JSON.stringify({ mission_id, actor }),
-    });
-
-    if (idempotencyResult.is_replay) {
-      // Already executed → return cached response
-      // Spec: line 265 - returns_previous_response_on_replay: true
-      return idempotencyResult.stored_response_body;
-    }
-
-    // ========== TRANSACTION WRAPPER ==========
-    // Spec: line 278 - transaction: "COREKIT.Transaction.run"
+    // Transaction wrapper (line 192)
     const result = await this.txService.run(async (queryRunner) => {
-      // ========== LOAD PHASE ==========
-      // Spec: lines 266-271 - load mission
-
-      const mission = await this.missionsRepo.findById(mission_id, queryRunner);
-      if (!mission) {
-        throw new NotFoundException('MISSION_NOT_FOUND');
+      // LOAD: mission_definition (lines 184-187)
+      const defn = await this.missionDefRepo.findById(id, queryRunner);
+      if (!defn) {
+        throw new NotFoundException({
+          code: 'MISSION_DEFINITION_NOT_FOUND',
+          message: `Mission definition with id ${id} not found`,
+        });
       }
 
-      // ========== GUARD PHASE ==========
-      // Spec: lines 272-276 - business rule checks
-
-      // Guard 1: mission.status == 'DRAFT' || mission.status == 'PAUSED'
-      // Spec: line 273
-      if (mission.status !== 'DRAFT' && mission.status !== 'PAUSED') {
-        throw new ConflictException(
-          'MISSION_NOT_PUBLISHABLE',
-          `Mission status is ${mission.status}, expected DRAFT or PAUSED`,
-        );
+      // GUARD: status in ['draft', 'paused'] (lines 188-190)
+      if (defn.status !== 'draft' && defn.status !== 'paused') {
+        throw new ConflictException({
+          code: 'MISSION_DEFINITION_NOT_PUBLISHABLE',
+          message: `Cannot publish mission in status: ${defn.status}`,
+        });
       }
 
-      // Guard 2: now() < mission.ends_at
-      // Spec: line 275
-      const now = new Date();
-      if (now >= mission.ends_at) {
-        throw new ConflictException(
-          'MISSION_ALREADY_ENDED',
-          `Mission ended at ${mission.ends_at.toISOString()}`,
-        );
-      }
-
-      // ========== WRITE PHASE ==========
-      // Spec: lines 277-287 - update mission
-
-      await this.missionsRepo.update(
-        { mission_id },
+      // WRITE: update mission_definition (lines 193-199)
+      await this.missionDefRepo.update(
+        id,
         {
-          status: 'PUBLISHED',
-          published_at: new Date(),
-          updated_by_user_id: actor.actor_user_id,
+          status: 'published',
         },
         queryRunner,
       );
 
-      // ========== EMIT PHASE ==========
-      // Spec: lines 288-295 - emit MISSION_PUBLISHED event
-
+      // EMIT: MISSION_DEFINITION_PUBLISHED event (lines 200-205)
       await this.outboxService.enqueue(
         {
-          event_name: 'MISSION_PUBLISHED',
+          event_name: 'MISSION_DEFINITION_PUBLISHED',
           event_version: 1,
-          aggregate_type: 'MISSION',
-          aggregate_id: mission_id,
+          aggregate_type: 'MISSION_DEFINITION',
+          aggregate_id: String(id),
           actor_user_id: actor.actor_user_id,
           occurred_at: new Date(),
-          correlation_id: actor.correlation_id || uuidv7(),
-          causation_id: actor.causation_id || uuidv7(),
-          payload: {
-            mission_id,
-          },
+          correlation_id: actor.correlation_id || `publish-${id}-${Date.now()}`,
+          causation_id: actor.causation_id || `cmd-publish-${id}`,
+          payload: { id },
+          dedupe_key: idempotencyKey,
         },
         queryRunner,
       );
 
-      // ========== RESPONSE ==========
-      // Spec: lines 296-298 - return response shape
+      // Response (lines 206-208)
       return {
-        mission_id,
-        status: 'PUBLISHED',
+        id,
+        status: 'published',
       };
-    });
-
-    // ========== COMMIT & CACHE RESPONSE ==========
-    // Transaction committed successfully
-    // Store response for idempotency replay
-    await this.idempotencyService.storeResponse({
-      scope: idempotencyScope,
-      idempotency_key: request.idempotency_key,
-      http_status: 200,
-      response_body: result,
     });
 
     return result;
   }
 
   /**
-   * APPROVE SUBMISSION COMMAND
-   * Complete implementation following mission.pillar.yml lines 514-613
+   * MISSION.APPROVE SUBMISSION COMMAND
+   * Source: specs/mission/mission.pillar.yml lines 349-456
    *
-   * HTTP: POST /v1/missions/{mission_id}/submissions/{submission_id}/approve
-   * Actor permissions: missions:admin OR missions:review
+   * HTTP: POST /v1/missions/submissions/{submission_id}/approve
+   * Idempotency: Via Idempotency-Key header
    *
    * Flow:
-   * 1. Idempotency check
-   * 2. Transaction wrapper
-   * 3. Load: mission, submission, enrollment
-   * 4. Guards: submission.status == PENDING, enrollment.status == SUBMITTED
-   * 5. Write: approve submission, complete enrollment, derive reward vars
-   * 6. Emit: 3 events (SUBMISSION_APPROVED, MISSION_COMPLETED, REWARD_REQUESTED)
-   * 7. Store idempotency response
+   * 1. Load: submission, assignment, definition, existing_grant
+   * 2. Guard: submission.status == 'pending'
+   * 3. Write: update submission, update assignment, create reward_grant (if new)
+   * 4. Emit: 3 events (SUBMISSION_APPROVED, COMPLETED, REWARD_REQUESTED)
    */
   async approveSubmission(
-    mission_id: string,
-    submission_id: string,
+    submission_id: number,
     request: MissionApproveSubmissionRequestDto,
     actor: Actor,
+    idempotencyKey: string,
   ) {
-    // ========== IDEMPOTENCY CHECK ==========
-    // Spec: line 524 - scope: "actor_user_id + command_name + submission_id"
-    const idempotencyScope = `${actor.actor_user_id}:Mission.ApproveSubmission:${submission_id}`;
-
-    const idempotencyResult = await this.idempotencyService.claimOrReplay({
-      scope: idempotencyScope,
-      idempotency_key: request.idempotency_key,
-      fingerprint: JSON.stringify({ mission_id, submission_id, actor }),
-    });
-
-    if (idempotencyResult.is_replay) {
-      // Already executed → return cached response
-      // Spec: line 526 - returns_previous_response_on_replay: true
-      return idempotencyResult.stored_response_body;
-    }
-
-    // ========== TRANSACTION WRAPPER ==========
-    // Spec: line 550 - transaction: "COREKIT.Transaction.run"
+    // Transaction wrapper (line 373)
     const result = await this.txService.run(async (queryRunner) => {
-      // ========== LOAD PHASE ==========
-      // Spec: lines 527-543 - load mission, submission, enrollment
-
-      // Load 1: mission (required)
-      const mission = await this.missionsRepo.findById(mission_id, queryRunner);
-      if (!mission) {
-        throw new NotFoundException('MISSION_NOT_FOUND');
+      // LOAD: submission (lines 355-358)
+      const sub = await this.submissionRepo.findById(submission_id, queryRunner);
+      if (!sub) {
+        throw new NotFoundException({
+          code: 'SUBMISSION_NOT_FOUND',
+          message: `Submission ${submission_id} not found`,
+        });
       }
 
-      // Load 2: submission (required, must match mission_id)
-      const submission = await this.submissionsRepo.findOne(
-        { submission_id, mission_id },
+      // LOAD: assignment (lines 359-361)
+      const asg = await this.assignmentRepo.findById(sub.assignment_id, queryRunner);
+      if (!asg) {
+        throw new NotFoundException({
+          code: 'ASSIGNMENT_NOT_FOUND',
+          message: `Assignment ${sub.assignment_id} not found`,
+        });
+      }
+
+      // LOAD: definition (lines 362-364)
+      const defn = await this.missionDefRepo.findById(asg.mission_id, queryRunner);
+      if (!defn) {
+        throw new NotFoundException({
+          code: 'MISSION_DEFINITION_NOT_FOUND',
+          message: `Mission definition ${asg.mission_id} not found`,
+        });
+      }
+
+      // LOAD: existing_grant (lines 365-368)
+      const existing_grant = await this.rewardGrantRepo.findByAssignmentId(
+        asg.id,
         queryRunner,
       );
-      if (!submission) {
-        throw new NotFoundException('SUBMISSION_NOT_FOUND');
+
+      // GUARD: submission.status == 'pending' (lines 369-371)
+      if (sub.status !== 'pending') {
+        throw new ConflictException({
+          code: 'SUBMISSION_NOT_APPROVABLE',
+          message: `Cannot approve submission in status: ${sub.status}`,
+        });
       }
 
-      // Load 3: enrollment (required, linked via submission.enrollment_id)
-      const enrollment = await this.enrollmentsRepo.findById(
-        submission.enrollment_id,
-        queryRunner,
-      );
-      if (!enrollment) {
-        throw new NotFoundException('ENROLLMENT_NOT_FOUND');
-      }
-
-      // ========== GUARD PHASE ==========
-      // Spec: lines 544-548 - business rule checks
-
-      // Guard 1: submission.status == 'PENDING'
-      if (submission.status !== 'PENDING') {
-        throw new ConflictException(
-          'SUBMISSION_NOT_APPROVABLE',
-          `Submission status is ${submission.status}, expected PENDING`,
-        );
-      }
-
-      // Guard 2: enrollment.status == 'SUBMITTED'
-      if (enrollment.status !== 'SUBMITTED') {
-        throw new ConflictException(
-          'ENROLLMENT_NOT_COMPLETABLE',
-          `Enrollment status is ${enrollment.status}, expected SUBMITTED`,
-        );
-      }
-
-      // ========== WRITE PHASE ==========
-      // Spec: lines 549-573 - write changes to database
-
-      // Write Step 1: approve_submission
-      // Spec: lines 552-560
-      await this.submissionsRepo.update(
-        { submission_id },
+      // WRITE: update submission (lines 374-382)
+      await this.submissionRepo.update(
+        submission_id,
         {
-          status: 'APPROVED',
-          approved_at: new Date(),
-          approved_by_user_id: actor.actor_user_id,
-          approval_note: request.approval_note,
+          status: 'approved',
+          reviewed_by_user_id: Number(actor.actor_user_id), // Convert actor_user_id to number
+          feedback: request.feedback || null,
+          reviewed_at: new Date(),
         },
         queryRunner,
       );
 
-      // Write Step 2: complete_enrollment
-      // Spec: lines 561-568
-      await this.enrollmentsRepo.update(
-        { enrollment_id: enrollment.enrollment_id },
+      // WRITE: update assignment (lines 383-389)
+      await this.assignmentRepo.update(
+        asg.id,
         {
-          status: 'COMPLETED',
+          status: 'completed',
           completed_at: new Date(),
-          updated_at: new Date(),
         },
         queryRunner,
       );
 
-      // Write Step 3: derive_reward_request
-      // Spec: lines 569-573 - generate IDs for cross-plugin reward request
-      const reward_request_id = uuidv7();
-      const reward_idempotency_key = `mission_reward:${enrollment.enrollment_id}`;
+      // WRITE: derive reward_dedupe_key (lines 390-392)
+      const reward_dedupe_key = `mission_reward:${asg.id}`;
 
-      // ========== EMIT PHASE ==========
-      // Spec: lines 574-605 - emit 3 events via outbox
+      // WRITE: create reward_grant if not exists (lines 393-408)
+      let reward_grant_id: number;
+      if (existing_grant === null) {
+        reward_grant_id = await this.rewardGrantRepo.create(
+          {
+            assignment_id: asg.id,
+            user_id: asg.user_id,
+            reward_type: defn.reward_json?.reward_type || 'coins',
+            amount: defn.reward_json?.amount || 0,
+            currency: defn.reward_json?.currency || 'MYR',
+            status: 'requested',
+            idempotency_key: reward_dedupe_key,
+          },
+          queryRunner,
+        );
+      } else {
+        reward_grant_id = existing_grant.id;
+      }
 
-      // Event 1: MISSION_SUBMISSION_APPROVED
-      // Spec: lines 575-583
+      // EMIT: MISSION_SUBMISSION_APPROVED (lines 420-428)
       await this.outboxService.enqueue(
         {
           event_name: 'MISSION_SUBMISSION_APPROVED',
           event_version: 1,
           aggregate_type: 'MISSION_SUBMISSION',
-          aggregate_id: submission_id,
+          aggregate_id: String(submission_id),
           actor_user_id: actor.actor_user_id,
           occurred_at: new Date(),
-          correlation_id: actor.correlation_id || uuidv7(),
-          causation_id: actor.causation_id || uuidv7(),
+          correlation_id: actor.correlation_id || `approve-sub-${submission_id}-${Date.now()}`,
+          causation_id: actor.causation_id || `cmd-approve-${submission_id}`,
           payload: {
-            mission_id,
-            enrollment_id: enrollment.enrollment_id,
             submission_id,
+            assignment_id: asg.id,
+            reviewed_by_user_id: actor.actor_user_id,
           },
         },
         queryRunner,
       );
 
-      // Event 2: MISSION_COMPLETED
-      // Spec: lines 584-592
+      // EMIT: MISSION_COMPLETED (lines 429-436)
       await this.outboxService.enqueue(
         {
           event_name: 'MISSION_COMPLETED',
           event_version: 1,
-          aggregate_type: 'MISSION_ENROLLMENT',
-          aggregate_id: enrollment.enrollment_id,
+          aggregate_type: 'MISSION_ASSIGNMENT',
+          aggregate_id: String(asg.id),
           actor_user_id: actor.actor_user_id,
           occurred_at: new Date(),
-          correlation_id: actor.correlation_id || uuidv7(),
-          causation_id: actor.causation_id || uuidv7(),
+          correlation_id: actor.correlation_id || `approve-sub-${submission_id}-${Date.now()}`,
+          causation_id: actor.causation_id || `cmd-approve-${submission_id}`,
           payload: {
-            mission_id,
-            enrollment_id: enrollment.enrollment_id,
-            participant_user_id: enrollment.participant_user_id,
+            assignment_id: asg.id,
+            mission_definition_id: asg.mission_id,
+            user_id: asg.user_id,
           },
         },
         queryRunner,
       );
 
-      // Event 3: MISSION_REWARD_REQUESTED
-      // Spec: lines 593-605 - THIS triggers the Wallet plugin!
+      // EMIT: MISSION_REWARD_REQUESTED (lines 437-447)
       await this.outboxService.enqueue(
         {
           event_name: 'MISSION_REWARD_REQUESTED',
           event_version: 1,
-          aggregate_type: 'MISSION_ENROLLMENT',
-          aggregate_id: enrollment.enrollment_id,
+          aggregate_type: 'MISSION_REWARD_GRANT',
+          aggregate_id: String(reward_grant_id),
           actor_user_id: actor.actor_user_id,
           occurred_at: new Date(),
-          correlation_id: actor.correlation_id || uuidv7(),
-          causation_id: actor.causation_id || uuidv7(),
-          dedupe_key: reward_idempotency_key, // Prevent duplicate rewards!
+          correlation_id: actor.correlation_id || `approve-sub-${submission_id}-${Date.now()}`,
+          causation_id: actor.causation_id || `cmd-approve-${submission_id}`,
           payload: {
-            mission_id,
-            enrollment_id: enrollment.enrollment_id,
-            participant_user_id: enrollment.participant_user_id,
-            reward: mission.reward_json, // From mission definition
-            reward_request_id,
-            reward_idempotency_key,
+            reward_grant_id,
+            assignment_id: asg.id,
+            mission_definition_id: asg.mission_id,
+            user_id: asg.user_id,
+            reward_json: defn.reward_json,
+            idempotency_key: reward_dedupe_key,
           },
+          dedupe_key: reward_dedupe_key,
         },
         queryRunner,
       );
 
-      // ========== RESPONSE ==========
-      // Spec: lines 606-612 - return response shape
+      // Response (lines 448-456)
       return {
         submission_id,
-        submission_status: 'APPROVED',
-        enrollment_id: enrollment.enrollment_id,
-        enrollment_status: 'COMPLETED',
+        submission_status: 'approved',
+        assignment_id: asg.id,
+        assignment_status: 'completed',
+        reward_grant_id,
+        reward_status: 'requested',
       };
     });
 
-    // ========== COMMIT & CACHE RESPONSE ==========
-    // Transaction committed successfully
-    // Store response for idempotency replay
-    await this.idempotencyService.storeResponse({
-      scope: idempotencyScope,
-      idempotency_key: request.idempotency_key,
-      http_status: 200,
-      response_body: result,
+    return result;
+  }
+
+  /**
+   * MISSION DEFINITION.CREATE COMMAND
+   * Source: specs/mission/mission.pillar.yml lines 131-176
+   *
+   * HTTP: POST /v1/missions/definitions
+   * Idempotency: Via Idempotency-Key header
+   *
+   * Flow:
+   * 1. Guard: validate code length, time range
+   * 2. Write: insert mission_definition with status='draft'
+   * 3. Derive: mission_definition_id (AUTO_INCREMENT)
+   * 4. Emit: MISSION_DEFINITION_CREATED event
+   */
+  async createMissionDefinition(
+    request: MissionDefinitionCreateRequestDto,
+    actor: Actor,
+    idempotencyKey: string,
+  ) {
+    // Transaction wrapper (line 143)
+    const result = await this.txService.run(async (queryRunner) => {
+      // GUARD: validate code length (lines 137-139)
+      if (!request.code || request.code.length === 0) {
+        throw new BadRequestException({
+          code: 'INVALID_CODE',
+          message: 'Mission code cannot be empty',
+        });
+      }
+
+      // GUARD: validate time range (lines 140-141)
+      if (request.ends_at && request.starts_at && request.ends_at <= request.starts_at) {
+        throw new BadRequestException({
+          code: 'INVALID_TIME_RANGE',
+          message: 'ends_at must be after starts_at',
+        });
+      }
+
+      // WRITE: insert mission_definition (lines 144-160)
+      const mission_definition_id = await this.missionDefRepo.create(
+        {
+          code: request.code,
+          name: request.title,
+          description: request.description || null,
+          cadence: request.cadence,
+          start_at: request.starts_at || null,
+          end_at: request.ends_at || null,
+          max_total: request.max_total || null,
+          max_per_user: request.max_per_user || 1,
+          criteria_json: request.criteria_json || null,
+          reward_json: request.reward_json || null,
+          status: 'draft',
+        },
+        queryRunner,
+      );
+
+      // EMIT: MISSION_DEFINITION_CREATED event (lines 164-172)
+      await this.outboxService.enqueue(
+        {
+          event_name: 'MISSION_DEFINITION_CREATED',
+          event_version: 1,
+          aggregate_type: 'MISSION_DEFINITION',
+          aggregate_id: String(mission_definition_id),
+          actor_user_id: actor.actor_user_id,
+          occurred_at: new Date(),
+          correlation_id: actor.correlation_id || `create-${mission_definition_id}-${Date.now()}`,
+          causation_id: actor.causation_id || `cmd-create-${mission_definition_id}`,
+          payload: {
+            id: mission_definition_id,
+            code: request.code,
+            title: request.title,
+            cadence: request.cadence,
+          },
+          dedupe_key: idempotencyKey,
+        },
+        queryRunner,
+      );
+
+      // Response (lines 173-176)
+      return {
+        id: mission_definition_id,
+        status: 'draft',
+      };
+    });
+
+    return result;
+  }
+
+  /**
+   * MISSION.ASSIGN COMMAND
+   * Source: specs/mission/mission.pillar.yml lines 210-269
+   *
+   * HTTP: POST /v1/missions/definitions/{definition_id}/assign
+   * Idempotency: Via Idempotency-Key header
+   *
+   * Flow:
+   * 1. Load: definition, existing assignment
+   * 2. Guard: definition.status == 'published', no existing assignment
+   * 3. Write: insert assignment, insert event
+   * 4. Derive: assignment_id (AUTO_INCREMENT)
+   * 5. Emit: MISSION_ASSIGNED event
+   */
+  async assignMission(
+    definition_id: number,
+    request: MissionAssignRequestDto,
+    actor: Actor,
+    idempotencyKey: string,
+  ) {
+    // Transaction wrapper (line 232)
+    const result = await this.txService.run(async (queryRunner) => {
+      // LOAD: definition (lines 216-219)
+      const defn = await this.missionDefRepo.findById(definition_id, queryRunner);
+      if (!defn) {
+        throw new NotFoundException({
+          code: 'MISSION_NOT_FOUND',
+          message: `Mission definition ${definition_id} not found`,
+        });
+      }
+
+      // LOAD: existing assignment (lines 220-225)
+      const existing = await this.assignmentRepo.findByMissionAndUser(
+        definition_id,
+        request.user_id,
+        queryRunner,
+      );
+
+      // GUARD: definition.status == 'published' (lines 226-228)
+      if (defn.status !== 'published') {
+        throw new ConflictException({
+          code: 'MISSION_NOT_OPEN',
+          message: `Mission is not published, current status: ${defn.status}`,
+        });
+      }
+
+      // GUARD: no existing assignment (lines 229-231)
+      if (existing !== null) {
+        throw new ConflictException({
+          code: 'ALREADY_ASSIGNED',
+          message: `User ${request.user_id} already has an assignment for mission ${definition_id}`,
+        });
+      }
+
+      // WRITE: derive assignment_dedupe_key (lines 233-236)
+      const assignment_dedupe_key = idempotencyKey || `mission_assign:${definition_id}:${request.user_id}`;
+
+      // WRITE: insert assignment (lines 237-245)
+      const assignment_id = await this.assignmentRepo.create(
+        {
+          mission_id: definition_id,
+          user_id: request.user_id,
+          status: 'assigned',
+          idempotency_key: assignment_dedupe_key,
+          assigned_at: new Date(),
+        },
+        queryRunner,
+      );
+
+      // EMIT: MISSION_ASSIGNED event (lines 258-267)
+      await this.outboxService.enqueue(
+        {
+          event_name: 'MISSION_ASSIGNED',
+          event_version: 1,
+          aggregate_type: 'MISSION_ASSIGNMENT',
+          aggregate_id: String(assignment_id),
+          actor_user_id: actor.actor_user_id,
+          occurred_at: new Date(),
+          correlation_id: actor.correlation_id || `assign-${assignment_id}-${Date.now()}`,
+          causation_id: actor.causation_id || `cmd-assign-${assignment_id}`,
+          payload: {
+            assignment_id,
+            mission_definition_id: definition_id,
+            user_id: request.user_id,
+          },
+          dedupe_key: idempotencyKey,
+        },
+        queryRunner,
+      );
+
+      // Response (lines 268-269)
+      return {
+        assignment_id,
+        status: 'assigned',
+      };
+    });
+
+    return result;
+  }
+
+  /**
+   * MISSION.SUBMIT COMMAND
+   * Source: specs/mission/mission.pillar.yml lines 271-347
+   *
+   * HTTP: POST /v1/missions/assignments/{assignment_id}/submit
+   * Idempotency: Via Idempotency-Key header
+   *
+   * Flow:
+   * 1. Load: assignment, existing_submission
+   * 2. Guard: assignment belongs to user, status submittable, no existing submission
+   * 3. Write: insert submission, update assignment, insert event
+   * 4. Derive: submission_id (AUTO_INCREMENT)
+   * 5. Emit: MISSION_SUBMITTED event
+   */
+  async submitMission(
+    assignment_id: number,
+    request: MissionSubmitRequestDto,
+    actor: Actor,
+    idempotencyKey: string,
+  ) {
+    // Transaction wrapper (line 293)
+    const result = await this.txService.run(async (queryRunner) => {
+      // LOAD: assignment (lines 277-280)
+      const asg = await this.assignmentRepo.findById(assignment_id, queryRunner);
+      if (!asg) {
+        throw new NotFoundException({
+          code: 'ASSIGNMENT_NOT_FOUND',
+          message: `Assignment ${assignment_id} not found`,
+        });
+      }
+
+      // LOAD: existing_submission (lines 281-284)
+      const existing_submission = await this.submissionRepo.findByAssignmentId(
+        assignment_id,
+        queryRunner,
+      );
+
+      // GUARD: assignment belongs to user (lines 285-287)
+      if (asg.user_id !== Number(actor.actor_user_id)) {
+        throw new ConflictException({
+          code: 'NOT_OWNER',
+          message: `Assignment does not belong to user ${actor.actor_user_id}`,
+        });
+      }
+
+      // GUARD: assignment status is submittable (lines 288-289)
+      if (!['assigned', 'in_progress', 'submitted'].includes(asg.status)) {
+        throw new ConflictException({
+          code: 'ASSIGNMENT_NOT_SUBMITTABLE',
+          message: `Assignment status ${asg.status} is not submittable`,
+        });
+      }
+
+      // GUARD: no existing submission (lines 290-292)
+      if (existing_submission !== null) {
+        throw new ConflictException({
+          code: 'ALREADY_SUBMITTED',
+          message: `Assignment ${assignment_id} already has a submission`,
+        });
+      }
+
+      // WRITE: derive submission_dedupe_key (lines 294-297)
+      const submission_dedupe_key = idempotencyKey || `mission_submit:${assignment_id}`;
+
+      // WRITE: insert submission (lines 298-307)
+      const submission_id = await this.submissionRepo.create(
+        {
+          assignment_id,
+          text_content: request.text_content || null,
+          meta_json: request.meta_json || null,
+          status: 'pending',
+          idempotency_key: submission_dedupe_key,
+          submitted_at: new Date(),
+        },
+        queryRunner,
+      );
+
+      // WRITE: update assignment (lines 321-326)
+      await this.assignmentRepo.update(
+        assignment_id,
+        {
+          status: 'submitted',
+        },
+        queryRunner,
+      );
+
+      // EMIT: MISSION_SUBMITTED event (lines 336-345)
+      await this.outboxService.enqueue(
+        {
+          event_name: 'MISSION_SUBMITTED',
+          event_version: 1,
+          aggregate_type: 'MISSION_SUBMISSION',
+          aggregate_id: String(submission_id),
+          actor_user_id: actor.actor_user_id,
+          occurred_at: new Date(),
+          correlation_id: actor.correlation_id || `submit-${submission_id}-${Date.now()}`,
+          causation_id: actor.causation_id || `cmd-submit-${submission_id}`,
+          payload: {
+            submission_id,
+            assignment_id,
+            user_id: actor.actor_user_id,
+          },
+          dedupe_key: idempotencyKey,
+        },
+        queryRunner,
+      );
+
+      // Response (lines 346-347)
+      return {
+        submission_id,
+        status: 'pending',
+      };
     });
 
     return result;

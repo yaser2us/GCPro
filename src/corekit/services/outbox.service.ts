@@ -24,17 +24,29 @@ export class OutboxService {
   ): Promise<void> {
     const outboxEvent = new OutboxEvent();
 
-    outboxEvent.event_name = envelope.event_name;
-    outboxEvent.event_version = envelope.event_version;
+    // Map envelope to foundation DDL schema
+    outboxEvent.topic = envelope.aggregate_type; // Use aggregate_type as topic
+    outboxEvent.event_type = envelope.event_name; // Map event_name to event_type
     outboxEvent.aggregate_type = envelope.aggregate_type;
     outboxEvent.aggregate_id = envelope.aggregate_id;
-    outboxEvent.actor_user_id = envelope.actor_user_id;
     outboxEvent.occurred_at = envelope.occurred_at;
-    outboxEvent.correlation_id = envelope.correlation_id;
-    outboxEvent.causation_id = envelope.causation_id;
-    outboxEvent.payload = envelope.payload;
-    outboxEvent.dedupe_key = envelope.dedupe_key;
-    outboxEvent.status = 'pending';
+    outboxEvent.idempotency_key = envelope.dedupe_key || null;
+    outboxEvent.request_id = envelope.correlation_id; // Map correlation_id to request_id
+    outboxEvent.status = 'new'; // Default status in foundation DDL
+    outboxEvent.attempts = 0;
+
+    // Store full envelope in payload_json to preserve all fields
+    outboxEvent.payload_json = {
+      ...envelope.payload,
+      // Include metadata for event processing
+      _meta: {
+        event_name: envelope.event_name,
+        event_version: envelope.event_version,
+        actor_user_id: envelope.actor_user_id,
+        correlation_id: envelope.correlation_id,
+        causation_id: envelope.causation_id,
+      },
+    };
 
     // Save within the transaction
     await queryRunner.manager.save(OutboxEvent, outboxEvent);

@@ -1,11 +1,13 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { Mission } from './entities/mission.entity';
-import { MissionEnrollment } from './entities/mission-enrollment.entity';
+import { MissionDefinition } from './entities/mission-definition.entity';
+import { MissionAssignment } from './entities/mission-assignment.entity';
 import { MissionSubmission } from './entities/mission-submission.entity';
-import { MissionsRepository } from './repositories/missions.repo';
-import { EnrollmentsRepository } from './repositories/enrollments.repo';
-import { SubmissionsRepository } from './repositories/submissions.repo';
+import { MissionRewardGrant } from './entities/mission-reward-grant.entity';
+import { MissionDefinitionRepository } from './repositories/mission-definition.repo';
+import { MissionAssignmentRepository } from './repositories/mission-assignment.repo';
+import { MissionSubmissionRepository } from './repositories/mission-submission.repo';
+import { MissionRewardGrantRepository } from './repositories/mission-reward-grant.repo';
 import { MissionsWorkflowService } from './services/missions.workflow.service';
 import { MissionsController } from './controllers/missions.controller';
 
@@ -13,12 +15,17 @@ import { MissionsController } from './controllers/missions.controller';
  * Missions Module
  * Encapsulates all mission-related functionality
  *
- * Based on mission.pillar.yml
+ * Based on specs/mission/mission.pillar.yml
  */
 @Module({
   imports: [
     // Register Mission entities with TypeORM
-    TypeOrmModule.forFeature([Mission, MissionEnrollment, MissionSubmission]),
+    TypeOrmModule.forFeature([
+      MissionDefinition,
+      MissionAssignment,
+      MissionSubmission,
+      MissionRewardGrant,
+    ]),
   ],
   controllers: [
     // HTTP controllers
@@ -26,9 +33,10 @@ import { MissionsController } from './controllers/missions.controller';
   ],
   providers: [
     // Repositories (data access)
-    MissionsRepository,
-    EnrollmentsRepository,
-    SubmissionsRepository,
+    MissionDefinitionRepository,
+    MissionAssignmentRepository,
+    MissionSubmissionRepository,
+    MissionRewardGrantRepository,
     // Services (business logic)
     MissionsWorkflowService,
   ],

@@ -1,28 +1,41 @@
-# Postman Collection - GCPro Mission APIs
+# Postman Collection - All Mission APIs
 
 ## 📦 What's Included
 
-This Postman collection provides comprehensive testing for the Mission APIs:
+This Postman collection provides comprehensive testing for **ALL 5 Mission APIs**:
 
 ### APIs Included
-1. **Mission.Publish** (5 test cases)
+
+1. **MissionDefinition.Create** (3 test cases)
+   - Success case
+   - Invalid time range error
+   - Permission denied error
+
+2. **MissionDefinition.Publish** (4 test cases)
    - Success case
    - Idempotency test
    - Already published error
-   - Permission denied error
-   - Mission not found error
+   - Not found error
 
-2. **Mission.ApproveSubmission** (6 test cases)
+3. **Mission.Assign** (4 test cases)
+   - Success case (self enroll)
+   - Admin assigns user
+   - Already assigned error
+   - Mission not published error
+
+4. **Mission.Submit** (3 test cases)
+   - Success case
+   - Already submitted error
+   - Not owner error
+
+5. **Mission.ApproveSubmission** (5 test cases)
    - Success case (ADMIN role)
    - Success case (REVIEWER role)
-   - Idempotency test
    - Already approved error
    - Permission denied error
    - Submission not found error
 
-3. **Database Setup Scripts** (2 SQL helpers)
-   - Insert draft mission
-   - Insert test data for approval
+**Total**: 19 test cases + 3 SQL helper scripts
 
 ---
 
@@ -32,19 +45,22 @@ This Postman collection provides comprehensive testing for the Mission APIs:
 
 1. Open Postman
 2. Click **Import** button
-3. Select `GCPro-Mission-APIs.postman_collection.json`
+3. Select `GCPro-All-Mission-APIs.postman_collection.json`
 4. Collection appears in your sidebar
 
 ### Step 2: Configure Variables
 
-The collection uses these variables (already set with defaults):
+The collection uses these variables (you need to update them):
 
-| Variable | Default Value | Description |
-|----------|---------------|-------------|
+| Variable | Default | Description |
+|----------|---------|-------------|
 | `base_url` | `http://localhost:3000` | Your API server URL |
-| `admin_user_id` | `admin-user-123` | Admin user ID for testing |
-| `mission_id` | `123e4567-e89b-12d3-a456-426614174000` | Test mission ID |
-| `submission_id` | `987f6543-e21b-43d1-b098-765432109876` | Test submission ID |
+| `admin_user_id` | `admin-123` | Admin user ID |
+| `draft_mission_id` | `1` | ID of a draft mission |
+| `published_mission_id` | `2` | ID of a published mission |
+| `assignment_id` | `1` | ID of an assignment |
+| `submission_id` | `1` | ID of a pending submission |
+| `approved_submission_id` | `99` | ID of approved submission (for error test) |
 
 **To edit variables:**
 1. Click on the collection name
@@ -58,173 +74,160 @@ The collection uses these variables (already set with defaults):
 npm run start:dev
 ```
 
-Wait for:
-```
-[Nest] Application successfully started
-```
+Wait for: `[Nest] Application successfully started`
 
 ### Step 4: Set Up Database
 
-Open MySQL and run:
+```bash
+# Create tables
+mysql -u root -pOdenza@2026 < database/setup-database.sql
 
-```sql
-CREATE DATABASE IF NOT EXISTS GC_PRO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE GC_PRO;
-
--- Create schemas
-CREATE SCHEMA IF NOT EXISTS missions;
-CREATE SCHEMA IF NOT EXISTS core;
+# Insert test data
+mysql -u root -pOdenza@2026 < database/test-data-all-apis.sql
 ```
 
-**Note:** Tables will be auto-created by TypeORM if `DB_SYNC=true` in your `.env` file.
+### Step 5: Get Test IDs
 
-### Step 5: Insert Test Data
-
-#### For Mission.Publish API:
+Run these SQL queries to get the IDs for your variables:
 
 ```sql
 USE GC_PRO;
 
-INSERT INTO missions.mission (
-  mission_id, status, title, description, starts_at, ends_at,
-  visibility, reward_json, created_by_user_id, created_at, updated_at
-) VALUES (
-  '123e4567-e89b-12d3-a456-426614174000',
-  'DRAFT',  -- DRAFT status
-  'Complete 5 Policy Applications',
-  'Submit and get approved for 5 policy applications',
-  NOW(),
-  DATE_ADD(NOW(), INTERVAL 30 DAY),  -- Future end date
-  'PUBLIC',
-  '{"reward_type":"FIXED","reward_money":{"currency":"MYR","amount_minor":5000},"reward_reason":"MISSION_COMPLETION"}',
-  'admin-user-123',
-  NOW(),
-  NOW()
-);
+-- For draft_mission_id
+SELECT id FROM mission_definition WHERE code = 'PUBLISH_TEST_1';
+
+-- For published_mission_id
+SELECT id FROM mission_definition WHERE code = 'ASSIGN_TEST_1';
+
+-- For assignment_id (after running Assign API)
+SELECT id FROM mission_assignment WHERE user_id = 888;
+
+-- For submission_id (after running Submit API)
+SELECT id FROM mission_submission WHERE status = 'pending' LIMIT 1;
 ```
 
-#### For Mission.ApproveSubmission API:
-
-```sql
-USE GC_PRO;
-
--- 1. Mission (published)
-INSERT INTO missions.mission (
-  mission_id, status, title, description, starts_at, ends_at,
-  visibility, reward_json, created_by_user_id, created_at, updated_at
-) VALUES (
-  '123e4567-e89b-12d3-a456-426614174000',
-  'PUBLISHED',  -- Already published
-  'Complete 5 Policy Applications',
-  'Submit and get approved for 5 policy applications',
-  NOW(),
-  DATE_ADD(NOW(), INTERVAL 30 DAY),
-  'PUBLIC',
-  '{"reward_type":"FIXED","reward_money":{"currency":"MYR","amount_minor":5000},"reward_reason":"MISSION_COMPLETION"}',
-  'admin-user-123',
-  NOW(),
-  NOW()
-);
-
--- 2. Enrollment (submitted)
-INSERT INTO missions.mission_enrollment (
-  enrollment_id, mission_id, participant_user_id,
-  status, enrolled_at, created_at, updated_at
-) VALUES (
-  '456f7890-a12b-34c5-d678-901234567890',
-  '123e4567-e89b-12d3-a456-426614174000',
-  'participant-user-456',
-  'SUBMITTED',
-  NOW(),
-  NOW(),
-  NOW()
-);
-
--- 3. Submission (pending)
-INSERT INTO missions.mission_submission (
-  submission_id, mission_id, enrollment_id, participant_user_id,
-  status, proof_type, proof_payload_json, submitted_at,
-  created_at, updated_at
-) VALUES (
-  '987f6543-e21b-43d1-b098-765432109876',
-  '123e4567-e89b-12d3-a456-426614174000',
-  '456f7890-a12b-34c5-d678-901234567890',
-  'participant-user-456',
-  'PENDING',
-  'TEXT',
-  '{"text":"I completed 5 applications!"}',
-  NOW(),
-  NOW(),
-  NOW()
-);
-```
+Copy these IDs to the Postman variables.
 
 ### Step 6: Run Tests!
 
-Open any request and click **Send**.
+Test in order:
+1. **Create** → Creates a new draft mission
+2. **Publish** → Use the ID from Create
+3. **Assign** → Use a published mission ID
+4. **Submit** → Use the assignment ID from Assign
+5. **Approve** → Use the submission ID from Submit
 
 ---
 
 ## 📝 Test Scenarios Explained
 
-### Mission.Publish
+### API 1: MissionDefinition.Create
 
-#### 1️⃣ Publish Draft Mission (Success)
-- **Purpose**: Successfully publish a draft mission
-- **Expected**: `200 OK` with `{ mission_id, status: "PUBLISHED" }`
-- **Prerequisites**: Mission with status='DRAFT', not expired
+#### 1️⃣ Create Mission - Success
+- **Purpose**: Create a new mission in draft status
+- **Expected**: `201 Created` with `{ id, status: "draft" }`
+- **Note**: Uses dynamic code with `{{$timestamp}}` to avoid duplicates
 
-#### 2️⃣ Idempotency Test
-- **Purpose**: Test duplicate prevention
-- **Action**: Call twice with same `idempotency_key`
-- **Expected**: Same response both times, no database changes on second call
+#### 2️⃣ Create Mission - Invalid Time Range
+- **Purpose**: Test validation
+- **Action**: Send ends_at before starts_at
+- **Expected**: `400 Bad Request` - "INVALID_TIME_RANGE"
 
-#### 3️⃣ Already Published (Error)
-- **Purpose**: Test guard - can't publish already published mission
-- **Expected**: `409 Conflict` - "MISSION_NOT_PUBLISHABLE"
-
-#### 4️⃣ Permission Denied (Error)
+#### 3️⃣ Create Mission - Permission Denied
 - **Purpose**: Test permission guard
-- **Action**: Use `X-User-Role: USER` (not ADMIN/MANAGER)
-- **Expected**: `403 Forbidden` - "User lacks required permissions"
-
-#### 5️⃣ Mission Not Found (Error)
-- **Purpose**: Test mission existence check
-- **Expected**: `404 Not Found` - "MISSION_NOT_FOUND"
+- **Action**: Use `X-User-Role: USER` (not ADMIN)
+- **Expected**: `403 Forbidden`
 
 ---
 
-### Mission.ApproveSubmission
+### API 2: MissionDefinition.Publish
 
-#### 1️⃣ Approve Submission (Success - ADMIN)
-- **Purpose**: Successfully approve a submission as ADMIN
-- **Expected**: `200 OK` with submission and enrollment status
-- **Side Effects**:
-  - Submission → APPROVED
-  - Enrollment → COMPLETED
-  - 3 events emitted (including MISSION_REWARD_REQUESTED)
+#### 1️⃣ Publish Mission - Success
+- **Purpose**: Publish a draft mission
+- **Expected**: `200 OK` with `{ id, status: "published" }`
+- **Prerequisites**: Mission with status='draft'
 
-#### 2️⃣ Approve with Reviewer Role
-- **Purpose**: Test approval with REVIEWER role (not just ADMIN)
-- **Expected**: `200 OK` (REVIEWER also has missions:review permission)
-
-#### 3️⃣ Idempotency Test
+#### 2️⃣ Publish Mission - Idempotency Test
 - **Purpose**: Test duplicate prevention
-- **Action**: Call twice with same `idempotency_key`
+- **Action**: Call twice with same `Idempotency-Key`
 - **Expected**: Same response both times
 
-#### 4️⃣ Already Approved (Error)
-- **Purpose**: Test guard - can't approve already approved submission
+#### 3️⃣ Publish Mission - Already Published
+- **Purpose**: Test guard
+- **Expected**: `409 Conflict` - "MISSION_DEFINITION_NOT_PUBLISHABLE"
+
+#### 4️⃣ Publish Mission - Not Found
+- **Purpose**: Test error handling
+- **Expected**: `404 Not Found`
+
+---
+
+### API 3: Mission.Assign
+
+#### 1️⃣ Assign Mission - Success (Self Enroll)
+- **Purpose**: User enrolls themselves
+- **Expected**: `201 Created` with `{ assignment_id, status: "assigned" }`
+
+#### 2️⃣ Assign Mission - Admin Assigns User
+- **Purpose**: Admin assigns another user
+- **Expected**: `201 Created`
+
+#### 3️⃣ Assign Mission - Already Assigned
+- **Purpose**: Test duplicate prevention
+- **Expected**: `409 Conflict` - "ALREADY_ASSIGNED"
+
+#### 4️⃣ Assign Mission - Not Published
+- **Purpose**: Test guard
+- **Expected**: `409 Conflict` - "MISSION_NOT_OPEN"
+
+---
+
+### API 4: Mission.Submit
+
+#### 1️⃣ Submit Mission - Success
+- **Purpose**: User submits proof of completion
+- **Expected**: `201 Created` with `{ submission_id, status: "pending" }`
+- **Side Effects**:
+  - Submission created
+  - Assignment status → "submitted"
+
+#### 2️⃣ Submit Mission - Already Submitted
+- **Purpose**: Test duplicate prevention
+- **Expected**: `409 Conflict` - "ALREADY_SUBMITTED"
+
+#### 3️⃣ Submit Mission - Not Owner
+- **Purpose**: Test ownership validation
+- **Action**: Use different user_id in header
+- **Expected**: `409 Conflict` - "NOT_OWNER"
+
+---
+
+### API 5: Mission.ApproveSubmission
+
+#### 1️⃣ Approve Submission - Success (ADMIN)
+- **Purpose**: Admin approves a submission
+- **Expected**: `200 OK` with complete response
+- **Side Effects**:
+  - Submission → "approved"
+  - Assignment → "completed"
+  - Reward grant created
+  - 3 events emitted
+
+#### 2️⃣ Approve Submission - Success (REVIEWER)
+- **Purpose**: Test with REVIEWER role
+- **Expected**: `200 OK`
+
+#### 3️⃣ Approve Submission - Already Approved
+- **Purpose**: Test guard
 - **Expected**: `409 Conflict` - "SUBMISSION_NOT_APPROVABLE"
 
-#### 5️⃣ Permission Denied (Error)
-- **Purpose**: Test permission guard
-- **Action**: Use `X-User-Role: USER`
+#### 4️⃣ Approve Submission - Permission Denied
+- **Purpose**: Test permissions
 - **Expected**: `403 Forbidden`
 
-#### 6️⃣ Submission Not Found (Error)
-- **Purpose**: Test submission existence check
-- **Expected**: `404 Not Found` - "SUBMISSION_NOT_FOUND"
+#### 5️⃣ Approve Submission - Not Found
+- **Purpose**: Test error handling
+- **Expected**: `404 Not Found`
 
 ---
 
@@ -235,15 +238,17 @@ All requests require these headers:
 ```
 X-User-Id: <user-id>
 X-User-Role: <role>
+Idempotency-Key: <unique-key>
 ```
 
 ### Roles and Permissions
 
-| Role | Permissions | Can Publish? | Can Approve? |
-|------|-------------|--------------|--------------|
-| `ADMIN` | All | ✅ | ✅ |
-| `REVIEWER` | missions:review | ❌ | ✅ |
-| `USER` | missions:enroll | ❌ | ❌ |
+| Role | Permissions | Create | Publish | Assign | Submit | Approve |
+|------|-------------|--------|---------|--------|--------|---------|
+| `ADMIN` | All | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `MANAGER` | missions:manage | ✅ | ✅ | ✅ | ❌ | ❌ |
+| `REVIEWER` | missions:review | ❌ | ❌ | ❌ | ❌ | ✅ |
+| `USER` | missions:enroll | ❌ | ❌ | ✅ | ✅ | ❌ |
 
 ---
 
@@ -251,121 +256,162 @@ X-User-Role: <role>
 
 ### Collection Variables
 
-Edit these in **Collection → Variables** tab:
-
-```
-{{base_url}}              - API server URL
-{{admin_user_id}}         - Admin user for testing
-{{mission_id}}            - Mission ID for tests
-{{submission_id}}         - Submission ID for tests
-{{published_mission_id}}  - Already published mission (for error tests)
-{{approved_submission_id}} - Already approved submission (for error tests)
-```
+| Variable | Purpose | How to Get |
+|----------|---------|------------|
+| `base_url` | API server URL | Default: `http://localhost:3000` |
+| `admin_user_id` | Admin user for testing | Default: `admin-123` |
+| `draft_mission_id` | Draft mission to publish | Query: `SELECT id FROM mission_definition WHERE status='draft' LIMIT 1` |
+| `published_mission_id` | Published mission to assign | Query: `SELECT id FROM mission_definition WHERE status='published' LIMIT 1` |
+| `assignment_id` | Assignment to submit | Created by Assign API |
+| `submission_id` | Submission to approve | Created by Submit API |
 
 ### Dynamic Variables
 
 Postman provides these automatically:
-
-```
-{{$timestamp}}  - Current Unix timestamp (e.g., 1710504123)
-{{$randomUUID}} - Random UUID v4
-```
+- `{{$timestamp}}` - Current Unix timestamp
+- `{{$randomUUID}}` - Random UUID v4
 
 ---
 
-## 🧪 Testing Workflow
+## 🧪 Complete Testing Workflow
 
-### Test Mission.Publish
+### Test the Complete Lifecycle
 
-1. **Insert draft mission** (SQL)
-2. **Run "Publish Draft Mission"** → Should succeed
-3. **Run "Idempotency Test"** (same key twice) → Same response both times
-4. **Run "Already Published"** → Should fail with 409
-5. **Run "Permission Denied"** → Should fail with 403
+Follow this order to test end-to-end:
 
-### Test Mission.ApproveSubmission
+#### 1. Create Mission
+```
+POST /v1/missions/definitions
+→ Get mission ID from response
+→ Save to draft_mission_id variable
+```
 
-1. **Insert mission, enrollment, submission** (SQL)
-2. **Run "Approve Submission"** → Should succeed
-3. **Verify database**:
-   ```sql
-   SELECT * FROM missions.mission_submission WHERE submission_id = '987...';
-   -- status should be 'APPROVED'
+#### 2. Publish Mission
+```
+POST /v1/missions/definitions/{{draft_mission_id}}/publish
+→ Mission becomes published
+→ Update published_mission_id if needed
+```
 
-   SELECT * FROM core.outbox ORDER BY created_at DESC LIMIT 3;
-   -- Should see 3 events including MISSION_REWARD_REQUESTED
-   ```
-4. **Run "Idempotency Test"** → Same response
-5. **Run error scenarios** → Test all error cases
+#### 3. Assign User
+```
+POST /v1/missions/definitions/{{published_mission_id}}/assign
+→ Get assignment_id from response
+→ Save to assignment_id variable
+```
+
+#### 4. Submit Proof
+```
+POST /v1/missions/assignments/{{assignment_id}}/submit
+→ Get submission_id from response
+→ Save to submission_id variable
+```
+
+#### 5. Approve Submission
+```
+POST /v1/missions/submissions/{{submission_id}}/approve
+→ Complete! Check all status updates
+```
+
+#### 6. Verify Database
+
+```sql
+-- View the complete flow
+SELECT
+  d.id AS mission_id,
+  d.code,
+  d.status AS mission_status,
+  a.id AS assignment_id,
+  a.user_id,
+  a.status AS assignment_status,
+  s.id AS submission_id,
+  s.status AS submission_status,
+  r.id AS reward_id,
+  r.amount
+FROM mission_definition d
+LEFT JOIN mission_assignment a ON d.id = a.mission_id
+LEFT JOIN mission_submission s ON a.id = s.assignment_id
+LEFT JOIN mission_reward_grant r ON a.id = r.assignment_id
+WHERE d.id = {{mission_id}};
+
+-- Check events emitted
+SELECT id, event_type, aggregate_type, status
+FROM outbox_event
+ORDER BY created_at DESC
+LIMIT 10;
+```
 
 ---
 
 ## 🔍 Debugging Tips
 
-### Check Database Changes
-
-After each request, verify in MySQL:
+### Check Database State
 
 ```sql
--- Check mission status
-SELECT mission_id, status, published_at
-FROM missions.mission
-WHERE mission_id = '123e4567-e89b-12d3-a456-426614174000';
+-- View all test missions
+SELECT id, code, name, status FROM mission_definition
+WHERE code LIKE '%TEST%'
+ORDER BY created_at DESC;
 
--- Check submission status
-SELECT submission_id, status, approved_at, approved_by_user_id
-FROM missions.mission_submission
-WHERE submission_id = '987f6543-e21b-43d1-b098-765432109876';
+-- View all assignments
+SELECT a.id, a.mission_id, a.user_id, a.status, d.code
+FROM mission_assignment a
+JOIN mission_definition d ON a.mission_id = d.id
+ORDER BY a.created_at DESC;
 
--- Check outbox events
-SELECT id, event_name, aggregate_type, status, created_at
-FROM core.outbox
+-- View all submissions
+SELECT s.id, s.assignment_id, s.status, s.text_content
+FROM mission_submission s
+ORDER BY s.created_at DESC;
+
+-- View all events
+SELECT id, event_type, aggregate_type, aggregate_id, created_at
+FROM outbox_event
 ORDER BY created_at DESC
-LIMIT 10;
-
--- Check idempotency records
-SELECT id, scope, idempotency_key, status, created_at
-FROM core.idempotency
-ORDER BY created_at DESC
-LIMIT 10;
+LIMIT 20;
 ```
 
 ### Common Issues
 
 **Issue**: `Connection refused`
-- **Solution**: Make sure server is running (`npm run start:dev`)
+- **Solution**: Start server with `npm run start:dev`
 
 **Issue**: `404 Not Found` on all requests
-- **Solution**: Check `base_url` variable is correct
+- **Solution**: Check `base_url` variable
 
-**Issue**: `500 Internal Server Error`
-- **Solution**: Check server logs for errors
-- Verify database connection in `.env` file
+**Issue**: `403 Forbidden`
+- **Solution**: Check `X-User-Role` header matches required permissions
 
-**Issue**: Data not found in database
-- **Solution**: Run SQL insert scripts first
-- Check database name matches (default: `GC_PRO`)
+**Issue**: `MISSION_NOT_FOUND` or similar
+- **Solution**: Update the ID variables with correct values from database
+
+**Issue**: Idempotency key conflicts
+- **Solution**: Change the idempotency key or use `{{$timestamp}}` for uniqueness
 
 ---
 
 ## 📚 Additional Resources
 
-- **Testing Guide**: `/docs/TESTING-PUBLISH-MISSION-API.md`
-- **Testing Guide**: `/docs/TESTING-APPROVE-SUBMISSION-API.md`
-- **API Summary**: `/docs/MISSION-APIS-SUMMARY.md`
-- **Implementation Details**: `/docs/COMPLETE-IMPLEMENTATION-SUMMARY.md`
+- **Complete Testing Guide**: `/TESTING-ALL-MISSION-APIS.md`
+- **API Summary**: `/ALL-MISSION-APIS-COMPLETE.md`
+- **Database Setup**: `/database/setup-database.sql`
+- **Test Data**: `/database/test-data-all-apis.sql`
 
 ---
 
-## 🎯 Next Steps
+## 🎯 Test Coverage Summary
 
-After testing these APIs:
-
-1. **Verify database changes** after each test
-2. **Check outbox events** to see event emission working
-3. **Test idempotency** by calling APIs twice with same key
-4. **Implement more APIs** using the same pattern (Create, Enroll, Submit, etc.)
+| API | Test Cases | Success | Errors |
+|-----|------------|---------|--------|
+| Create | 3 | ✅ | Invalid time, Permission |
+| Publish | 4 | ✅ | Idempotency, Already published, Not found |
+| Assign | 4 | ✅ (2 types) | Already assigned, Not published |
+| Submit | 3 | ✅ | Already submitted, Not owner |
+| Approve | 5 | ✅ (2 roles) | Already approved, Permission, Not found |
+| **Total** | **19** | **7** | **12** |
 
 ---
 
 **Happy Testing!** 🚀
+
+All 5 Mission APIs are ready to test with comprehensive scenarios covering success cases, error handling, permissions, and idempotency!

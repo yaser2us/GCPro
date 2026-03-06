@@ -1,27 +1,39 @@
+# gcpro.missions.v1.yml
 version: "1.0"
 spec_id: "gcpro.missions.v1"
 domain: "missions"
-plugin: "missions"
-
-ownership:
-  owner_plugin: "missions"
+owner:
+  plugin: "missions"
   owns_tables:
-    - "missions.mission"
-    - "missions.mission_enrollment"
-    - "missions.mission_submission"
-    - "missions.mission_audit"
-  cross_plugin_writes: false
-  cross_plugin_integration:
-    allowed_via:
-      - "command_api"
-      - "outbox_events"
+    # ✅ latest R5 naming (no mission_enrollment)
+    - "mission_definition"
+    - "mission_assignment"
+    - "mission_progress"
+    - "mission_submission"
+    - "mission_submission_file"
+    - "mission_reward_grant"
+    - "mission_event"
+  cross_plugin_writes_allowed: false
+
+dependencies:
+  corekit:
+    transaction: "COREKIT.Transaction.run"
+    outbox: "COREKIT.Outbox.emit"
+    audit: "COREKIT.Audit.record"
+  core_tables_readonly:
+    - "user" # missions references user_id via assignment/submission reviewer, etc.
 
 conventions:
-  workflow_discipline: ["guard", "validate", "write", "emit", "commit"]
-  status_mutation_policy: "Status fields may only be mutated by command workflows."
+  workflow_steps: ["guard", "validate", "write", "emit", "commit"]
+  status_mutation_policy: "Status fields may only be mutated via command workflows."
+  idempotency:
+    header: "Idempotency-Key"
+    scope_default: "actor_user_id + command_name + aggregate_id"
+    fingerprint_default: "hash(request_body + path_params)"
+    behavior:
+      on_replay_completed: "return_same_response"
+      on_replay_inflight: "409_conflict"
   outbox:
-    service: "COREKIT.OutboxService"
-    event_naming: "UPPER_SNAKE_CASE"
     required_envelope_fields:
       - "event_name"
       - "event_version"
@@ -31,682 +43,434 @@ conventions:
       - "occurred_at"
       - "correlation_id"
       - "causation_id"
-  idempotency:
-    service: "COREKIT.IdempotencyService"
-    required_input_field: "idempotency_key"
-    default_scope: "actor_user_id + command_name"
-    recommended_db_uniques:
-      - "core.idempotency(scope, idempotency_key)"
-  transactions:
-    wrapper: "COREKIT.Transaction.run"
-    rule: "All multi-table writes + outbox inserts must be atomic in one transaction."
 
 aggregates:
-  - name: "mission"
-    aggregate_type: "MISSION"
-    primary_key: "mission_id"
-    table: "missions.mission"
-    statuses: ["DRAFT", "PUBLISHED", "PAUSED", "RETIRED"]
+  - name: "mission_definition"
+    type: "MISSION_DEFINITION"
+    pk: "id"
+    table: "mission_definition"
+    status_values: ["draft", "published", "paused", "retired"]
 
-  - name: "enrollment"
-    aggregate_type: "MISSION_ENROLLMENT"
-    primary_key: "enrollment_id"
-    table: "missions.mission_enrollment"
-    statuses: ["ENROLLED", "SUBMITTED", "COMPLETED", "CANCELLED"]
+  - name: "mission_assignment"
+    type: "MISSION_ASSIGNMENT"
+    pk: "id"
+    table: "mission_assignment"
+    status_values: ["assigned", "in_progress", "submitted", "completed", "cancelled"]
 
-  - name: "submission"
-    aggregate_type: "MISSION_SUBMISSION"
-    primary_key: "submission_id"
-    table: "missions.mission_submission"
-    statuses: ["PENDING", "APPROVED", "REJECTED"]
+  - name: "mission_submission"
+    type: "MISSION_SUBMISSION"
+    pk: "id"
+    table: "mission_submission"
+    status_values: ["pending", "approved", "rejected", "invalidated"]
 
-types:
-  Money:
-    fields:
-      - { name: "currency", type: "string", required: true, example: "MYR" }
-      - { name: "amount_minor", type: "int64", required: true, example: 5000 }
-
-  Actor:
-    fields:
-      - { name: "actor_user_id", type: "uuid", required: true }
-      - { name: "actor_role", type: "string", required: true, example: "ADMIN" }
-
-  MissionReward:
-    fields:
-      - { name: "reward_type", type: "string", required: true, example: "FIXED" }
-      - { name: "reward_money", type: "Money", required: true }
-      - { name: "reward_reason", type: "string", required: true, example: "MISSION_COMPLETION" }
+  - name: "mission_reward_grant"
+    type: "MISSION_REWARD_GRANT"
+    pk: "id"
+    table: "mission_reward_grant"
+    status_values: ["created", "requested", "granted", "failed", "revoked"]
 
 dtos:
-  MissionCreateRequest:
+  MissionDefinitionCreateRequest:
     fields:
-      - { name: "idempotency_key", type: "string", required: true, max_len: 120 }
-      - { name: "external_ref", type: "string", required: false, max_len: 80, description: "Client-provided stable reference for dedupe/search." }
-      - { name: "title", type: "string", required: true, min_len: 3, max_len: 200 }
+      - { name: "code", type: "string", required: true, max_len: 64 }
+      - { name: "title", type: "string", required: true, max_len: 200 }
       - { name: "description", type: "string", required: false, max_len: 5000 }
-      - { name: "starts_at", type: "datetime", required: true }
-      - { name: "ends_at", type: "datetime", required: true }
-      - { name: "max_participants", type: "int32", required: false }
-      - { name: "reward", type: "MissionReward", required: true }
-      - { name: "tags", type: "string[]", required: false, max_items: 20 }
-      - { name: "visibility", type: "string", required: true, example: "PUBLIC" }
+      - { name: "cadence", type: "string", required: true, example: "one_time" }
+      - { name: "starts_at", type: "datetime", required: false }
+      - { name: "ends_at", type: "datetime", required: false }
+      - { name: "max_total", type: "int32", required: false }
+      - { name: "max_per_user", type: "int32", required: false }
+      - { name: "criteria_json", type: "json", required: false }
+      - { name: "reward_json", type: "json", required: false }
 
-  MissionPublishRequest:
-    fields:
-      - { name: "idempotency_key", type: "string", required: true, max_len: 120 }
+  MissionDefinitionPublishRequest:
+    fields: []
 
-  MissionPauseRequest:
+  MissionDefinitionPauseRequest:
     fields:
-      - { name: "idempotency_key", type: "string", required: true, max_len: 120 }
       - { name: "reason", type: "string", required: true, max_len: 300 }
 
-  MissionRetireRequest:
+  MissionAssignRequest:
     fields:
-      - { name: "idempotency_key", type: "string", required: true, max_len: 120 }
-      - { name: "reason", type: "string", required: true, max_len: 300 }
+      - { name: "user_id", type: "int64", required: true }
+      - { name: "assignment_type", type: "string", required: false, example: "self_enroll" }
 
-  MissionEnrollRequest:
+  MissionSubmitRequest:
     fields:
-      - { name: "idempotency_key", type: "string", required: true, max_len: 120 }
-
-  MissionSubmitProofRequest:
-    fields:
-      - { name: "idempotency_key", type: "string", required: true, max_len: 120 }
-      - { name: "proof_type", type: "string", required: true, example: "TEXT" }
-      - { name: "proof_payload", type: "json", required: true, description: "Proof payload; schema depends on proof_type." }
+      - { name: "text_content", type: "string", required: false, max_len: 8000 }
+      - { name: "meta_json", type: "json", required: false }
+      - { name: "file_ref_ids", type: "int64[]", required: false }
 
   MissionApproveSubmissionRequest:
     fields:
-      - { name: "idempotency_key", type: "string", required: true, max_len: 120 }
-      - { name: "approval_note", type: "string", required: false, max_len: 1000 }
+      - { name: "feedback", type: "string", required: false, max_len: 2000 }
 
   MissionRejectSubmissionRequest:
     fields:
-      - { name: "idempotency_key", type: "string", required: true, max_len: 120 }
       - { name: "rejection_reason", type: "string", required: true, max_len: 500 }
 
 events:
-  - name: "MISSION_CREATED"
-    version: 1
-    aggregate_type: "MISSION"
-    required_fields:
-      - "mission_id"
-      - "title"
-      - "starts_at"
-      - "ends_at"
-      - "reward"
-      - "visibility"
+  - { name: "MISSION_DEFINITION_CREATED", version: 1, aggregate_type: "MISSION_DEFINITION" }
+  - { name: "MISSION_DEFINITION_PUBLISHED", version: 1, aggregate_type: "MISSION_DEFINITION" }
+  - { name: "MISSION_DEFINITION_PAUSED", version: 1, aggregate_type: "MISSION_DEFINITION" }
+  - { name: "MISSION_DEFINITION_RETIRED", version: 1, aggregate_type: "MISSION_DEFINITION" }
 
-  - name: "MISSION_PUBLISHED"
-    version: 1
-    aggregate_type: "MISSION"
-    required_fields: ["mission_id"]
-
-  - name: "MISSION_PAUSED"
-    version: 1
-    aggregate_type: "MISSION"
-    required_fields: ["mission_id", "reason"]
-
-  - name: "MISSION_RETIRED"
-    version: 1
-    aggregate_type: "MISSION"
-    required_fields: ["mission_id", "reason"]
-
-  - name: "MISSION_ENROLLED"
-    version: 1
-    aggregate_type: "MISSION_ENROLLMENT"
-    required_fields: ["mission_id", "enrollment_id", "participant_user_id"]
-
-  - name: "MISSION_SUBMISSION_RECEIVED"
-    version: 1
-    aggregate_type: "MISSION_SUBMISSION"
-    required_fields: ["mission_id", "enrollment_id", "submission_id", "participant_user_id"]
-
-  - name: "MISSION_SUBMISSION_APPROVED"
-    version: 1
-    aggregate_type: "MISSION_SUBMISSION"
-    required_fields: ["mission_id", "enrollment_id", "submission_id"]
-
-  - name: "MISSION_SUBMISSION_REJECTED"
-    version: 1
-    aggregate_type: "MISSION_SUBMISSION"
-    required_fields: ["mission_id", "enrollment_id", "submission_id", "rejection_reason"]
-
-  - name: "MISSION_COMPLETED"
-    version: 1
-    aggregate_type: "MISSION_ENROLLMENT"
-    required_fields: ["mission_id", "enrollment_id", "participant_user_id"]
+  - { name: "MISSION_ASSIGNED", version: 1, aggregate_type: "MISSION_ASSIGNMENT" }
+  - { name: "MISSION_SUBMITTED", version: 1, aggregate_type: "MISSION_SUBMISSION" }
+  - { name: "MISSION_SUBMISSION_APPROVED", version: 1, aggregate_type: "MISSION_SUBMISSION" }
+  - { name: "MISSION_SUBMISSION_REJECTED", version: 1, aggregate_type: "MISSION_SUBMISSION" }
+  - { name: "MISSION_COMPLETED", version: 1, aggregate_type: "MISSION_ASSIGNMENT" }
 
   - name: "MISSION_REWARD_REQUESTED"
     version: 1
-    aggregate_type: "MISSION_ENROLLMENT"
-    required_fields:
-      - "mission_id"
-      - "enrollment_id"
-      - "participant_user_id"
-      - "reward"
-      - "reward_request_id"
-      - "reward_idempotency_key"
+    aggregate_type: "MISSION_REWARD_GRANT"
     notes:
-      - "Consumed by wallet/ledger plugin; missions plugin must not write ledger tables."
+      - "Integration event for wallet/ledger plugin. Missions must not post ledger entries directly."
 
 commands:
-  - name: "Mission.Create"
-    http: { method: "POST", path: "/v1/missions" }
-    actor:
-      required: true
-      permissions_any: ["missions:admin", "missions:manage"]
-    request_dto: "MissionCreateRequest"
+  - name: "MissionDefinition.Create"
+    http: { method: "POST", path: "/v1/missions/definitions" }
     idempotency:
-      scope: "actor_user_id + command_name"
-      key_from: "$.idempotency_key"
-      returns_previous_response_on_replay: true
-    load:
-      - name: "existing_by_external_ref"
-        optional: true
-        query:
-          table: "missions.mission"
-          where:
-            external_ref: "$.external_ref"
-    guards:
-      - expr: "$.ends_at > $.starts_at"
-        on_fail: { code: "INVALID_TIME_RANGE" }
-      - expr: "$.external_ref == null || existing_by_external_ref == null"
-        on_fail: { code: "MISSION_EXTERNAL_REF_EXISTS" }
+      scope: "actor_user_id + command_name + request.code"
+      key_from: "header:Idempotency-Key"
+      fingerprint: "hash(request_body)"
+    guard:
+      - expr: "len(request.code) > 0"
+        error: { code: "INVALID_CODE" }
+      - expr: "request.ends_at == null || request.starts_at == null || request.ends_at > request.starts_at"
+        error: { code: "INVALID_TIME_RANGE" }
     write:
       transaction: "COREKIT.Transaction.run"
       steps:
-        - name: "insert_mission"
-          action: "insert"
-          table: "missions.mission"
-          assigns:
-            mission_id: "uuid_v7()"
-            status: "DRAFT"
-            title: "$.title"
-            description: "$.description"
-            external_ref: "$.external_ref"
-            starts_at: "$.starts_at"
-            ends_at: "$.ends_at"
-            max_participants: "$.max_participants"
-            reward_json: "$.reward"
-            tags_json: "$.tags"
-            visibility: "$.visibility"
-            created_by_user_id: "actor.actor_user_id"
+        - insert:
+            table: "mission_definition"
+            assign:
+              # id is AUTO_INCREMENT in DDL; generator should read back inserted id
+              code: "request.code"
+              title: "request.title"
+              description: "request.description"
+              cadence: "request.cadence"
+              starts_at: "request.starts_at"
+              ends_at: "request.ends_at"
+              max_total: "request.max_total"
+              max_per_user: "request.max_per_user"
+              criteria_json: "request.criteria_json"
+              reward_json: "request.reward_json"
+              status: "draft"
+              created_at: "now()"
+        - derive:
+            assign:
+              mission_definition_id: "last_insert_id()"
     emit:
-      - via: "outbox"
-        event: "MISSION_CREATED"
-        aggregate_type: "MISSION"
-        aggregate_id: "insert_mission.mission_id"
-        actor_user_id: "actor.actor_user_id"
-        payload:
-          mission_id: "insert_mission.mission_id"
-          title: "$.title"
-          starts_at: "$.starts_at"
-          ends_at: "$.ends_at"
-          reward: "$.reward"
-          visibility: "$.visibility"
+      - outbox:
+          event: "MISSION_DEFINITION_CREATED"
+          aggregate_type: "MISSION_DEFINITION"
+          aggregate_id: "mission_definition_id"
+          payload:
+            id: "mission_definition_id"
+            code: "request.code"
+            title: "request.title"
+            cadence: "request.cadence"
     response:
       status: 201
-      body:
-        mission_id: "insert_mission.mission_id"
-        status: "DRAFT"
+      body: { id: "mission_definition_id", status: "draft" }
 
-  - name: "Mission.Publish"
-    http: { method: "POST", path: "/v1/missions/{mission_id}/publish" }
-    actor:
-      required: true
-      permissions_any: ["missions:admin", "missions:manage"]
-    request_dto: "MissionPublishRequest"
-    path_params:
-      - { name: "mission_id", type: "uuid", required: true }
+  - name: "MissionDefinition.Publish"
+    http: { method: "POST", path: "/v1/missions/definitions/{id}/publish" }
     idempotency:
-      scope: "actor_user_id + command_name + mission_id"
-      key_from: "$.idempotency_key"
-      returns_previous_response_on_replay: true
+      scope: "actor_user_id + command_name + path.id"
+      key_from: "header:Idempotency-Key"
+      fingerprint: "hash(path_params)"
     load:
-      - name: "mission"
-        required: true
-        query:
-          table: "missions.mission"
-          where: { mission_id: "{mission_id}" }
-    guards:
-      - expr: "mission.status == 'DRAFT' || mission.status == 'PAUSED'"
-        on_fail: { code: "MISSION_NOT_PUBLISHABLE" }
-      - expr: "now() < mission.ends_at"
-        on_fail: { code: "MISSION_ALREADY_ENDED" }
+      - defn:
+          table: "mission_definition"
+          where: { id: "path.id" }
+    guard:
+      - expr: "defn.status in ['draft','paused']"
+        error: { code: "MISSION_DEFINITION_NOT_PUBLISHABLE" }
     write:
       transaction: "COREKIT.Transaction.run"
       steps:
-        - name: "update_mission"
-          action: "update"
-          table: "missions.mission"
-          where: { mission_id: "{mission_id}" }
-          set:
-            status: "PUBLISHED"
-            published_at: "now()"
-            updated_by_user_id: "actor.actor_user_id"
+        - update:
+            table: "mission_definition"
+            where: { id: "path.id" }
+            set:
+              status: "published"
+              published_at: "now()"
     emit:
-      - via: "outbox"
-        event: "MISSION_PUBLISHED"
-        aggregate_type: "MISSION"
-        aggregate_id: "{mission_id}"
-        actor_user_id: "actor.actor_user_id"
-        payload:
-          mission_id: "{mission_id}"
+      - outbox:
+          event: "MISSION_DEFINITION_PUBLISHED"
+          aggregate_type: "MISSION_DEFINITION"
+          aggregate_id: "path.id"
+          payload: { id: "path.id" }
     response:
       status: 200
-      body: { mission_id: "{mission_id}", status: "PUBLISHED" }
+      body: { id: "path.id", status: "published" }
 
-  - name: "Mission.Pause"
-    http: { method: "POST", path: "/v1/missions/{mission_id}/pause" }
-    actor:
-      required: true
-      permissions_any: ["missions:admin", "missions:manage"]
-    request_dto: "MissionPauseRequest"
-    path_params:
-      - { name: "mission_id", type: "uuid", required: true }
+  - name: "Mission.Assign"
+    http: { method: "POST", path: "/v1/missions/definitions/{definition_id}/assign" }
     idempotency:
-      scope: "actor_user_id + command_name + mission_id"
-      key_from: "$.idempotency_key"
+      scope: "actor_user_id + command_name + path.definition_id + request.user_id"
+      key_from: "header:Idempotency-Key"
+      fingerprint: "hash(path_params + request_body)"
     load:
-      - name: "mission"
-        required: true
-        query: { table: "missions.mission", where: { mission_id: "{mission_id}" } }
-    guards:
-      - expr: "mission.status == 'PUBLISHED'"
-        on_fail: { code: "MISSION_NOT_PAUSABLE" }
-    write:
-      transaction: "COREKIT.Transaction.run"
-      steps:
-        - name: "pause_mission"
-          action: "update"
-          table: "missions.mission"
-          where: { mission_id: "{mission_id}" }
-          set:
-            status: "PAUSED"
-            pause_reason: "$.reason"
-            paused_at: "now()"
-            updated_by_user_id: "actor.actor_user_id"
-    emit:
-      - via: "outbox"
-        event: "MISSION_PAUSED"
-        aggregate_type: "MISSION"
-        aggregate_id: "{mission_id}"
-        actor_user_id: "actor.actor_user_id"
-        payload:
-          mission_id: "{mission_id}"
-          reason: "$.reason"
-    response:
-      status: 200
-      body: { mission_id: "{mission_id}", status: "PAUSED" }
-
-  - name: "Mission.Retire"
-    http: { method: "POST", path: "/v1/missions/{mission_id}/retire" }
-    actor:
-      required: true
-      permissions_any: ["missions:admin", "missions:manage"]
-    request_dto: "MissionRetireRequest"
-    path_params:
-      - { name: "mission_id", type: "uuid", required: true }
-    idempotency:
-      scope: "actor_user_id + command_name + mission_id"
-      key_from: "$.idempotency_key"
-    load:
-      - name: "mission"
-        required: true
-        query: { table: "missions.mission", where: { mission_id: "{mission_id}" } }
-    guards:
-      - expr: "mission.status != 'RETIRED'"
-        on_fail: { code: "MISSION_ALREADY_RETIRED" }
-    write:
-      transaction: "COREKIT.Transaction.run"
-      steps:
-        - name: "retire_mission"
-          action: "update"
-          table: "missions.mission"
-          where: { mission_id: "{mission_id}" }
-          set:
-            status: "RETIRED"
-            retire_reason: "$.reason"
-            retired_at: "now()"
-            updated_by_user_id: "actor.actor_user_id"
-    emit:
-      - via: "outbox"
-        event: "MISSION_RETIRED"
-        aggregate_type: "MISSION"
-        aggregate_id: "{mission_id}"
-        actor_user_id: "actor.actor_user_id"
-        payload:
-          mission_id: "{mission_id}"
-          reason: "$.reason"
-    response:
-      status: 200
-      body: { mission_id: "{mission_id}", status: "RETIRED" }
-
-  - name: "Mission.Enroll"
-    http: { method: "POST", path: "/v1/missions/{mission_id}/enroll" }
-    actor:
-      required: true
-      permissions_any: ["missions:enroll", "missions:participant"]
-    request_dto: "MissionEnrollRequest"
-    path_params:
-      - { name: "mission_id", type: "uuid", required: true }
-    idempotency:
-      scope: "actor_user_id + command_name + mission_id"
-      key_from: "$.idempotency_key"
-      returns_previous_response_on_replay: true
-    load:
-      - name: "mission"
-        required: true
-        query: { table: "missions.mission", where: { mission_id: "{mission_id}" } }
-      - name: "existing_enrollment"
-        optional: true
-        query:
-          table: "missions.mission_enrollment"
+      - defn:
+          table: "mission_definition"
+          where: { id: "path.definition_id" }
+      - existing:
+          table: "mission_assignment"
           where:
-            mission_id: "{mission_id}"
-            participant_user_id: "actor.actor_user_id"
-    guards:
-      - expr: "mission.status == 'PUBLISHED'"
-        on_fail: { code: "MISSION_NOT_OPEN" }
-      - expr: "now() >= mission.starts_at && now() <= mission.ends_at"
-        on_fail: { code: "MISSION_NOT_IN_WINDOW" }
-      - expr: "existing_enrollment == null"
-        on_fail: { code: "ALREADY_ENROLLED" }
+            mission_id: "path.definition_id"
+            user_id: "request.user_id"
+          optional: true
+    guard:
+      - expr: "defn.status == 'published'"
+        error: { code: "MISSION_NOT_OPEN" }
+      - expr: "existing == null"
+        error: { code: "ALREADY_ASSIGNED" }
     write:
       transaction: "COREKIT.Transaction.run"
       steps:
-        - name: "insert_enrollment"
-          action: "insert"
-          table: "missions.mission_enrollment"
-          assigns:
-            enrollment_id: "uuid_v7()"
-            mission_id: "{mission_id}"
-            participant_user_id: "actor.actor_user_id"
-            status: "ENROLLED"
-            enrolled_at: "now()"
+        - derive:
+            assign:
+              assignment_dedupe_key: "coalesce(header('Idempotency-Key'), concat('mission_assign:', path.definition_id, ':', request.user_id))"
+        - insert:
+            table: "mission_assignment"
+            assign:
+              mission_id: "path.definition_id"
+              user_id: "request.user_id"
+              status: "assigned"
+              idempotency_key: "assignment_dedupe_key"
+              assigned_at: "now()"
+              created_at: "now()"
+        - derive:
+            assign:
+              assignment_id: "last_insert_id()"
+        - insert:
+            table: "mission_event"
+            assign:
+              assignment_id: "assignment_id"
+              event_type: "assigned"
+              payload_json:
+                assignment_type: "request.assignment_type"
+              occurred_at: "now()"
+              created_at: "now()"
     emit:
-      - via: "outbox"
-        event: "MISSION_ENROLLED"
-        aggregate_type: "MISSION_ENROLLMENT"
-        aggregate_id: "insert_enrollment.enrollment_id"
-        actor_user_id: "actor.actor_user_id"
-        payload:
-          mission_id: "{mission_id}"
-          enrollment_id: "insert_enrollment.enrollment_id"
-          participant_user_id: "actor.actor_user_id"
+      - outbox:
+          event: "MISSION_ASSIGNED"
+          aggregate_type: "MISSION_ASSIGNMENT"
+          aggregate_id: "assignment_id"
+          payload:
+            assignment_id: "assignment_id"
+            mission_definition_id: "path.definition_id"
+            user_id: "request.user_id"
     response:
       status: 201
-      body:
-        enrollment_id: "insert_enrollment.enrollment_id"
-        mission_id: "{mission_id}"
-        status: "ENROLLED"
+      body: { assignment_id: "assignment_id", status: "assigned" }
 
-  - name: "Mission.SubmitProof"
-    http: { method: "POST", path: "/v1/missions/{mission_id}/submissions" }
-    actor:
-      required: true
-      permissions_any: ["missions:enroll", "missions:participant"]
-    request_dto: "MissionSubmitProofRequest"
-    path_params:
-      - { name: "mission_id", type: "uuid", required: true }
+  - name: "Mission.Submit"
+    http: { method: "POST", path: "/v1/missions/assignments/{assignment_id}/submit" }
     idempotency:
-      scope: "actor_user_id + command_name + mission_id"
-      key_from: "$.idempotency_key"
-      returns_previous_response_on_replay: true
+      scope: "actor_user_id + command_name + path.assignment_id"
+      key_from: "header:Idempotency-Key"
+      fingerprint: "hash(path_params + request_body)"
     load:
-      - name: "mission"
-        required: true
-        query: { table: "missions.mission", where: { mission_id: "{mission_id}" } }
-      - name: "enrollment"
-        required: true
-        query:
-          table: "missions.mission_enrollment"
-          where:
-            mission_id: "{mission_id}"
-            participant_user_id: "actor.actor_user_id"
-    guards:
-      - expr: "mission.status == 'PUBLISHED'"
-        on_fail: { code: "MISSION_NOT_OPEN" }
-      - expr: "enrollment.status == 'ENROLLED' || enrollment.status == 'SUBMITTED'"
-        on_fail: { code: "ENROLLMENT_NOT_SUBMITTABLE" }
+      - asg:
+          table: "mission_assignment"
+          where: { id: "path.assignment_id" }
+      - existing_submission:
+          table: "mission_submission"
+          where: { assignment_id: "path.assignment_id" }
+          optional: true
+    guard:
+      - expr: "asg.user_id == actor.user_id"
+        error: { code: "NOT_OWNER" }
+      - expr: "asg.status in ['assigned','in_progress','submitted']"
+        error: { code: "ASSIGNMENT_NOT_SUBMITTABLE" }
+      - expr: "existing_submission == null"
+        error: { code: "ALREADY_SUBMITTED" }
     write:
       transaction: "COREKIT.Transaction.run"
       steps:
-        - name: "insert_submission"
-          action: "insert"
-          table: "missions.mission_submission"
-          assigns:
-            submission_id: "uuid_v7()"
-            mission_id: "{mission_id}"
-            enrollment_id: "enrollment.enrollment_id"
-            participant_user_id: "actor.actor_user_id"
-            status: "PENDING"
-            proof_type: "$.proof_type"
-            proof_payload_json: "$.proof_payload"
-            submitted_at: "now()"
-        - name: "update_enrollment_status"
-          action: "update"
-          table: "missions.mission_enrollment"
-          where: { enrollment_id: "enrollment.enrollment_id" }
-          set:
-            status: "SUBMITTED"
-            last_submission_id: "insert_submission.submission_id"
-            updated_at: "now()"
+        - derive:
+            assign:
+              submission_dedupe_key: "coalesce(header('Idempotency-Key'), concat('mission_submit:', path.assignment_id))"
+        - insert:
+            table: "mission_submission"
+            assign:
+              assignment_id: "path.assignment_id"
+              text_content: "request.text_content"
+              meta_json: "request.meta_json"
+              status: "pending"
+              idempotency_key: "submission_dedupe_key"
+              submitted_at: "now()"
+              created_at: "now()"
+        - derive:
+            assign:
+              submission_id: "last_insert_id()"
+        - foreach:
+            over: "request.file_ref_ids"
+            as: "file_ref_id"
+            steps:
+              - insert:
+                  table: "mission_submission_file"
+                  assign:
+                    submission_id: "submission_id"
+                    file_ref_id: "file_ref_id"
+                    created_at: "now()"
+        - update:
+            table: "mission_assignment"
+            where: { id: "path.assignment_id" }
+            set:
+              status: "submitted"
+              updated_at: "now()"
+        - insert:
+            table: "mission_event"
+            assign:
+              assignment_id: "path.assignment_id"
+              event_type: "submitted"
+              payload_json:
+                submission_id: "submission_id"
+              occurred_at: "now()"
+              created_at: "now()"
     emit:
-      - via: "outbox"
-        event: "MISSION_SUBMISSION_RECEIVED"
-        aggregate_type: "MISSION_SUBMISSION"
-        aggregate_id: "insert_submission.submission_id"
-        actor_user_id: "actor.actor_user_id"
-        payload:
-          mission_id: "{mission_id}"
-          enrollment_id: "enrollment.enrollment_id"
-          submission_id: "insert_submission.submission_id"
-          participant_user_id: "actor.actor_user_id"
+      - outbox:
+          event: "MISSION_SUBMITTED"
+          aggregate_type: "MISSION_SUBMISSION"
+          aggregate_id: "submission_id"
+          payload:
+            submission_id: "submission_id"
+            assignment_id: "path.assignment_id"
+            user_id: "actor.user_id"
     response:
       status: 201
-      body:
-        submission_id: "insert_submission.submission_id"
-        enrollment_id: "enrollment.enrollment_id"
-        status: "PENDING"
+      body: { submission_id: "submission_id", status: "pending" }
 
   - name: "Mission.ApproveSubmission"
-    http: { method: "POST", path: "/v1/missions/{mission_id}/submissions/{submission_id}/approve" }
-    actor:
-      required: true
-      permissions_any: ["missions:admin", "missions:review"]
-    request_dto: "MissionApproveSubmissionRequest"
-    path_params:
-      - { name: "mission_id", type: "uuid", required: true }
-      - { name: "submission_id", type: "uuid", required: true }
+    http: { method: "POST", path: "/v1/missions/submissions/{submission_id}/approve" }
     idempotency:
-      scope: "actor_user_id + command_name + submission_id"
-      key_from: "$.idempotency_key"
-      returns_previous_response_on_replay: true
+      scope: "actor_user_id + command_name + path.submission_id"
+      key_from: "header:Idempotency-Key"
+      fingerprint: "hash(path_params + request_body)"
     load:
-      - name: "mission"
-        required: true
-        query: { table: "missions.mission", where: { mission_id: "{mission_id}" } }
-      - name: "submission"
-        required: true
-        query:
-          table: "missions.mission_submission"
-          where:
-            submission_id: "{submission_id}"
-            mission_id: "{mission_id}"
-      - name: "enrollment"
-        required: true
-        query:
-          table: "missions.mission_enrollment"
-          where:
-            enrollment_id: "submission.enrollment_id"
-    guards:
-      - expr: "submission.status == 'PENDING'"
-        on_fail: { code: "SUBMISSION_NOT_APPROVABLE" }
-      - expr: "enrollment.status == 'SUBMITTED'"
-        on_fail: { code: "ENROLLMENT_NOT_COMPLETABLE" }
+      - sub:
+          table: "mission_submission"
+          where: { id: "path.submission_id" }
+      - asg:
+          table: "mission_assignment"
+          where: { id: "sub.assignment_id" }
+      - defn:
+          table: "mission_definition"
+          where: { id: "asg.mission_id" }
+      - existing_grant:
+          table: "mission_reward_grant"
+          where: { assignment_id: "asg.id" }
+          optional: true
+    guard:
+      - expr: "sub.status == 'pending'"
+        error: { code: "SUBMISSION_NOT_APPROVABLE" }
     write:
       transaction: "COREKIT.Transaction.run"
       steps:
-        - name: "approve_submission"
-          action: "update"
-          table: "missions.mission_submission"
-          where: { submission_id: "{submission_id}" }
-          set:
-            status: "APPROVED"
-            approved_at: "now()"
-            approved_by_user_id: "actor.actor_user_id"
-            approval_note: "$.approval_note"
-        - name: "complete_enrollment"
-          action: "update"
-          table: "missions.mission_enrollment"
-          where: { enrollment_id: "enrollment.enrollment_id" }
-          set:
-            status: "COMPLETED"
-            completed_at: "now()"
-            updated_at: "now()"
-        - name: "derive_reward_request"
-          action: "derive"
-          assigns:
-            reward_request_id: "uuid_v7()"
-            reward_idempotency_key: "concat('mission_reward:', enrollment.enrollment_id)"
+        - update:
+            table: "mission_submission"
+            where: { id: "path.submission_id" }
+            set:
+              status: "approved"
+              reviewed_by_user_id: "actor.user_id"
+              feedback: "request.feedback"
+              reviewed_at: "now()"
+        - update:
+            table: "mission_assignment"
+            where: { id: "asg.id" }
+            set:
+              status: "completed"
+              completed_at: "now()"
+              updated_at: "now()"
+        - derive:
+            assign:
+              reward_dedupe_key: "concat('mission_reward:', asg.id)"
+        - if:
+            expr: "existing_grant == null"
+            steps:
+              - insert:
+                  table: "mission_reward_grant"
+                  assign:
+                    assignment_id: "asg.id"
+                    reward_type: "json_get(defn.reward_json,'reward_type')"
+                    amount: "json_get(defn.reward_json,'amount')"
+                    currency: "coalesce(json_get(defn.reward_json,'currency'),'MYR')"
+                    status: "requested"
+                    idempotency_key: "reward_dedupe_key"
+                    created_at: "now()"
+              - derive:
+                  assign:
+                    reward_grant_id: "last_insert_id()"
+        - insert:
+            table: "mission_event"
+            assign:
+              assignment_id: "asg.id"
+              event_type: "approved"
+              payload_json:
+                submission_id: "path.submission_id"
+                reward_grant_id: "coalesce(reward_grant_id, existing_grant.id)"
+              occurred_at: "now()"
+              created_at: "now()"
     emit:
-      - via: "outbox"
-        event: "MISSION_SUBMISSION_APPROVED"
-        aggregate_type: "MISSION_SUBMISSION"
-        aggregate_id: "{submission_id}"
-        actor_user_id: "actor.actor_user_id"
-        payload:
-          mission_id: "{mission_id}"
-          enrollment_id: "enrollment.enrollment_id"
-          submission_id: "{submission_id}"
-      - via: "outbox"
-        event: "MISSION_COMPLETED"
-        aggregate_type: "MISSION_ENROLLMENT"
-        aggregate_id: "enrollment.enrollment_id"
-        actor_user_id: "actor.actor_user_id"
-        payload:
-          mission_id: "{mission_id}"
-          enrollment_id: "enrollment.enrollment_id"
-          participant_user_id: "enrollment.participant_user_id"
-      - via: "outbox"
-        event: "MISSION_REWARD_REQUESTED"
-        aggregate_type: "MISSION_ENROLLMENT"
-        aggregate_id: "enrollment.enrollment_id"
-        actor_user_id: "actor.actor_user_id"
-        dedupe_key: "derive_reward_request.reward_idempotency_key"
-        payload:
-          mission_id: "{mission_id}"
-          enrollment_id: "enrollment.enrollment_id"
-          participant_user_id: "enrollment.participant_user_id"
-          reward: "mission.reward_json"
-          reward_request_id: "derive_reward_request.reward_request_id"
-          reward_idempotency_key: "derive_reward_request.reward_idempotency_key"
+      - outbox:
+          event: "MISSION_SUBMISSION_APPROVED"
+          aggregate_type: "MISSION_SUBMISSION"
+          aggregate_id: "path.submission_id"
+          payload:
+            submission_id: "path.submission_id"
+            assignment_id: "asg.id"
+            reviewed_by_user_id: "actor.user_id"
+      - outbox:
+          event: "MISSION_COMPLETED"
+          aggregate_type: "MISSION_ASSIGNMENT"
+          aggregate_id: "asg.id"
+          payload:
+            assignment_id: "asg.id"
+            mission_definition_id: "asg.mission_id"
+            user_id: "asg.user_id"
+      - outbox:
+          event: "MISSION_REWARD_REQUESTED"
+          aggregate_type: "MISSION_REWARD_GRANT"
+          aggregate_id: "coalesce(reward_grant_id, existing_grant.id)"
+          dedupe_key: "reward_dedupe_key"
+          payload:
+            reward_grant_id: "coalesce(reward_grant_id, existing_grant.id)"
+            assignment_id: "asg.id"
+            mission_definition_id: "asg.mission_id"
+            user_id: "asg.user_id"
+            reward_json: "defn.reward_json"
+            idempotency_key: "reward_dedupe_key"
     response:
       status: 200
       body:
-        submission_id: "{submission_id}"
-        submission_status: "APPROVED"
-        enrollment_id: "enrollment.enrollment_id"
-        enrollment_status: "COMPLETED"
-
-  - name: "Mission.RejectSubmission"
-    http: { method: "POST", path: "/v1/missions/{mission_id}/submissions/{submission_id}/reject" }
-    actor:
-      required: true
-      permissions_any: ["missions:admin", "missions:review"]
-    request_dto: "MissionRejectSubmissionRequest"
-    path_params:
-      - { name: "mission_id", type: "uuid", required: true }
-      - { name: "submission_id", type: "uuid", required: true }
-    idempotency:
-      scope: "actor_user_id + command_name + submission_id"
-      key_from: "$.idempotency_key"
-      returns_previous_response_on_replay: true
-    load:
-      - name: "submission"
-        required: true
-        query:
-          table: "missions.mission_submission"
-          where:
-            submission_id: "{submission_id}"
-            mission_id: "{mission_id}"
-      - name: "enrollment"
-        required: true
-        query:
-          table: "missions.mission_enrollment"
-          where:
-            enrollment_id: "submission.enrollment_id"
-    guards:
-      - expr: "submission.status == 'PENDING'"
-        on_fail: { code: "SUBMISSION_NOT_REJECTABLE" }
-    write:
-      transaction: "COREKIT.Transaction.run"
-      steps:
-        - name: "reject_submission"
-          action: "update"
-          table: "missions.mission_submission"
-          where: { submission_id: "{submission_id}" }
-          set:
-            status: "REJECTED"
-            rejected_at: "now()"
-            rejected_by_user_id: "actor.actor_user_id"
-            rejection_reason: "$.rejection_reason"
-        - name: "reopen_enrollment"
-          action: "update"
-          table: "missions.mission_enrollment"
-          where: { enrollment_id: "enrollment.enrollment_id" }
-          set:
-            status: "ENROLLED"
-            updated_at: "now()"
-    emit:
-      - via: "outbox"
-        event: "MISSION_SUBMISSION_REJECTED"
-        aggregate_type: "MISSION_SUBMISSION"
-        aggregate_id: "{submission_id}"
-        actor_user_id: "actor.actor_user_id"
-        payload:
-          mission_id: "{mission_id}"
-          enrollment_id: "enrollment.enrollment_id"
-          submission_id: "{submission_id}"
-          rejection_reason: "$.rejection_reason"
-    response:
-      status: 200
-      body:
-        submission_id: "{submission_id}"
-        submission_status: "REJECTED"
-        enrollment_id: "enrollment.enrollment_id"
-        enrollment_status: "ENROLLED"
+        submission_id: "path.submission_id"
+        submission_status: "approved"
+        assignment_id: "asg.id"
+        assignment_status: "completed"
+        reward_grant_id: "coalesce(reward_grant_id, existing_grant.id)"
+        reward_status: "requested"
 
 codegen:
   language: "typescript"
   framework: "nestjs"
-  outputs:
+  example_generated_outputs:
     dtos:
-      - "src/plugins/missions/dto/mission-create.request.dto.ts"
-      - "src/plugins/missions/dto/mission-publish.request.dto.ts"
-      - "src/plugins/missions/dto/mission-enroll.request.dto.ts"
-      - "src/plugins/missions/dto/mission-submit-proof.request.dto.ts"
-      - "src/plugins/missions/dto/mission-approve-submission.request.dto.ts"
-      - "src/plugins/missions/dto/mission-reject-submission.request.dto.ts"
+      - "src/plugins/missions/dto/mission-definition-create.request.generated.ts"
+      - "src/plugins/missions/dto/mission-assign.request.generated.ts"
+      - "src/plugins/missions/dto/mission-submit.request.generated.ts"
+      - "src/plugins/missions/dto/mission-approve-submission.request.generated.ts"
     controllers:
-      - "src/plugins/missions/controllers/missions.controller.ts"
+      - "src/plugins/missions/controllers/missions.commands.controller.generated.ts"
     services:
-      - "src/plugins/missions/services/missions.workflow.service.ts"
-      - "src/plugins/missions/services/missions.read.service.ts"
-    repositories:
-      - "src/plugins/missions/repositories/missions.repo.ts"
-      - "src/plugins/missions/repositories/enrollments.repo.ts"
-      - "src/plugins/missions/repositories/submissions.repo.ts"
-    module:
-      - "src/plugins/missions/missions.module.ts"
+      - "src/plugins/missions/services/missions.workflow.service.generated.ts"
     tests:
-      - "test/missions/mission.create.e2e.spec.ts"
-      - "test/missions/mission.enroll.e2e.spec.ts"
-      - "test/missions/mission.submit-proof.e2e.spec.ts"
-      - "test/missions/mission.approve-submission.e2e.spec.ts"
+      - "test/missions/mission-definition.create.e2e.generated.spec.ts"
+      - "test/missions/mission.submit.e2e.generated.spec.ts"
+      - "test/missions/mission.approve-submission.e2e.generated.spec.ts"
     openapi:
       - "openapi/missions.v1.generated.yaml"
-    sdk:
-      - "sdk/typescript/missions.client.generated.ts"

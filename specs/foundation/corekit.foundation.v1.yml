@@ -1,0 +1,234 @@
+version: 1
+spec_id: corekit.foundation.v1
+domain: corekit
+kind: foundation
+description: >
+  Core execution kernel used by all pillars. Defines transaction handling,
+  domain error semantics, guard behavior, idempotency rules, outbox emission,
+  and workflow step model used by codegen.
+
+ownership:
+  owner_plugin: corekit
+  owns_tables: []
+  cross_plugin_writes: false
+  notes:
+    - COREKIT does not own business tables
+    - business plugins must not reimplement core primitives
+
+conventions:
+
+  transaction:
+    rule: >
+      Every workflow command must execute inside exactly one database transaction.
+      External calls must not occur inside the transaction boundary.
+
+  domain_error:
+    rule: >
+      All business validation failures must throw DomainError.
+      No raw framework exceptions should leak to API responses.
+
+  guard:
+    rule: >
+      Guard statements enforce business conditions.
+      Guards must be compiled at codegen time and must not use runtime eval.
+
+  idempotency:
+    rule: >
+      Idempotency must be enforced using database constraints.
+      Application-only deduplication logic is not allowed.
+
+    strategies:
+      - unique_idempotency_key
+      - unique_parent_constraint
+      - mysql_on_duplicate_key_last_insert_id
+
+  outbox:
+    rule: >
+      All state-changing commands must emit outbox events.
+      Outbox rows must be written in the same transaction as domain writes.
+
+    table: outbox_event
+
+  controller_rules:
+    rules:
+      - controllers contain no business logic
+      - services orchestrate workflows
+      - repositories only execute SQL
+
+step_model:
+
+  description: >
+    Allowed workflow step primitives used by generated command services.
+
+  step_types:
+
+    - kind: read
+      description: read rows from database
+      required:
+        - table
+        - where
+
+    - kind: insert
+      description: insert row into table
+      required:
+        - table
+        - values
+
+    - kind: update
+      description: update rows
+      required:
+        - table
+        - set
+        - where
+
+    - kind: upsert
+      description: insert or update using unique key
+      required:
+        - table
+        - values
+        - conflict_key
+
+    - kind: count
+      description: count rows for guard conditions
+      required:
+        - table
+        - where
+
+    - kind: guard
+      description: enforce condition
+      required:
+        - expr
+        - error_code
+
+    - kind: when
+      description: conditional branch
+      required:
+        - condition
+        - steps
+
+    - kind: outbox_emit
+      description: emit outbox event
+      required:
+        - event
+        - aggregate_type
+        - aggregate_id
+
+    - kind: hook
+      description: call local extension logic
+      required:
+        - name
+
+    - kind: call
+      description: invoke another plugin command API
+      required:
+        - service
+        - command
+
+types:
+
+  Actor:
+    fields:
+      id: string
+      type: string
+      roles: array
+
+  DomainError:
+    fields:
+      code: string
+      message: string
+      status: number
+
+  OutboxEventEnvelope:
+    fields:
+      id: uuid
+      event_name: string
+      aggregate_type: string
+      aggregate_id: string
+      payload: json
+      created_at: timestamp
+
+  IdempotencyInput:
+    fields:
+      idempotency_key: string
+      actor_id: string
+      request_hash: string
+
+  StepContext:
+    fields:
+      actor: Actor
+      input: json
+      state: json
+
+events:
+
+  description: >
+    COREKIT does not define business events but defines the envelope
+    and validation rules for events emitted by plugins.
+
+  envelope_required_fields:
+    - event_name
+    - aggregate_type
+    - aggregate_id
+    - payload
+    - created_at
+
+commands:
+
+  description: >
+    These commands represent generation targets for base infrastructure
+    artifacts rather than HTTP APIs.
+
+  - name: Corekit.Generate.TransactionWrapper
+    output: src/corekit/tx.ts
+
+  - name: Corekit.Generate.DomainError
+    output: src/corekit/errors.ts
+
+  - name: Corekit.Generate.Guard
+    output: src/corekit/guard.ts
+
+  - name: Corekit.Generate.OutboxTypes
+    output: src/corekit/outbox/outbox.types.ts
+
+  - name: Corekit.Generate.OutboxService
+    output: src/corekit/outbox/outbox.service.ts
+
+  - name: Corekit.Generate.IdempotencyUtil
+    output: src/corekit/idempotency/idem.util.ts
+
+  - name: Corekit.Generate.StepTypes
+    output: src/corekit/steps/step.types.ts
+
+  - name: Corekit.Generate.StepContext
+    output: src/corekit/steps/step.context.ts
+
+  - name: Corekit.Generate.StepRunnerShell
+    output: src/corekit/steps/step.runner.ts
+
+coverage:
+
+  guarantees:
+    - all pillars must use withTxn
+    - all workflow errors must be DomainError
+    - all state mutations emit outbox events
+    - idempotency must rely on DB constraints
+
+  validation_rules:
+    - reject workflow commands without transaction
+    - reject event emission outside transaction
+    - reject direct status updates outside commands
+
+codegen:
+
+  targets:
+    - nestjs
+    - typescript
+
+  artifacts:
+    - transaction wrapper
+    - domain error base class
+    - guard utility
+    - outbox service
+    - idempotency utilities
+    - workflow step types
+    - step runner shell

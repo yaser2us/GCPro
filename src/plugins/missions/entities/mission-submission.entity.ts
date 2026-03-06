@@ -1,75 +1,47 @@
-import {
-  Entity,
-  Column,
-  PrimaryColumn,
-  CreateDateColumn,
-  UpdateDateColumn,
-  Index,
-  ManyToOne,
-  JoinColumn,
-} from 'typeorm';
-import { MissionEnrollment } from './mission-enrollment.entity';
+import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
 /**
- * Mission submission entity - proof submitted by user
- * Based on mission.pillar.yml aggregate 'submission'
- * Table: missions.mission_submission
+ * MissionSubmission Entity
+ * Maps to: mission_submission table
+ * Source: docs/database/mission-DDL.md
+ *
+ * Purpose: User submission with review workflow and feedback
  */
-@Entity('mission_submission', { schema: 'missions' })
-@Index(['mission_id', 'enrollment_id'])
-@Index(['participant_user_id'])
-@Index(['status'])
+@Entity('mission_submission')
 export class MissionSubmission {
-  @PrimaryColumn('uuid')
-  submission_id: string;
+  @PrimaryGeneratedColumn({ type: 'bigint', unsigned: true })
+  id: number;
 
-  @Column('uuid')
-  mission_id: string;
+  @Column({ type: 'bigint', unsigned: true })
+  assignment_id: number;
 
-  @Column('uuid')
-  enrollment_id: string;
-
-  @Column({ type: 'varchar', length: 120 })
-  participant_user_id: string;
-
-  @Column({ type: 'varchar', length: 16, default: 'PENDING' })
-  status: 'PENDING' | 'APPROVED' | 'REJECTED';
-
-  @Column({ type: 'varchar', length: 32 })
-  proof_type: string; // TEXT, IMAGE, URL, etc.
-
-  @Column({ type: 'json' })
-  proof_payload_json: any;
-
-  @Column({ type: 'timestamp' })
-  submitted_at: Date;
-
-  @Column({ type: 'timestamp', nullable: true })
-  approved_at?: Date;
-
-  @Column({ type: 'varchar', length: 120, nullable: true })
-  approved_by_user_id?: string;
+  @Column({ type: 'varchar', length: 24, default: 'draft' })
+  status: 'draft' | 'pending' | 'approved' | 'rejected' | 'invalidated';
 
   @Column({ type: 'text', nullable: true })
-  approval_note?: string;
+  text_content: string | null;
 
-  @Column({ type: 'timestamp', nullable: true })
-  rejected_at?: Date;
+  @Column({ type: 'json', nullable: true })
+  meta_json: any | null;
 
-  @Column({ type: 'varchar', length: 120, nullable: true })
-  rejected_by_user_id?: string;
+  @Column({ type: 'text', nullable: true })
+  feedback: string | null;
 
-  @Column({ type: 'varchar', length: 500, nullable: true })
-  rejection_reason?: string;
+  @Column({ type: 'bigint', unsigned: true, nullable: true })
+  reviewed_by_user_id: number | null;
 
-  @CreateDateColumn()
+  @Column({ type: 'datetime', nullable: true })
+  reviewed_at: Date | null;
+
+  @Column({ type: 'varchar', length: 128, nullable: true, unique: true })
+  idempotency_key: string | null;
+
+  @Column({ type: 'datetime', nullable: true })
+  submitted_at: Date | null;
+
+  @CreateDateColumn({ type: 'datetime' })
   created_at: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ type: 'datetime' })
   updated_at: Date;
-
-  // Relations
-  @ManyToOne(() => MissionEnrollment)
-  @JoinColumn({ name: 'enrollment_id' })
-  enrollment: MissionEnrollment;
 }

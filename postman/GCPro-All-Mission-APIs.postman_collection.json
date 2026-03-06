@@ -1,0 +1,789 @@
+{
+	"info": {
+		"_postman_id": "mission-apis-complete",
+		"name": "GCPro - All Mission APIs",
+		"description": "Complete test collection for all 5 Mission APIs",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. MissionDefinition.Create",
+			"item": [
+				{
+					"name": "Create Mission - Success",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{admin_user_id}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "create-{{$timestamp}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"code\": \"MISSION_{{$timestamp}}\",\n  \"title\": \"Complete 5 Policy Applications\",\n  \"description\": \"Submit and get approved for 5 policy applications to earn rewards\",\n  \"cadence\": \"one_time\",\n  \"max_per_user\": 1,\n  \"reward_json\": {\n    \"reward_type\": \"FIXED\",\n    \"amount\": 50,\n    \"currency\": \"MYR\"\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/missions/definitions",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "missions", "definitions"]
+						},
+						"description": "Creates a new mission in DRAFT status"
+					},
+					"response": []
+				},
+				{
+					"name": "Create Mission - Invalid Time Range",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{admin_user_id}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "create-bad-time-{{$timestamp}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"code\": \"BAD_TIME_{{$timestamp}}\",\n  \"title\": \"Test Mission\",\n  \"cadence\": \"one_time\",\n  \"starts_at\": \"2024-12-31T00:00:00Z\",\n  \"ends_at\": \"2024-01-01T00:00:00Z\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/missions/definitions",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "missions", "definitions"]
+						},
+						"description": "Should fail with INVALID_TIME_RANGE"
+					},
+					"response": []
+				},
+				{
+					"name": "Create Mission - Permission Denied",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "user-456"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "USER"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "create-denied-{{$timestamp}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"code\": \"DENIED_{{$timestamp}}\",\n  \"title\": \"Test Mission\",\n  \"cadence\": \"one_time\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/missions/definitions",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "missions", "definitions"]
+						},
+						"description": "Should fail with 403 Forbidden"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "2. MissionDefinition.Publish",
+			"item": [
+				{
+					"name": "Publish Mission - Success",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{admin_user_id}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "publish-{{$timestamp}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/missions/definitions/{{draft_mission_id}}/publish",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "missions", "definitions", "{{draft_mission_id}}", "publish"]
+						},
+						"description": "Publishes a draft mission"
+					},
+					"response": []
+				},
+				{
+					"name": "Publish Mission - Idempotency Test",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{admin_user_id}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "publish-idempotent-test"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/missions/definitions/{{draft_mission_id}}/publish",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "missions", "definitions", "{{draft_mission_id}}", "publish"]
+						},
+						"description": "Call twice with same idempotency key - should return same response"
+					},
+					"response": []
+				},
+				{
+					"name": "Publish Mission - Already Published",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{admin_user_id}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "publish-already-{{$timestamp}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/missions/definitions/{{published_mission_id}}/publish",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "missions", "definitions", "{{published_mission_id}}", "publish"]
+						},
+						"description": "Should fail with MISSION_DEFINITION_NOT_PUBLISHABLE"
+					},
+					"response": []
+				},
+				{
+					"name": "Publish Mission - Not Found",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{admin_user_id}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "publish-notfound-{{$timestamp}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/missions/definitions/999999/publish",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "missions", "definitions", "999999", "publish"]
+						},
+						"description": "Should fail with 404 Not Found"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "3. Mission.Assign",
+			"item": [
+				{
+					"name": "Assign Mission - Success (Self Enroll)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "999"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "USER"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "assign-{{$timestamp}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"user_id\": 999,\n  \"assignment_type\": \"self_enroll\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/missions/definitions/{{published_mission_id}}/assign",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "missions", "definitions", "{{published_mission_id}}", "assign"]
+						},
+						"description": "User enrolls themselves in a published mission"
+					},
+					"response": []
+				},
+				{
+					"name": "Assign Mission - Admin Assigns User",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{admin_user_id}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "assign-admin-{{$timestamp}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"user_id\": 888,\n  \"assignment_type\": \"admin_assigned\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/missions/definitions/{{published_mission_id}}/assign",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "missions", "definitions", "{{published_mission_id}}", "assign"]
+						},
+						"description": "Admin assigns another user to a mission"
+					},
+					"response": []
+				},
+				{
+					"name": "Assign Mission - Already Assigned",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "999"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "USER"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "assign-duplicate-{{$timestamp}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"user_id\": 999,\n  \"assignment_type\": \"self_enroll\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/missions/definitions/{{published_mission_id}}/assign",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "missions", "definitions", "{{published_mission_id}}", "assign"]
+						},
+						"description": "Should fail with ALREADY_ASSIGNED if user already assigned"
+					},
+					"response": []
+				},
+				{
+					"name": "Assign Mission - Not Published",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "777"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "USER"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "assign-draft-{{$timestamp}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"user_id\": 777,\n  \"assignment_type\": \"self_enroll\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/missions/definitions/{{draft_mission_id}}/assign",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "missions", "definitions", "{{draft_mission_id}}", "assign"]
+						},
+						"description": "Should fail with MISSION_NOT_OPEN (mission is draft)"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "4. Mission.Submit",
+			"item": [
+				{
+					"name": "Submit Mission - Success (Text)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "888"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "USER"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "submit-{{$timestamp}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"text_content\": \"I have successfully completed all 5 policy applications! All were approved within 24 hours.\",\n  \"meta_json\": {\n    \"application_ids\": [101, 102, 103, 104, 105],\n    \"total_value\": 50000,\n    \"notes\": \"Exceeded expectations\"\n  }\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/missions/assignments/{{assignment_id}}/submit",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "missions", "assignments", "{{assignment_id}}", "submit"]
+						},
+						"description": "User submits proof of mission completion"
+					},
+					"response": []
+				},
+				{
+					"name": "Submit Mission - Already Submitted",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "888"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "USER"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "submit-duplicate-{{$timestamp}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"text_content\": \"Trying to submit again\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/missions/assignments/{{assignment_id}}/submit",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "missions", "assignments", "{{assignment_id}}", "submit"]
+						},
+						"description": "Should fail with ALREADY_SUBMITTED"
+					},
+					"response": []
+				},
+				{
+					"name": "Submit Mission - Not Owner",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "777"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "USER"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "submit-notowner-{{$timestamp}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"text_content\": \"Trying to submit for someone else\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/missions/assignments/{{assignment_id}}/submit",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "missions", "assignments", "{{assignment_id}}", "submit"]
+						},
+						"description": "Should fail with NOT_OWNER"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "5. Mission.ApproveSubmission",
+			"item": [
+				{
+					"name": "Approve Submission - Success (ADMIN)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{admin_user_id}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "approve-{{$timestamp}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"feedback\": \"Excellent work! All policy applications look great. Reward approved.\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/missions/submissions/{{submission_id}}/approve",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "missions", "submissions", "{{submission_id}}", "approve"]
+						},
+						"description": "Admin approves a pending submission"
+					},
+					"response": []
+				},
+				{
+					"name": "Approve Submission - Success (REVIEWER)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "reviewer-456"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "REVIEWER"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "approve-reviewer-{{$timestamp}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"feedback\": \"Verified and approved by reviewer.\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/missions/submissions/{{submission_id}}/approve",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "missions", "submissions", "{{submission_id}}", "approve"]
+						},
+						"description": "Reviewer approves a pending submission"
+					},
+					"response": []
+				},
+				{
+					"name": "Approve Submission - Already Approved",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{admin_user_id}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "approve-duplicate-{{$timestamp}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"feedback\": \"Trying to approve again\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/missions/submissions/{{approved_submission_id}}/approve",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "missions", "submissions", "{{approved_submission_id}}", "approve"]
+						},
+						"description": "Should fail with SUBMISSION_NOT_APPROVABLE"
+					},
+					"response": []
+				},
+				{
+					"name": "Approve Submission - Permission Denied",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "user-999"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "USER"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "approve-denied-{{$timestamp}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"feedback\": \"User trying to approve\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/missions/submissions/{{submission_id}}/approve",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "missions", "submissions", "{{submission_id}}", "approve"]
+						},
+						"description": "Should fail with 403 Forbidden"
+					},
+					"response": []
+				},
+				{
+					"name": "Approve Submission - Not Found",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{admin_user_id}}"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "approve-notfound-{{$timestamp}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"feedback\": \"Test\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/missions/submissions/999999/approve",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "missions", "submissions", "999999", "approve"]
+						},
+						"description": "Should fail with 404 Not Found"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Database Helpers",
+			"item": [
+				{
+					"name": "📝 SQL - Insert Draft Mission",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/",
+							"host": ["{{base_url}}"],
+							"path": [""]
+						},
+						"description": "SQL to run in MySQL:\n\n```sql\nUSE GC_PRO;\n\nINSERT INTO mission_definition (\n  code, name, description, cadence, status,\n  start_at, end_at, max_per_user, reward_json, created_at, updated_at\n) VALUES (\n  'TEST_DRAFT_1',\n  'Test Draft Mission',\n  'Mission in draft status for testing',\n  'one_time',\n  'draft',\n  NOW(),\n  DATE_ADD(NOW(), INTERVAL 30 DAY),\n  1,\n  '{\"reward_type\":\"FIXED\",\"amount\":50,\"currency\":\"MYR\"}',\n  NOW(),\n  NOW()\n);\n\nSELECT LAST_INSERT_ID() AS draft_mission_id;\n-- Copy this ID to {{draft_mission_id}} variable\n```"
+					},
+					"response": []
+				},
+				{
+					"name": "📝 SQL - Insert Published Mission",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/",
+							"host": ["{{base_url}}"],
+							"path": [""]
+						},
+						"description": "SQL to run in MySQL:\n\n```sql\nUSE GC_PRO;\n\nINSERT INTO mission_definition (\n  code, name, description, cadence, status,\n  start_at, end_at, max_per_user, reward_json, created_at, updated_at\n) VALUES (\n  'TEST_PUBLISHED_1',\n  'Test Published Mission',\n  'Mission already published for testing',\n  'one_time',\n  'published',\n  NOW(),\n  DATE_ADD(NOW(), INTERVAL 30 DAY),\n  1,\n  '{\"reward_type\":\"FIXED\",\"amount\":75,\"currency\":\"MYR\"}',\n  NOW(),\n  NOW()\n);\n\nSELECT LAST_INSERT_ID() AS published_mission_id;\n-- Copy this ID to {{published_mission_id}} variable\n```"
+					},
+					"response": []
+				},
+				{
+					"name": "📝 SQL - Complete Test Data",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/",
+							"host": ["{{base_url}}"],
+							"path": [""]
+						},
+						"description": "Run this in MySQL to set up all test data:\n\n```bash\nmysql -u root -pOdenza@2026 < database/test-data-all-apis.sql\n```\n\nThen get the IDs:\n\n```sql\nUSE GC_PRO;\n\n-- Get IDs for Postman variables\nSELECT id FROM mission_definition WHERE code = 'PUBLISH_TEST_1';  -- draft_mission_id\nSELECT id FROM mission_definition WHERE code = 'ASSIGN_TEST_1';   -- published_mission_id\nSELECT id FROM mission_assignment WHERE user_id = 888;             -- assignment_id\nSELECT id FROM mission_submission WHERE assignment_id IN (SELECT id FROM mission_assignment WHERE user_id = 777);  -- submission_id\n```"
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:3000",
+			"type": "string"
+		},
+		{
+			"key": "admin_user_id",
+			"value": "admin-123",
+			"type": "string"
+		},
+		{
+			"key": "draft_mission_id",
+			"value": "1",
+			"type": "string",
+			"description": "ID of a draft mission (for testing publish)"
+		},
+		{
+			"key": "published_mission_id",
+			"value": "2",
+			"type": "string",
+			"description": "ID of a published mission (for testing assign)"
+		},
+		{
+			"key": "assignment_id",
+			"value": "1",
+			"type": "string",
+			"description": "ID of an assignment (for testing submit)"
+		},
+		{
+			"key": "submission_id",
+			"value": "1",
+			"type": "string",
+			"description": "ID of a pending submission (for testing approve)"
+		},
+		{
+			"key": "approved_submission_id",
+			"value": "99",
+			"type": "string",
+			"description": "ID of already approved submission (for error testing)"
+		}
+	]
+}

@@ -1,0 +1,149 @@
+version: "1.0"
+spec_id: "gcpro.core.infrastructure.v1"
+domain: "core_infrastructure"
+
+owner:
+  plugin: "core"
+  owns_tables:
+    - "permission"
+    - "role"
+    - "role_permission"
+    - "user_role"
+    - "user_permission"
+    - "outbox_event"
+    - "outbox_event_consume"
+    - "audit_log"
+    - "resource_ref"
+  cross_plugin_writes_allowed: false
+
+conventions:
+  workflow_steps: ["guard", "validate", "write", "emit", "commit"]
+  outbox:
+    required_envelope_fields:
+      - "event_name"
+      - "event_version"
+      - "aggregate_type"
+      - "aggregate_id"
+      - "actor_user_id"
+      - "occurred_at"
+      - "correlation_id"
+      - "causation_id"
+
+dtos:
+  RoleCreateRequest:
+    fields:
+      - { name: "code", type: "string", required: true, max_len: 64, example: "mission_admin" }
+      - { name: "name", type: "string", required: true, max_len: 120 }
+  PermissionCreateRequest:
+    fields:
+      - { name: "code", type: "string", required: true, max_len: 128, example: "missions.definition.create" }
+      - { name: "name", type: "string", required: true, max_len: 120 }
+      - { name: "scope", type: "string", required: true, max_len: 64, example: "missions" }
+  UserGrantRoleRequest:
+    fields:
+      - { name: "user_id", type: "int64", required: true }
+      - { name: "role_code", type: "string", required: true, max_len: 64 }
+
+events:
+  - { name: "ROLE_CREATED", version: 1, aggregate_type: "ROLE" }
+  - { name: "PERMISSION_CREATED", version: 1, aggregate_type: "PERMISSION" }
+  - { name: "USER_ROLE_GRANTED", version: 1, aggregate_type: "USER" }
+
+commands:
+  - name: "Role.Create"
+    http: { method: "POST", path: "/v1/acl/roles" }
+    guard:
+      - expr: "ACL.hasPermission(actor.user_id, 'acl.role.create')"
+        error: { code: "FORBIDDEN" }
+    write:
+      transaction: "COREKIT.Transaction.run"
+      steps:
+        - insert:
+            table: "role"
+            assign:
+              role_id: "auto_inc()"
+              code: "request.code"
+              name: "request.name"
+              status: "active"
+    emit:
+      - outbox:
+          event: "ROLE_CREATED"
+          aggregate_type: "ROLE"
+          aggregate_id: "role_id"
+          payload: { role_id: "role_id", code: "request.code" }
+    response:
+      status: 201
+      body: { role_id: "role_id", code: "request.code" }
+
+  - name: "Permission.Create"
+    http: { method: "POST", path: "/v1/acl/permissions" }
+    guard:
+      - expr: "ACL.hasPermission(actor.user_id, 'acl.permission.create')"
+        error: { code: "FORBIDDEN" }
+    write:
+      transaction: "COREKIT.Transaction.run"
+      steps:
+        - insert:
+            table: "permission"
+            assign:
+              permission_id: "auto_inc()"
+              code: "request.code"
+              name: "request.name"
+              scope: "request.scope"
+              status: "active"
+    emit:
+      - outbox:
+          event: "PERMISSION_CREATED"
+          aggregate_type: "PERMISSION"
+          aggregate_id: "permission_id"
+          payload: { permission_id: "permission_id", code: "request.code" }
+    response:
+      status: 201
+      body: { permission_id: "permission_id", code: "request.code" }
+
+  - name: "User.GrantRole"
+    http: { method: "POST", path: "/v1/acl/users/{user_id}/roles/{role_code}" }
+    guard:
+      - expr: "ACL.hasPermission(actor.user_id, 'acl.user.grant_role')"
+        error: { code: "FORBIDDEN" }
+    load:
+      - role:
+          table: "role"
+          where: { code: "path.role_code", status: "active" }
+    write:
+      transaction: "COREKIT.Transaction.run"
+      steps:
+        - insert:
+            table: "user_role"
+            assign:
+              user_id: "path.user_id"
+              role_id: "role.role_id"
+              created_at: "now()"
+        - insert:
+            table: "audit_log"
+            assign:
+              audit_id: "auto_inc()"
+              actor_user_id: "actor.user_id"
+              action: "acl.user.grant_role"
+              resource_type: "user"
+              resource_id: "path.user_id"
+              after_json: "json({ role_code: path.role_code })"
+              occurred_at: "now()"
+    emit:
+      - outbox:
+          event: "USER_ROLE_GRANTED"
+          aggregate_type: "USER"
+          aggregate_id: "path.user_id"
+          payload: { user_id: "path.user_id", role_code: "path.role_code" }
+    response:
+      status: 200
+      body: { user_id: "path.user_id", role_code: "path.role_code" }
+
+codegen:
+  language: "typescript"
+  framework: "nestjs"
+  example_generated_outputs:
+    services:
+      - "src/core/acl/services/acl.workflow.service.generated.ts"
+    openapi:
+      - "openapi/core.infrastructure.v1.generated.yaml"

@@ -1,0 +1,195 @@
+version: "1.0"
+spec_id: "gcpro.core.identity.v1"
+domain: "core_identity"
+
+owner:
+  plugin: "core"
+  owns_tables:
+    - "user"
+    - "account"
+    - "person"
+    - "account_person"          # seen in R5 DDL :contentReference[oaicite:4]{index=4}
+    - "user_credential"         # referenced in infra mapping :contentReference[oaicite:5]{index=5}
+    - "registration_token"      # referenced in infra mapping :contentReference[oaicite:6]{index=6}
+    - "onboarding_progress"     # referenced in infra mapping :contentReference[oaicite:7]{index=7}
+  cross_plugin_writes_allowed: false
+
+conventions:
+  workflow_steps: ["guard", "validate", "write", "emit", "commit"]
+  status_mutation_policy: "Status fields may only be mutated via command workflows."
+  idempotency:
+    header: "Idempotency-Key"
+    scope_default: "actor_user_id + command_name + aggregate_id"
+    fingerprint_default: "hash(request_body + path_params)"
+    behavior:
+      on_replay_completed: "return_same_response"
+      on_replay_inflight: "409_conflict"
+  outbox:
+    required_envelope_fields:
+      - "event_name"
+      - "event_version"
+      - "aggregate_type"
+      - "aggregate_id"
+      - "actor_user_id"
+      - "occurred_at"
+      - "correlation_id"
+      - "causation_id"
+
+aggregates:
+  - name: "user"
+    type: "USER"
+    pk: "user_id"
+    table: "user"
+    status_values: ["active", "suspended", "deleted"]
+
+dtos:
+  RegisterRequest:
+    fields:
+      - { name: "phone_e164", type: "string", required: true, max_len: 20, example: "+60123456789" }
+      - { name: "email", type: "string", required: false, max_len: 255 }
+      - { name: "password", type: "string", required: true, min_len: 8, max_len: 200 }
+      - { name: "referral_code", type: "string", required: false, max_len: 32 }
+
+  LoginRequest:
+    fields:
+      - { name: "login", type: "string", required: true, example: "+60123456789" }
+      - { name: "password", type: "string", required: true }
+
+events:
+  - { name: "USER_REGISTERED", version: 1, aggregate_type: "USER" }
+  - { name: "USER_CREDENTIAL_CREATED", version: 1, aggregate_type: "USER" }
+  - { name: "USER_LOGGED_IN", version: 1, aggregate_type: "USER" }
+
+commands:
+  - name: "User.Register"
+    http: { method: "POST", path: "/v1/auth/register" }
+    idempotency:
+      scope: "command_name + request.phone_e164"
+      key_from: "header:Idempotency-Key"
+      fingerprint: "hash(request_body)"
+    validate:
+      - expr: "len(request.password) >= 8"
+        error: { code: "WEAK_PASSWORD" }
+    write:
+      transaction: "COREKIT.Transaction.run"
+      steps:
+        # 1) create account + person (simple default owner)
+        - insert:
+            table: "account"
+            assign:
+              account_id: "auto_inc()"
+              type: "member"
+              status: "active"
+        - insert:
+            table: "person"
+            assign:
+              person_id: "auto_inc()"
+              status: "active"
+        - insert:
+            table: "account_person"
+            assign:
+              account_id: "account_id"
+              person_id: "person_id"
+              role: "owner"
+
+        # 2) create user
+        - insert:
+            table: "user"
+            assign:
+              user_id: "auto_inc()"
+              account_id: "account_id"
+              phone_e164: "request.phone_e164"
+              email: "request.email"
+              status: "active"
+
+        # 3) store credential (bcrypt) + optional onboarding init
+        - insert:
+            table: "user_credential"
+            assign:
+              credential_id: "auto_inc()"
+              user_id: "user_id"
+              type: "password"
+              secret_hash: "bcrypt(request.password)"
+              status: "active"
+
+        - insert:
+            table: "onboarding_progress"
+            assign:
+              progress_id: "auto_inc()"
+              user_id: "user_id"
+              status: "not_started"
+              meta_json: "{}"
+    emit:
+      - outbox:
+          event: "USER_REGISTERED"
+          aggregate_type: "USER"
+          aggregate_id: "user_id"
+          payload:
+            user_id: "user_id"
+            account_id: "account_id"
+      - outbox:
+          event: "USER_CREDENTIAL_CREATED"
+          aggregate_type: "USER"
+          aggregate_id: "user_id"
+          payload:
+            user_id: "user_id"
+            credential_type: "password"
+    response:
+      status: 201
+      body:
+        user_id: "user_id"
+        account_id: "account_id"
+        status: "active"
+
+  - name: "User.Login"
+    http: { method: "POST", path: "/v1/auth/login" }
+    idempotency:
+      scope: "command_name + request.login"
+      key_from: "header:Idempotency-Key"
+      fingerprint: "hash(request_body)"
+    load:
+      - user:
+          table: "user"
+          where:
+            or:
+              - { phone_e164: "request.login" }
+              - { email: "request.login" }
+      - cred:
+          table: "user_credential"
+          where: { user_id: "user.user_id", type: "password", status: "active" }
+    guard:
+      - expr: "user.status == 'active'"
+        error: { code: "USER_NOT_ACTIVE" }
+      - expr: "bcrypt_verify(request.password, cred.secret_hash) == true"
+        error: { code: "INVALID_CREDENTIALS" }
+    write:
+      transaction: "COREKIT.Transaction.run"
+      steps:
+        - derive:
+            assign:
+              access_token: "JWT.sign({ sub: user.user_id, account_id: user.account_id })"
+    emit:
+      - outbox:
+          event: "USER_LOGGED_IN"
+          aggregate_type: "USER"
+          aggregate_id: "user.user_id"
+          payload:
+            user_id: "user.user_id"
+    response:
+      status: 200
+      body:
+        access_token: "access_token"
+        token_type: "Bearer"
+        user_id: "user.user_id"
+        account_id: "user.account_id"
+
+codegen:
+  language: "typescript"
+  framework: "nestjs"
+  example_generated_outputs:
+    controllers:
+      - "src/core/identity/controllers/auth.controller.generated.ts"
+    services:
+      - "src/core/identity/services/auth.workflow.service.generated.ts"
+    openapi:
+      - "openapi/core.identity.v1.generated.yaml"
