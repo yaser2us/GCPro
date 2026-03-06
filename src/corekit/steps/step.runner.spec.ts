@@ -279,7 +279,7 @@ describe('StepRunner', () => {
         payload: {
           mission_id: 'mission_id',
           user_id: 'user_id',
-          status: 'assigned',
+          status: '"assigned"', // Quoted string literal
         },
       };
 

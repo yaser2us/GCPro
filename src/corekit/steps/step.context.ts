@@ -59,11 +59,19 @@ export class StepContext {
   /**
    * Resolve expression using context
    * Handles references like "user_id", "request.phone_e164", "account_id"
+   * Also handles string literals (quoted values)
    *
-   * @param expr Expression to resolve (e.g., "user_id", "request.email")
+   * @param expr Expression to resolve (e.g., "user_id", "request.email", "'literal'")
    * @returns Resolved value
    */
   resolve(expr: string): any {
+    // Handle string literals (single or double quoted)
+    if ((expr.startsWith("'") && expr.endsWith("'")) ||
+        (expr.startsWith('"') && expr.endsWith('"'))) {
+      // Return the literal value without quotes
+      return expr.substring(1, expr.length - 1);
+    }
+
     // Handle special functions
     if (expr === 'auto_inc()') {
       // This should be handled by the database, not here
@@ -91,55 +99,7 @@ export class StepContext {
     // This is a simplified implementation
     // In production, use a proper expression parser/evaluator
 
-    // Handle == operator
-    if (expr.includes('==')) {
-      const [left, right] = expr.split('==').map((s) => s.trim());
-      const leftValue = this.resolve(left);
-      const rightValue = right.replace(/['"]/g, ''); // Remove quotes
-      return leftValue == rightValue;
-    }
-
-    // Handle != operator
-    if (expr.includes('!=')) {
-      const [left, right] = expr.split('!=').map((s) => s.trim());
-      const leftValue = this.resolve(left);
-      const rightValue = right.replace(/['"]/g, '');
-      return leftValue != rightValue;
-    }
-
-    // Handle > operator
-    if (expr.includes('>')) {
-      const [left, right] = expr.split('>').map((s) => s.trim());
-      const leftValue = Number(this.resolve(left));
-      const rightValue = Number(right);
-      return leftValue > rightValue;
-    }
-
-    // Handle >= operator
-    if (expr.includes('>=')) {
-      const [left, right] = expr.split('>=').map((s) => s.trim());
-      const leftValue = Number(this.resolve(left));
-      const rightValue = Number(right);
-      return leftValue >= rightValue;
-    }
-
-    // Handle < operator
-    if (expr.includes('<')) {
-      const [left, right] = expr.split('<').map((s) => s.trim());
-      const leftValue = Number(this.resolve(left));
-      const rightValue = Number(right);
-      return leftValue < rightValue;
-    }
-
-    // Handle <= operator
-    if (expr.includes('<=')) {
-      const [left, right] = expr.split('<=').map((s) => s.trim());
-      const leftValue = Number(this.resolve(left));
-      const rightValue = Number(right);
-      return leftValue <= rightValue;
-    }
-
-    // Handle len() function
+    // Handle len() function FIRST (before other operators)
     if (expr.includes('len(')) {
       const match = expr.match(/len\(([^)]+)\)\s*([><=!]+)\s*(\d+)/);
       if (match) {
@@ -166,6 +126,54 @@ export class StepContext {
             return false;
         }
       }
+    }
+
+    // Handle == operator
+    if (expr.includes('==')) {
+      const [left, right] = expr.split('==').map((s) => s.trim());
+      const leftValue = this.resolve(left);
+      const rightValue = right.replace(/['"]/g, ''); // Remove quotes
+      return leftValue == rightValue;
+    }
+
+    // Handle != operator
+    if (expr.includes('!=')) {
+      const [left, right] = expr.split('!=').map((s) => s.trim());
+      const leftValue = this.resolve(left);
+      const rightValue = right.replace(/['"]/g, '');
+      return leftValue != rightValue;
+    }
+
+    // Handle >= operator (must come before >)
+    if (expr.includes('>=')) {
+      const [left, right] = expr.split('>=').map((s) => s.trim());
+      const leftValue = Number(this.resolve(left));
+      const rightValue = Number(right);
+      return leftValue >= rightValue;
+    }
+
+    // Handle > operator
+    if (expr.includes('>')) {
+      const [left, right] = expr.split('>').map((s) => s.trim());
+      const leftValue = Number(this.resolve(left));
+      const rightValue = Number(right);
+      return leftValue > rightValue;
+    }
+
+    // Handle <= operator (must come before <)
+    if (expr.includes('<=')) {
+      const [left, right] = expr.split('<=').map((s) => s.trim());
+      const leftValue = Number(this.resolve(left));
+      const rightValue = Number(right);
+      return leftValue <= rightValue;
+    }
+
+    // Handle < operator
+    if (expr.includes('<')) {
+      const [left, right] = expr.split('<').map((s) => s.trim());
+      const leftValue = Number(this.resolve(left));
+      const rightValue = Number(right);
+      return leftValue < rightValue;
     }
 
     // Default: try to resolve as boolean value
