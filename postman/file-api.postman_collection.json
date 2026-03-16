@@ -1,0 +1,937 @@
+{
+	"info": {
+		"_postman_id": "file-api-v1",
+		"name": "File API",
+		"description": "File Management - Upload, Versioning, Access Control, and Scanning\n\nSource: specs/file/file.pillar.v2.yml",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "File Upload",
+			"item": [
+				{
+					"name": "Create File Upload",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"pm.environment.set(\"file_id\", jsonData.file_id);",
+									"pm.environment.set(\"file_key\", jsonData.file_key);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"file_key\": \"upload-{{$timestamp}}\",\n  \"owner_account_id\": \"1\",\n  \"owner_person_id\": \"100\",\n  \"owner_type\": \"account\",\n  \"purpose_code\": \"document\",\n  \"visibility\": \"private\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/files",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "files"]
+						},
+						"description": "Create file upload record with status='created'\n\nIdempotency: Via UNIQUE(file_key)"
+					},
+					"response": []
+				},
+				{
+					"name": "Complete File Upload",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"storage_path\": \"uploads/2026/03/document.pdf\",\n  \"original_filename\": \"contract.pdf\",\n  \"content_type\": \"application/pdf\",\n  \"size_bytes\": 1024000,\n  \"checksum_sha256\": \"abc123def456\",\n  \"extension\": \"pdf\",\n  \"storage_etag\": \"etag-12345\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/files/{{file_id}}/complete",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "files", "{{file_id}}", "complete"]
+						},
+						"description": "Mark file upload as complete with metadata"
+					},
+					"response": []
+				},
+				{
+					"name": "Fail File Upload",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reason\": \"Network timeout during upload\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/files/{{file_id}}/fail",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "files", "{{file_id}}", "fail"]
+						},
+						"description": "Mark file upload as failed"
+					},
+					"response": []
+				},
+				{
+					"name": "Delete File",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"deleted_by_user_id\": 42\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/files/{{file_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "files", "{{file_id}}"]
+						},
+						"description": "Soft delete file (sets deleted_at timestamp)"
+					},
+					"response": []
+				}
+			],
+			"description": "File upload lifecycle management"
+		},
+		{
+			"name": "File Versions",
+			"item": [
+				{
+					"name": "Create File Version",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"pm.environment.set(\"version_id\", jsonData.version_id);",
+									"pm.environment.set(\"version_number\", jsonData.version_number);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"created_by_user_id\": 42\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/files/{{file_id}}/versions",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "files", "{{file_id}}", "versions"]
+						},
+						"description": "Create immutable version snapshot of file"
+					},
+					"response": []
+				}
+			],
+			"description": "File versioning and history"
+		},
+		{
+			"name": "Access Tokens",
+			"item": [
+				{
+					"name": "Generate Access Token",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"pm.environment.set(\"access_token\", jsonData.token);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"token_type\": \"download\",\n  \"expires_in_seconds\": 3600,\n  \"max_uses\": 3\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/files/{{file_id}}/tokens",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "files", "{{file_id}}", "tokens"]
+						},
+						"description": "Generate temporary access token\n\nExpires in 1 hour, max 3 uses"
+					},
+					"response": []
+				},
+				{
+					"name": "Generate Unlimited Token",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"token_type\": \"download\",\n  \"expires_in_seconds\": 86400,\n  \"max_uses\": 0\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/files/{{file_id}}/tokens",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "files", "{{file_id}}", "tokens"]
+						},
+						"description": "Generate token valid for 24 hours, unlimited uses"
+					},
+					"response": []
+				},
+				{
+					"name": "Validate Access Token",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"token\": \"{{access_token}}\",\n  \"increment_usage\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/file-tokens/validate",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "file-tokens", "validate"]
+						},
+						"description": "Validate token and optionally increment usage counter"
+					},
+					"response": []
+				},
+				{
+					"name": "Revoke Access Token",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"token\": \"{{access_token}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/file-tokens/revoke",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "file-tokens", "revoke"]
+						},
+						"description": "Revoke access token immediately"
+					},
+					"response": []
+				}
+			],
+			"description": "Temporary access token management"
+		},
+		{
+			"name": "File Events",
+			"item": [
+				{
+					"name": "Record Custom Event",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"event_type\": \"File.Downloaded\",\n  \"event_data\": {\n    \"download_count\": 5,\n    \"last_download_ip\": \"192.168.1.100\"\n  },\n  \"triggered_by_user_id\": 42\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/files/{{file_id}}/events",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "files", "{{file_id}}", "events"]
+						},
+						"description": "Record custom file event for audit trail"
+					},
+					"response": []
+				}
+			],
+			"description": "File audit trail and events"
+		},
+		{
+			"name": "File Links",
+			"item": [
+				{
+					"name": "Link File to Mission",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"pm.environment.set(\"link_id\", jsonData.link_id);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"target_type\": \"mission\",\n  \"target_id\": \"123\",\n  \"role_code\": \"proof\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/files/{{file_id}}/links",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "files", "{{file_id}}", "links"]
+						},
+						"description": "Link file to mission as proof\n\nIdempotency: Via UNIQUE(file_id, target_type, target_id, role_code)"
+					},
+					"response": []
+				},
+				{
+					"name": "Link File to Person",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"target_type\": \"person\",\n  \"target_id\": \"456\",\n  \"role_code\": \"identity_document\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/files/{{file_id}}/links",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "files", "{{file_id}}", "links"]
+						},
+						"description": "Link file to person as identity document"
+					},
+					"response": []
+				},
+				{
+					"name": "Remove File Link",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/v1/file-links/{{link_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "file-links", "{{link_id}}"]
+						},
+						"description": "Remove polymorphic file link"
+					},
+					"response": []
+				}
+			],
+			"description": "Polymorphic file linking to entities"
+		},
+		{
+			"name": "Virus Scanning",
+			"item": [
+				{
+					"name": "Start Virus Scan",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"scan_type\": \"antivirus\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/files/{{file_id}}/scan/start",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "files", "{{file_id}}", "scan", "start"]
+						},
+						"description": "Initiate virus scan (sets status='scanning')"
+					},
+					"response": []
+				},
+				{
+					"name": "Record Scan Result - Clean",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"pm.environment.set(\"scan_id\", jsonData.scan_id);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "{{$guid}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"scan_type\": \"antivirus\",\n  \"status\": \"clean\",\n  \"provider\": \"ClamAV\",\n  \"summary\": \"No threats detected\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/files/{{file_id}}/scan-results",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "files", "{{file_id}}", "scan-results"]
+						},
+						"description": "Record clean scan result from provider"
+					},
+					"response": []
+				},
+				{
+					"name": "Record Scan Result - Infected",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "{{$guid}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"scan_type\": \"antivirus\",\n  \"status\": \"infected\",\n  \"provider\": \"ClamAV\",\n  \"summary\": \"Threat detected: Win32.Trojan.Generic\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/files/{{file_id}}/scan-results",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "files", "{{file_id}}", "scan-results"]
+						},
+						"description": "Record infected scan result"
+					},
+					"response": []
+				},
+				{
+					"name": "Mark File Clean",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/v1/files/{{file_id}}/scan/clean",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "files", "{{file_id}}", "scan", "clean"]
+						},
+						"description": "Mark file as clean (status='clean')"
+					},
+					"response": []
+				},
+				{
+					"name": "Mark File Infected",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reason\": \"Malware detected by multiple scanners\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/files/{{file_id}}/scan/infected",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "files", "{{file_id}}", "scan", "infected"]
+						},
+						"description": "Mark file as infected (status='infected')"
+					},
+					"response": []
+				}
+			],
+			"description": "Virus scanning workflow"
+		},
+		{
+			"name": "File Tags",
+			"item": [
+				{
+					"name": "Create Tag",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"pm.environment.set(\"tag_id\", jsonData.tag_id);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"code\": \"confidential\",\n  \"name\": \"Confidential Document\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/file-tags",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "file-tags"]
+						},
+						"description": "Create file tag definition\n\nIdempotency: Via UNIQUE(code)"
+					},
+					"response": []
+				},
+				{
+					"name": "Create Tag - Archived",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"code\": \"archived\",\n  \"name\": \"Archived File\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/file-tags",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "file-tags"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Assign Tag to File",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"tag_id\": \"{{tag_id}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/files/{{file_id}}/tags",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "files", "{{file_id}}", "tags"]
+						},
+						"description": "Assign tag to file\n\nIdempotency: Via UNIQUE(file_id, tag_id)"
+					},
+					"response": []
+				},
+				{
+					"name": "Unassign Tag from File",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/v1/files/{{file_id}}/tags/{{tag_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "files", "{{file_id}}", "tags", "{{tag_id}}"]
+						},
+						"description": "Remove tag from file"
+					},
+					"response": []
+				}
+			],
+			"description": "File tagging and categorization"
+		},
+		{
+			"name": "Complete Workflow",
+			"item": [
+				{
+					"name": "1. Create File Upload",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"pm.environment.set(\"workflow_file_id\", jsonData.file_id);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"file_key\": \"workflow-{{$timestamp}}\",\n  \"owner_account_id\": \"1\",\n  \"owner_person_id\": \"100\",\n  \"purpose_code\": \"contract\",\n  \"visibility\": \"private\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/files",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "files"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "2. Complete Upload",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"storage_path\": \"contracts/2026/contract-123.pdf\",\n  \"original_filename\": \"service-agreement.pdf\",\n  \"content_type\": \"application/pdf\",\n  \"size_bytes\": 2048000,\n  \"checksum_sha256\": \"def789abc456\",\n  \"extension\": \"pdf\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/files/{{workflow_file_id}}/complete",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "files", "{{workflow_file_id}}", "complete"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "3. Start Virus Scan",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"scan_type\": \"antivirus\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/files/{{workflow_file_id}}/scan/start",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "files", "{{workflow_file_id}}", "scan", "start"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "4. Record Clean Scan",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Idempotency-Key",
+								"value": "{{$guid}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"scan_type\": \"antivirus\",\n  \"status\": \"clean\",\n  \"provider\": \"ClamAV\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/files/{{workflow_file_id}}/scan-results",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "files", "{{workflow_file_id}}", "scan-results"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "5. Mark Clean",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/v1/files/{{workflow_file_id}}/scan/clean",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "files", "{{workflow_file_id}}", "scan", "clean"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "6. Create Confidential Tag",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"pm.environment.set(\"workflow_tag_id\", jsonData.tag_id);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"code\": \"legal\",\n  \"name\": \"Legal Document\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/file-tags",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "file-tags"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "7. Tag File",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"tag_id\": \"{{workflow_tag_id}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/files/{{workflow_file_id}}/tags",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "files", "{{workflow_file_id}}", "tags"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "8. Link to Mission",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"target_type\": \"mission\",\n  \"target_id\": \"789\",\n  \"role_code\": \"contract\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/files/{{workflow_file_id}}/links",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "files", "{{workflow_file_id}}", "links"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "9. Generate Access Token",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"pm.environment.set(\"workflow_token\", jsonData.token);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"token_type\": \"download\",\n  \"expires_in_seconds\": 7200,\n  \"max_uses\": 5\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/files/{{workflow_file_id}}/tokens",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "files", "{{workflow_file_id}}", "tokens"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "10. Validate Token",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"token\": \"{{workflow_token}}\",\n  \"increment_usage\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/file-tokens/validate",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "file-tokens", "validate"]
+						}
+					},
+					"response": []
+				}
+			],
+			"description": "Complete file lifecycle workflow"
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Add X-User-Id header",
+					"pm.request.headers.add({",
+					"  key: 'X-User-Id',",
+					"  value: pm.collectionVariables.get('user_id') || '1'",
+					"});",
+					"",
+					"// Add Idempotency-Key for POST/PUT requests",
+					"if (pm.request.method === 'POST' || pm.request.method === 'PUT') {",
+					"  const existingKey = pm.request.headers.get('Idempotency-Key');",
+					"  if (!existingKey) {",
+					"    pm.request.headers.add({",
+					"      key: 'Idempotency-Key',",
+					"      value: pm.variables.replaceIn('{{$guid}}')",
+					"    });",
+					"  }",
+					"}"
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:3000",
+			"type": "string"
+		},
+		{
+			"key": "user_id",
+			"value": "1",
+			"type": "string"
+		},
+		{
+			"key": "file_id",
+			"value": "1",
+			"type": "string"
+		},
+		{
+			"key": "version_id",
+			"value": "1",
+			"type": "string"
+		},
+		{
+			"key": "access_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "link_id",
+			"value": "1",
+			"type": "string"
+		},
+		{
+			"key": "scan_id",
+			"value": "1",
+			"type": "string"
+		},
+		{
+			"key": "tag_id",
+			"value": "1",
+			"type": "string"
+		}
+	]
+}

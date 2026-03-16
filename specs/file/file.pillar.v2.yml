@@ -1,0 +1,1773 @@
+version: "2.0.0"
+spec_id: "file.pillar.v2"
+domain: "file"
+plugin: "file"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# OWNERSHIP
+# ──────────────────────────────────────────────────────────────────────────────
+
+ownership:
+  owner_plugin: "file"
+  owns_tables:
+    - "file_upload"
+    - "file_version"
+    - "file_access_token"
+    - "file_event"
+    - "file_link"
+    - "file_scan_result"
+    - "file_tag"
+    - "file_upload_tag"
+  cross_plugin_writes: false
+  cross_plugin_integration:
+    allowed_via:
+      - "command_api"
+      - "outbox_events"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DEPENDENCIES
+# ──────────────────────────────────────────────────────────────────────────────
+
+dependencies:
+  corekit:
+    transaction_wrapper: "withTxn"
+    outbox_service: "OutboxService.emit"
+    guard_helper: "guard"
+    domain_error: "DomainError"
+
+  core_tables_readonly: []
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CONVENTIONS
+# ──────────────────────────────────────────────────────────────────────────────
+
+conventions:
+  workflow_discipline:
+    - "guard"
+    - "write"
+    - "emit"
+    - "commit"
+
+  status_mutation_policy: "Status fields may only be mutated through commands."
+
+  outbox:
+    required_envelope_fields:
+      - "event_name"
+      - "event_version"
+      - "aggregate_type"
+      - "aggregate_id"
+      - "actor_user_id"
+      - "occurred_at"
+      - "correlation_id"
+      - "causation_id"
+
+  idempotency:
+    required_header: "Idempotency-Key"
+    default_scope: "actor_user_id + command_name"
+    db_strategy:
+      - "UNIQUE(file_key) for file_upload"
+      - "UNIQUE(token) for file_access_token"
+      - "UNIQUE(file_id, target_type, target_id, role_code) for file_link"
+      - "UNIQUE(file_id, tag_id) for file_upload_tag"
+      - "UNIQUE(code) for file_tag"
+
+  security:
+    - "Access tokens must be securely generated (UUID v4 or similar)"
+    - "File downloads must validate access tokens before serving"
+    - "Virus scanning must be performed before marking files as safe"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SCHEMA
+# ──────────────────────────────────────────────────────────────────────────────
+
+schema:
+  tables:
+    file_upload:
+      description: "Main file upload record"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        file_key:
+          type: "varchar"
+          length: 64
+          nullable: false
+          description: "Unique file identifier/key"
+        status:
+          type: "varchar"
+          length: 20
+          nullable: false
+          default: "created"
+          description: "Status: created, uploading, uploaded, scanning, clean, infected, failed, deleted"
+        owner_account_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Owner account ID"
+        owner_person_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Owner person ID"
+        owner_type:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "account"
+          description: "Owner type: account, person"
+        purpose_code:
+          type: "varchar"
+          length: 32
+          nullable: false
+          default: "other"
+          description: "Purpose code for file usage"
+        visibility:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "private"
+          description: "Visibility: private, public, shared"
+        original_filename:
+          type: "varchar"
+          length: 255
+          nullable: true
+          description: "Original filename"
+        content_type:
+          type: "varchar"
+          length: 120
+          nullable: true
+          description: "MIME content type"
+        extension:
+          type: "varchar"
+          length: 16
+          nullable: true
+          description: "File extension"
+        size_bytes:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "File size in bytes"
+        checksum_sha256:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "SHA256 checksum"
+        storage_provider:
+          type: "varchar"
+          length: 16
+          nullable: true
+          description: "Storage provider (e.g., s3, gcs, local)"
+        storage_bucket:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Storage bucket name"
+        storage_path:
+          type: "varchar"
+          length: 512
+          nullable: true
+          description: "Storage path/key"
+        storage_region:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "Storage region"
+        storage_etag:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Storage ETag"
+        uploaded_at:
+          type: "datetime"
+          nullable: true
+          description: "Upload completion timestamp"
+        verified_at:
+          type: "datetime"
+          nullable: true
+          description: "Verification timestamp"
+        deleted_at:
+          type: "datetime"
+          nullable: true
+          description: "Soft delete timestamp"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional metadata"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+          description: "Record update timestamp"
+
+      primary_key: ["id"]
+
+      unique_keys:
+        uk_file_key:
+          columns: ["file_key"]
+          description: "Unique file key"
+
+      indexes:
+        idx_file_status:
+          columns: ["status"]
+          unique: false
+        idx_file_owner:
+          columns: ["owner_type", "owner_account_id", "owner_person_id"]
+          unique: false
+        idx_file_purpose:
+          columns: ["purpose_code", "status"]
+          unique: false
+        idx_file_uploaded:
+          columns: ["uploaded_at"]
+          unique: false
+        idx_file_checksum:
+          columns: ["checksum_sha256"]
+          unique: false
+
+    file_version:
+      description: "File version history"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        file_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to file_upload"
+        version_no:
+          type: "int"
+          unsigned: true
+          nullable: false
+          description: "Version number"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "active"
+          description: "Status: active, archived"
+        content_type:
+          type: "varchar"
+          length: 120
+          nullable: true
+          description: "MIME content type"
+        size_bytes:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "File size in bytes"
+        checksum_sha256:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "SHA256 checksum"
+        storage_provider:
+          type: "varchar"
+          length: 16
+          nullable: true
+          description: "Storage provider"
+        storage_bucket:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Storage bucket name"
+        storage_path:
+          type: "varchar"
+          length: 512
+          nullable: true
+          description: "Storage path/key"
+        storage_etag:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Storage ETag"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+
+      primary_key: ["id"]
+
+      unique_keys:
+        uk_file_version:
+          columns: ["file_id", "version_no"]
+          description: "Unique version per file"
+
+      indexes:
+        idx_file_version_status:
+          columns: ["file_id", "status"]
+          unique: false
+
+      foreign_keys:
+        fk_file_version_file:
+          columns: ["file_id"]
+          references:
+            table: "file_upload"
+            columns: ["id"]
+          on_delete: "RESTRICT"
+          on_update: "CASCADE"
+
+    file_access_token:
+      description: "Temporary access tokens for file downloads"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        file_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to file_upload"
+        token:
+          type: "varchar"
+          length: 128
+          nullable: false
+          description: "Access token (UUID)"
+        token_type:
+          type: "varchar"
+          length: 32
+          nullable: false
+          default: "download"
+          description: "Token type: download, upload, preview"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "active"
+          description: "Status: active, used, expired, revoked"
+        expires_at:
+          type: "datetime"
+          nullable: true
+          description: "Token expiration timestamp"
+        scopes_json:
+          type: "json"
+          nullable: true
+          description: "Access scopes"
+        issued_by_account_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Issuer account ID"
+        issued_by_person_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Issuer person ID"
+        issued_for:
+          type: "varchar"
+          length: 16
+          nullable: true
+          description: "Token issued for (e.g., 'user', 'email')"
+        issued_for_value:
+          type: "varchar"
+          length: 255
+          nullable: true
+          description: "Token issued for value"
+        max_uses:
+          type: "int"
+          unsigned: true
+          nullable: false
+          default: 0
+          description: "Maximum number of uses (0 = unlimited)"
+        used_count:
+          type: "int"
+          unsigned: true
+          nullable: false
+          default: 0
+          description: "Current use count"
+        last_used_at:
+          type: "datetime"
+          nullable: true
+          description: "Last use timestamp"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional metadata"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+        revoked_at:
+          type: "datetime"
+          nullable: true
+          description: "Revocation timestamp"
+
+      primary_key: ["id"]
+
+      unique_keys:
+        uk_file_token:
+          columns: ["token"]
+          description: "Unique token"
+
+      indexes:
+        idx_token_file_status:
+          columns: ["file_id", "status"]
+          unique: false
+
+    file_event:
+      description: "File audit event log"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        file_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to file_upload"
+        event_type:
+          type: "varchar"
+          length: 64
+          nullable: false
+          description: "Event type (e.g., 'uploaded', 'downloaded', 'deleted')"
+        actor_type:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "system"
+          description: "Actor type: system, user, account"
+        actor_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Actor ID"
+        request_id:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Request correlation ID"
+        payload_json:
+          type: "json"
+          nullable: true
+          description: "Event payload"
+        occurred_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Event occurrence timestamp"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+
+      primary_key: ["id"]
+
+      indexes:
+        idx_file_event_file_time:
+          columns: ["file_id", "occurred_at"]
+          unique: false
+        idx_file_event_type:
+          columns: ["event_type"]
+          unique: false
+
+      foreign_keys:
+        fk_file_event_file:
+          columns: ["file_id"]
+          references:
+            table: "file_upload"
+            columns: ["id"]
+          on_delete: "RESTRICT"
+          on_update: "CASCADE"
+
+    file_link:
+      description: "Polymorphic links between files and entities"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        file_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to file_upload"
+        target_type:
+          type: "varchar"
+          length: 32
+          nullable: false
+          description: "Target entity type (e.g., 'policy', 'claim', 'mission')"
+        target_id:
+          type: "varchar"
+          length: 128
+          nullable: false
+          description: "Target entity ID"
+        role_code:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "File role in context (e.g., 'evidence', 'attachment')"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "active"
+          description: "Status: active, removed"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional metadata"
+        linked_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Link creation timestamp"
+        removed_at:
+          type: "datetime"
+          nullable: true
+          description: "Link removal timestamp"
+
+      primary_key: ["id"]
+
+      unique_keys:
+        uk_file_target_role:
+          columns: ["file_id", "target_type", "target_id", "role_code"]
+          description: "Unique file-target-role combination"
+
+      indexes:
+        idx_link_target:
+          columns: ["target_type", "target_id", "status"]
+          unique: false
+        idx_link_file:
+          columns: ["file_id", "status"]
+          unique: false
+
+      foreign_keys:
+        fk_file_link_file:
+          columns: ["file_id"]
+          references:
+            table: "file_upload"
+            columns: ["id"]
+          on_delete: "RESTRICT"
+          on_update: "CASCADE"
+
+    file_scan_result:
+      description: "Virus/malware scan results"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        file_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to file_upload"
+        scan_type:
+          type: "varchar"
+          length: 16
+          nullable: false
+          description: "Scan type: virus, malware"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "pending"
+          description: "Status: pending, scanning, clean, infected, failed"
+        provider:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "Scan provider (e.g., 'clamav', 'virustotal')"
+        failure_code:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "Failure code if scan failed"
+        summary:
+          type: "varchar"
+          length: 255
+          nullable: true
+          description: "Scan result summary"
+        result_json:
+          type: "json"
+          nullable: true
+          description: "Detailed scan results"
+        scanned_at:
+          type: "datetime"
+          nullable: true
+          description: "Scan completion timestamp"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+
+      primary_key: ["id"]
+
+      indexes:
+        idx_scan_file_type:
+          columns: ["file_id", "scan_type"]
+          unique: false
+        idx_scan_status:
+          columns: ["scan_type", "status"]
+          unique: false
+
+      foreign_keys:
+        fk_scan_file:
+          columns: ["file_id"]
+          references:
+            table: "file_upload"
+            columns: ["id"]
+          on_delete: "RESTRICT"
+          on_update: "CASCADE"
+
+    file_tag:
+      description: "File tag definitions"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        code:
+          type: "varchar"
+          length: 64
+          nullable: false
+          description: "Unique tag code"
+        name:
+          type: "varchar"
+          length: 128
+          nullable: false
+          description: "Tag name"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "active"
+          description: "Status: active, inactive"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+
+      primary_key: ["id"]
+
+      unique_keys:
+        uk_file_tag_code:
+          columns: ["code"]
+          description: "Unique tag code"
+
+      indexes:
+        idx_file_tag_status:
+          columns: ["status"]
+          unique: false
+
+    file_upload_tag:
+      description: "File-tag assignments"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        file_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to file_upload"
+        tag_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to file_tag"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+
+      primary_key: ["id"]
+
+      unique_keys:
+        uk_file_tag_pair:
+          columns: ["file_id", "tag_id"]
+          description: "Unique file-tag pair"
+
+      indexes:
+        idx_file_upload_tag_file:
+          columns: ["file_id"]
+          unique: false
+        idx_file_upload_tag_tag:
+          columns: ["tag_id"]
+          unique: false
+
+      foreign_keys:
+        fk_file_upload_tag_file:
+          columns: ["file_id"]
+          references:
+            table: "file_upload"
+            columns: ["id"]
+          on_delete: "RESTRICT"
+          on_update: "CASCADE"
+        fk_file_upload_tag_tag:
+          columns: ["tag_id"]
+          references:
+            table: "file_tag"
+            columns: ["id"]
+          on_delete: "RESTRICT"
+          on_update: "CASCADE"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# RESOURCES
+# ──────────────────────────────────────────────────────────────────────────────
+
+resources:
+  aggregates:
+    FILE_UPLOAD:
+      root_table: "file_upload"
+      status_field: "status"
+      allowed_statuses:
+        - "created"
+        - "uploading"
+        - "uploaded"
+        - "scanning"
+        - "clean"
+        - "infected"
+        - "failed"
+        - "deleted"
+      description: "File upload aggregate"
+
+    FILE_ACCESS_TOKEN:
+      root_table: "file_access_token"
+      status_field: "status"
+      allowed_statuses:
+        - "active"
+        - "used"
+        - "expired"
+        - "revoked"
+      description: "File access token aggregate"
+
+  non_aggregate_resources:
+    - table_name: "file_version"
+      description: "File version history"
+      parent_aggregate: "FILE_UPLOAD"
+
+    - table_name: "file_event"
+      description: "File audit events"
+      parent_aggregate: "FILE_UPLOAD"
+
+    - table_name: "file_link"
+      description: "Polymorphic file links"
+      parent_aggregate: "FILE_UPLOAD"
+
+    - table_name: "file_scan_result"
+      description: "Virus scan results"
+      parent_aggregate: "FILE_UPLOAD"
+
+    - table_name: "file_tag"
+      description: "Tag definitions (resource catalog)"
+      parent_aggregate: null
+
+    - table_name: "file_upload_tag"
+      description: "File-tag assignments"
+      parent_aggregate: "FILE_UPLOAD"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DTOS
+# ──────────────────────────────────────────────────────────────────────────────
+
+dtos:
+  FileUploadCreateRequestDto:
+    fields:
+      - name: "file_key"
+        type: "string"
+        required: true
+        max_length: 64
+        description: "Unique file key"
+      - name: "owner_account_id"
+        type: "string"
+        required: false
+        description: "Owner account ID"
+      - name: "owner_person_id"
+        type: "string"
+        required: false
+        description: "Owner person ID"
+      - name: "owner_type"
+        type: "string"
+        required: false
+        max_length: 16
+        default: "account"
+        description: "Owner type"
+      - name: "purpose_code"
+        type: "string"
+        required: false
+        max_length: 32
+        default: "other"
+        description: "Purpose code"
+      - name: "visibility"
+        type: "string"
+        required: false
+        max_length: 16
+        default: "private"
+        description: "Visibility level"
+
+  FileUploadCompleteRequestDto:
+    fields:
+      - name: "original_filename"
+        type: "string"
+        required: true
+        max_length: 255
+        description: "Original filename"
+      - name: "content_type"
+        type: "string"
+        required: true
+        max_length: 120
+        description: "MIME type"
+      - name: "size_bytes"
+        type: "number"
+        required: true
+        description: "File size in bytes"
+      - name: "checksum_sha256"
+        type: "string"
+        required: true
+        max_length: 64
+        description: "SHA256 checksum"
+      - name: "storage_provider"
+        type: "string"
+        required: true
+        max_length: 16
+        description: "Storage provider"
+      - name: "storage_bucket"
+        type: "string"
+        required: true
+        max_length: 128
+        description: "Storage bucket"
+      - name: "storage_path"
+        type: "string"
+        required: true
+        max_length: 512
+        description: "Storage path"
+
+  FileAccessTokenGenerateRequestDto:
+    fields:
+      - name: "token_type"
+        type: "string"
+        required: false
+        max_length: 32
+        default: "download"
+        description: "Token type"
+      - name: "expires_in_seconds"
+        type: "number"
+        required: false
+        description: "Token TTL in seconds"
+      - name: "max_uses"
+        type: "number"
+        required: false
+        default: 0
+        description: "Maximum uses"
+
+  FileLinkCreateRequestDto:
+    fields:
+      - name: "target_type"
+        type: "string"
+        required: true
+        max_length: 32
+        description: "Target entity type"
+      - name: "target_id"
+        type: "string"
+        required: true
+        max_length: 128
+        description: "Target entity ID"
+      - name: "role_code"
+        type: "string"
+        required: false
+        max_length: 64
+        description: "File role"
+
+  FileScanRecordRequestDto:
+    fields:
+      - name: "scan_type"
+        type: "string"
+        required: true
+        max_length: 16
+        description: "Scan type"
+      - name: "status"
+        type: "string"
+        required: true
+        max_length: 16
+        description: "Scan status"
+      - name: "provider"
+        type: "string"
+        required: false
+        max_length: 64
+        description: "Scan provider"
+      - name: "summary"
+        type: "string"
+        required: false
+        max_length: 255
+        description: "Scan summary"
+
+  FileTagCreateRequestDto:
+    fields:
+      - name: "code"
+        type: "string"
+        required: true
+        max_length: 64
+        description: "Tag code"
+      - name: "name"
+        type: "string"
+        required: true
+        max_length: 128
+        description: "Tag name"
+
+  FileTagAssignRequestDto:
+    fields:
+      - name: "tag_id"
+        type: "string"
+        required: true
+        description: "Tag ID to assign"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# EVENTS
+# ──────────────────────────────────────────────────────────────────────────────
+
+events:
+  FILE_UPLOAD_CREATED:
+    version: 1
+    aggregate_type: "FILE_UPLOAD"
+    description: "File upload record was created"
+    payload:
+      - "file_id"
+      - "file_key"
+
+  FILE_UPLOAD_COMPLETED:
+    version: 1
+    aggregate_type: "FILE_UPLOAD"
+    description: "File upload was completed"
+    payload:
+      - "file_id"
+      - "file_key"
+      - "size_bytes"
+
+  FILE_SCAN_INITIATED:
+    version: 1
+    aggregate_type: "FILE_UPLOAD"
+    description: "File scan was initiated"
+    payload:
+      - "file_id"
+      - "scan_type"
+
+  FILE_SCAN_COMPLETED:
+    version: 1
+    aggregate_type: "FILE_UPLOAD"
+    description: "File scan completed"
+    payload:
+      - "file_id"
+      - "scan_type"
+      - "status"
+
+  FILE_DELETED:
+    version: 1
+    aggregate_type: "FILE_UPLOAD"
+    description: "File was deleted"
+    payload:
+      - "file_id"
+
+  FILE_ACCESS_TOKEN_GENERATED:
+    version: 1
+    aggregate_type: "FILE_ACCESS_TOKEN"
+    description: "Access token was generated"
+    payload:
+      - "token_id"
+      - "file_id"
+      - "token_type"
+
+  FILE_ACCESS_TOKEN_USED:
+    version: 1
+    aggregate_type: "FILE_ACCESS_TOKEN"
+    description: "Access token was used"
+    payload:
+      - "token_id"
+      - "file_id"
+
+  FILE_ACCESS_TOKEN_REVOKED:
+    version: 1
+    aggregate_type: "FILE_ACCESS_TOKEN"
+    description: "Access token was revoked"
+    payload:
+      - "token_id"
+      - "file_id"
+
+  FILE_LINKED:
+    version: 1
+    aggregate_type: "FILE_UPLOAD"
+    description: "File was linked to entity"
+    payload:
+      - "file_id"
+      - "target_type"
+      - "target_id"
+
+  FILE_UNLINKED:
+    version: 1
+    aggregate_type: "FILE_UPLOAD"
+    description: "File was unlinked from entity"
+    payload:
+      - "file_id"
+      - "target_type"
+      - "target_id"
+
+  FILE_TAGGED:
+    version: 1
+    aggregate_type: "FILE_UPLOAD"
+    description: "Tag was assigned to file"
+    payload:
+      - "file_id"
+      - "tag_id"
+
+  FILE_TAG_REMOVED:
+    version: 1
+    aggregate_type: "FILE_UPLOAD"
+    description: "Tag was removed from file"
+    payload:
+      - "file_id"
+      - "tag_id"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# COMMANDS
+# ──────────────────────────────────────────────────────────────────────────────
+
+commands:
+  FILE_UPLOAD.CREATE:
+    http:
+      method: "POST"
+      path: "/v1/files"
+
+    request:
+      dto: "FileUploadCreateRequestDto"
+
+    idempotency:
+      strategy: "UNIQUE(file_key)"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "file_key is required"
+
+      - step: "WRITE"
+        operations:
+          - table: "file_upload"
+            action: "INSERT ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)"
+            fields:
+              - "file_key"
+              - "owner_account_id"
+              - "owner_person_id"
+              - "owner_type"
+              - "purpose_code"
+              - "visibility"
+              - "status = 'created'"
+
+      - step: "EMIT"
+        events:
+          - "FILE_UPLOAD_CREATED"
+
+      - step: "COMMIT"
+        returns:
+          - "file_id"
+          - "file_key"
+          - "status"
+
+    permissions:
+      - "file:upload"
+
+  FILE_UPLOAD.GET:
+    http:
+      method: "GET"
+      path: "/v1/files/{file_id}"
+
+    workflow:
+      - step: "READ"
+        operations:
+          - table: "file_upload"
+            action: "SELECT"
+            where: "id = :file_id"
+
+      - step: "GUARD"
+        checks:
+          - "file exists"
+
+      - step: "RETURN"
+        returns: "file record"
+
+    permissions:
+      - "file:read"
+
+  FILE_UPLOAD.LIST:
+    http:
+      method: "GET"
+      path: "/v1/files"
+
+    workflow:
+      - step: "READ"
+        operations:
+          - table: "file_upload"
+            action: "SELECT"
+            order_by: "created_at DESC"
+
+      - step: "RETURN"
+        returns: "{ items: [file records] }"
+
+    permissions:
+      - "file:read"
+
+  FILE_UPLOAD.COMPLETE:
+    http:
+      method: "POST"
+      path: "/v1/files/{file_id}/complete"
+
+    request:
+      dto: "FileUploadCompleteRequestDto"
+
+    idempotency:
+      strategy: "idempotent_status_change"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "file exists"
+          - "file.status IN ('created', 'uploading')"
+
+      - step: "WRITE"
+        operations:
+          - table: "file_upload"
+            action: "UPDATE"
+            where: "id = :file_id"
+            fields:
+              - "original_filename"
+              - "content_type"
+              - "size_bytes"
+              - "checksum_sha256"
+              - "storage_provider"
+              - "storage_bucket"
+              - "storage_path"
+              - "uploaded_at = NOW()"
+              - "status = 'uploaded'"
+
+      - step: "EMIT"
+        events:
+          - "FILE_UPLOAD_COMPLETED"
+
+      - step: "COMMIT"
+        returns:
+          - "file_id"
+          - "status"
+
+    permissions:
+      - "file:upload"
+
+  FILE_UPLOAD.INITIATE_SCAN:
+    http:
+      method: "POST"
+      path: "/v1/files/{file_id}/scan"
+
+    idempotency:
+      strategy: "idempotent_status_change"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "file exists"
+          - "file.status = 'uploaded'"
+
+      - step: "WRITE"
+        operations:
+          - table: "file_upload"
+            action: "UPDATE"
+            where: "id = :file_id"
+            fields:
+              - "status = 'scanning'"
+
+      - step: "EMIT"
+        events:
+          - "FILE_SCAN_INITIATED"
+
+      - step: "COMMIT"
+        returns:
+          - "file_id"
+          - "status"
+
+    permissions:
+      - "file:admin"
+
+  FILE_UPLOAD.DELETE:
+    http:
+      method: "DELETE"
+      path: "/v1/files/{file_id}"
+
+    idempotency:
+      strategy: "soft_delete_idempotent"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "file exists"
+          - "file.deleted_at IS NULL"
+
+      - step: "WRITE"
+        operations:
+          - table: "file_upload"
+            action: "UPDATE"
+            where: "id = :file_id"
+            fields:
+              - "status = 'deleted'"
+              - "deleted_at = NOW()"
+
+      - step: "EMIT"
+        events:
+          - "FILE_DELETED"
+
+      - step: "COMMIT"
+        returns:
+          - "file_id"
+          - "status"
+
+    permissions:
+      - "file:admin"
+
+  FILE_ACCESS_TOKEN.GENERATE:
+    http:
+      method: "POST"
+      path: "/v1/files/{file_id}/tokens"
+
+    request:
+      dto: "FileAccessTokenGenerateRequestDto"
+
+    idempotency:
+      strategy: "generate_new_token"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "file exists"
+          - "file.status = 'clean'"
+
+      - step: "WRITE"
+        operations:
+          - table: "file_access_token"
+            action: "INSERT"
+            fields:
+              - "file_id"
+              - "token = UUID()"
+              - "token_type"
+              - "status = 'active'"
+              - "expires_at = NOW() + expires_in_seconds"
+              - "max_uses"
+              - "issued_by_account_id"
+
+      - step: "EMIT"
+        events:
+          - "FILE_ACCESS_TOKEN_GENERATED"
+
+      - step: "COMMIT"
+        returns:
+          - "token_id"
+          - "token"
+          - "expires_at"
+
+    permissions:
+      - "file:share"
+
+  FILE_ACCESS_TOKEN.VALIDATE:
+    http:
+      method: "GET"
+      path: "/v1/file-tokens/{token}/validate"
+
+    workflow:
+      - step: "READ"
+        operations:
+          - table: "file_access_token"
+            action: "SELECT"
+            where: "token = :token"
+
+      - step: "GUARD"
+        checks:
+          - "token exists"
+          - "token.status = 'active'"
+          - "token.expires_at > NOW() OR expires_at IS NULL"
+          - "token.used_count < token.max_uses OR max_uses = 0"
+
+      - step: "RETURN"
+        returns:
+          - "valid: true"
+          - "file_id"
+          - "token_type"
+
+    permissions:
+      - "public"
+
+  FILE_ACCESS_TOKEN.USE:
+    http:
+      method: "POST"
+      path: "/v1/file-tokens/{token}/use"
+
+    idempotency:
+      strategy: "increment_counter"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "token is valid"
+
+      - step: "WRITE"
+        operations:
+          - table: "file_access_token"
+            action: "UPDATE"
+            where: "token = :token"
+            fields:
+              - "used_count = used_count + 1"
+              - "last_used_at = NOW()"
+
+      - step: "EMIT"
+        events:
+          - "FILE_ACCESS_TOKEN_USED"
+
+      - step: "RETURN"
+        returns:
+          - "file_id"
+          - "used_count"
+
+    permissions:
+      - "public"
+
+  FILE_ACCESS_TOKEN.REVOKE:
+    http:
+      method: "POST"
+      path: "/v1/file-tokens/{token}/revoke"
+
+    idempotency:
+      strategy: "idempotent_status_change"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "token exists"
+          - "token.status != 'revoked'"
+
+      - step: "WRITE"
+        operations:
+          - table: "file_access_token"
+            action: "UPDATE"
+            where: "token = :token"
+            fields:
+              - "status = 'revoked'"
+              - "revoked_at = NOW()"
+
+      - step: "EMIT"
+        events:
+          - "FILE_ACCESS_TOKEN_REVOKED"
+
+      - step: "COMMIT"
+        returns:
+          - "token_id"
+          - "status"
+
+    permissions:
+      - "file:admin"
+
+  FILE_LINK.CREATE:
+    http:
+      method: "POST"
+      path: "/v1/files/{file_id}/links"
+
+    request:
+      dto: "FileLinkCreateRequestDto"
+
+    idempotency:
+      strategy: "UNIQUE(file_id, target_type, target_id, role_code)"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "file exists"
+
+      - step: "WRITE"
+        operations:
+          - table: "file_link"
+            action: "INSERT ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)"
+            fields:
+              - "file_id"
+              - "target_type"
+              - "target_id"
+              - "role_code"
+              - "status = 'active'"
+
+      - step: "EMIT"
+        events:
+          - "FILE_LINKED"
+
+      - step: "COMMIT"
+        returns:
+          - "file_link_id"
+
+    permissions:
+      - "file:link"
+
+  FILE_LINK.LIST_BY_TARGET:
+    http:
+      method: "GET"
+      path: "/v1/file-links/{target_type}/{target_id}"
+
+    workflow:
+      - step: "READ"
+        operations:
+          - table: "file_link JOIN file_upload"
+            action: "SELECT"
+            where: "target_type = :target_type AND target_id = :target_id AND status = 'active'"
+
+      - step: "RETURN"
+        returns: "{ items: [linked files] }"
+
+    permissions:
+      - "file:read"
+
+  FILE_LINK.REMOVE:
+    http:
+      method: "DELETE"
+      path: "/v1/file-links/{file_link_id}"
+
+    idempotency:
+      strategy: "soft_remove_idempotent"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "link exists"
+          - "link.status = 'active'"
+
+      - step: "WRITE"
+        operations:
+          - table: "file_link"
+            action: "UPDATE"
+            where: "id = :file_link_id"
+            fields:
+              - "status = 'removed'"
+              - "removed_at = NOW()"
+
+      - step: "EMIT"
+        events:
+          - "FILE_UNLINKED"
+
+      - step: "COMMIT"
+        returns:
+          - "file_link_id"
+          - "status"
+
+    permissions:
+      - "file:admin"
+
+  FILE_SCAN.RECORD:
+    http:
+      method: "POST"
+      path: "/v1/files/{file_id}/scan-results"
+
+    request:
+      dto: "FileScanRecordRequestDto"
+
+    idempotency:
+      strategy: "create_scan_result"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "file exists"
+
+      - step: "WRITE"
+        operations:
+          - table: "file_scan_result"
+            action: "INSERT"
+            fields:
+              - "file_id"
+              - "scan_type"
+              - "status"
+              - "provider"
+              - "summary"
+              - "scanned_at = NOW() (if status is clean/infected)"
+
+          - table: "file_upload"
+            action: "UPDATE (if scan is clean)"
+            where: "id = :file_id"
+            fields:
+              - "status = 'clean'"
+              - "verified_at = NOW()"
+
+          - table: "file_upload"
+            action: "UPDATE (if scan is infected)"
+            where: "id = :file_id"
+            fields:
+              - "status = 'infected'"
+
+      - step: "EMIT"
+        events:
+          - "FILE_SCAN_COMPLETED"
+
+      - step: "COMMIT"
+        returns:
+          - "file_scan_result_id"
+          - "status"
+
+    permissions:
+      - "file:admin"
+
+  FILE_TAG.CREATE:
+    http:
+      method: "POST"
+      path: "/v1/file-tags"
+
+    request:
+      dto: "FileTagCreateRequestDto"
+
+    idempotency:
+      strategy: "UNIQUE(code)"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "code is required"
+
+      - step: "WRITE"
+        operations:
+          - table: "file_tag"
+            action: "INSERT ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)"
+            fields:
+              - "code"
+              - "name"
+              - "status = 'active'"
+
+      - step: "COMMIT"
+        returns:
+          - "tag_id"
+
+    permissions:
+      - "file:admin"
+
+  FILE_TAG.LIST:
+    http:
+      method: "GET"
+      path: "/v1/file-tags"
+
+    workflow:
+      - step: "READ"
+        operations:
+          - table: "file_tag"
+            action: "SELECT"
+            where: "status = 'active'"
+            order_by: "name ASC"
+
+      - step: "RETURN"
+        returns: "{ items: [tags] }"
+
+    permissions:
+      - "file:read"
+
+  FILE_TAG.ASSIGN:
+    http:
+      method: "POST"
+      path: "/v1/files/{file_id}/tags"
+
+    request:
+      dto: "FileTagAssignRequestDto"
+
+    idempotency:
+      strategy: "UNIQUE(file_id, tag_id)"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "file exists"
+          - "tag exists"
+
+      - step: "WRITE"
+        operations:
+          - table: "file_upload_tag"
+            action: "INSERT IGNORE"
+            fields:
+              - "file_id"
+              - "tag_id"
+
+      - step: "EMIT"
+        events:
+          - "FILE_TAGGED"
+
+      - step: "COMMIT"
+        returns:
+          - "file_upload_tag_id"
+
+    permissions:
+      - "file:manage"
+
+  FILE_TAG.REMOVE:
+    http:
+      method: "DELETE"
+      path: "/v1/files/{file_id}/tags/{tag_id}"
+
+    idempotency:
+      strategy: "delete_idempotent"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "assignment exists"
+
+      - step: "WRITE"
+        operations:
+          - table: "file_upload_tag"
+            action: "DELETE"
+            where: "file_id = :file_id AND tag_id = :tag_id"
+
+      - step: "EMIT"
+        events:
+          - "FILE_TAG_REMOVED"
+
+      - step: "COMMIT"
+        returns:
+          - "file_id"
+          - "tag_id"
+
+    permissions:
+      - "file:admin"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# COVERAGE
+# ──────────────────────────────────────────────────────────────────────────────
+
+coverage:
+  tables_touched_by_commands:
+    file_upload:
+      - "FILE_UPLOAD.CREATE"
+      - "FILE_UPLOAD.GET"
+      - "FILE_UPLOAD.LIST"
+      - "FILE_UPLOAD.COMPLETE"
+      - "FILE_UPLOAD.INITIATE_SCAN"
+      - "FILE_UPLOAD.DELETE"
+      - "FILE_SCAN.RECORD"
+
+    file_access_token:
+      - "FILE_ACCESS_TOKEN.GENERATE"
+      - "FILE_ACCESS_TOKEN.VALIDATE"
+      - "FILE_ACCESS_TOKEN.USE"
+      - "FILE_ACCESS_TOKEN.REVOKE"
+
+    file_link:
+      - "FILE_LINK.CREATE"
+      - "FILE_LINK.LIST_BY_TARGET"
+      - "FILE_LINK.REMOVE"
+
+    file_scan_result:
+      - "FILE_SCAN.RECORD"
+
+    file_tag:
+      - "FILE_TAG.CREATE"
+      - "FILE_TAG.LIST"
+
+    file_upload_tag:
+      - "FILE_TAG.ASSIGN"
+      - "FILE_TAG.REMOVE"
+
+  events_emitted_by_commands:
+    FILE_UPLOAD_CREATED:
+      - "FILE_UPLOAD.CREATE"
+    FILE_UPLOAD_COMPLETED:
+      - "FILE_UPLOAD.COMPLETE"
+    FILE_SCAN_INITIATED:
+      - "FILE_UPLOAD.INITIATE_SCAN"
+    FILE_SCAN_COMPLETED:
+      - "FILE_SCAN.RECORD"
+    FILE_DELETED:
+      - "FILE_UPLOAD.DELETE"
+    FILE_ACCESS_TOKEN_GENERATED:
+      - "FILE_ACCESS_TOKEN.GENERATE"
+    FILE_ACCESS_TOKEN_USED:
+      - "FILE_ACCESS_TOKEN.USE"
+    FILE_ACCESS_TOKEN_REVOKED:
+      - "FILE_ACCESS_TOKEN.REVOKE"
+    FILE_LINKED:
+      - "FILE_LINK.CREATE"
+    FILE_UNLINKED:
+      - "FILE_LINK.REMOVE"
+    FILE_TAGGED:
+      - "FILE_TAG.ASSIGN"
+    FILE_TAG_REMOVED:
+      - "FILE_TAG.REMOVE"
+
+  aggregate_state_transitions:
+    FILE_UPLOAD:
+      - from: "null"
+        to: "created"
+        via: "FILE_UPLOAD.CREATE"
+      - from: "created"
+        to: "uploaded"
+        via: "FILE_UPLOAD.COMPLETE"
+      - from: "uploaded"
+        to: "scanning"
+        via: "FILE_UPLOAD.INITIATE_SCAN"
+      - from: "scanning"
+        to: "clean"
+        via: "FILE_SCAN.RECORD"
+      - from: "scanning"
+        to: "infected"
+        via: "FILE_SCAN.RECORD"
+      - from: "clean"
+        to: "deleted"
+        via: "FILE_UPLOAD.DELETE"
+
+    FILE_ACCESS_TOKEN:
+      - from: "null"
+        to: "active"
+        via: "FILE_ACCESS_TOKEN.GENERATE"
+      - from: "active"
+        to: "revoked"
+        via: "FILE_ACCESS_TOKEN.REVOKE"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CHANGELOG
+# ──────────────────────────────────────────────────────────────────────────────
+
+changelog:
+  - version: "2.0.0"
+    date: "2026-03-15"
+    changes:
+      - "Initial file pillar specification"
+      - "Extracted from FULL-DDL.md"
+      - "Implements 8 tables: file_upload, file_version, file_access_token, file_event, file_link, file_scan_result, file_tag, file_upload_tag"
+      - "18 commands covering file lifecycle, access control, linking, scanning, and tagging"
+      - "12 events for file operations and state changes"
+      - "Supports virus scanning workflow"
+      - "Polymorphic file linking to any entity"

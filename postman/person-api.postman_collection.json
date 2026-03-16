@@ -1,0 +1,396 @@
+{
+	"info": {
+		"_postman_id": "person-api-v1",
+		"name": "Person API",
+		"description": "Person Management - Identity and Relationship Tracking\n\nSource: specs/person/person.pillar.v2.yml",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Persons",
+			"item": [
+				{
+					"name": "Create Person",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"pm.environment.set(\"person_id\", jsonData.person_id);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"type\": \"individual\",\n  \"full_name\": \"John Doe\",\n  \"dob\": \"1990-05-15\",\n  \"gender\": \"male\",\n  \"nationality\": \"US\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/persons",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "persons"]
+						},
+						"description": "Create a new person record\n\nIdempotency: Via Idempotency-Key header"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Person",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/v1/persons/{{person_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "persons", "{{person_id}}"]
+						},
+						"description": "Get person by ID"
+					},
+					"response": []
+				},
+				{
+					"name": "Update Person",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"full_name\": \"John Doe Updated\",\n  \"nationality\": \"CA\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/persons/{{person_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "persons", "{{person_id}}"]
+						},
+						"description": "Update person information"
+					},
+					"response": []
+				},
+				{
+					"name": "List Persons",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/v1/persons",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "persons"]
+						},
+						"description": "List all persons (paginated)"
+					},
+					"response": []
+				},
+				{
+					"name": "Deactivate Person",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/v1/persons/{{person_id}}/deactivate",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "persons", "{{person_id}}", "deactivate"]
+						},
+						"description": "Deactivate person (soft delete)"
+					},
+					"response": []
+				}
+			],
+			"description": "Person CRUD operations"
+		},
+		{
+			"name": "Person Identity",
+			"item": [
+				{
+					"name": "Add Identity Document",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"pm.environment.set(\"identity_id\", jsonData.identity_id);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"id_type\": \"passport\",\n  \"id_no\": \"X12345678\",\n  \"country\": \"US\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/persons/{{person_id}}/identities",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "persons", "{{person_id}}", "identities"]
+						},
+						"description": "Add identity document to person\n\nIdempotency: Via UNIQUE(person_id, identity_type, identity_number)"
+					},
+					"response": []
+				},
+				{
+					"name": "Add National ID",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"id_type\": \"national_id\",\n  \"id_no\": \"123-45-6789\",\n  \"country\": \"US\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/persons/{{person_id}}/identities",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "persons", "{{person_id}}", "identities"]
+						}
+					},
+					"response": []
+				}
+			],
+			"description": "Identity document management"
+		},
+		{
+			"name": "Person Relationships",
+			"item": [
+				{
+					"name": "Create Relationship",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"pm.environment.set(\"relationship_id\", jsonData.relationship_id);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"to_person_id\": \"2\",\n  \"relation_type\": \"spouse\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/persons/{{person_id}}/relationships",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "persons", "{{person_id}}", "relationships"]
+						},
+						"description": "Create relationship between persons\n\nIdempotency: Via UNIQUE(person_id, related_person_id, relationship_type)"
+					},
+					"response": []
+				},
+				{
+					"name": "Create Child Relationship",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"to_person_id\": \"3\",\n  \"relation_type\": \"child\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/persons/{{person_id}}/relationships",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "persons", "{{person_id}}", "relationships"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Relationships",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/v1/persons/{{person_id}}/relationships",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "persons", "{{person_id}}", "relationships"]
+						},
+						"description": "List all relationships for a person"
+					},
+					"response": []
+				}
+			],
+			"description": "Relationship management (family, dependents, etc.)"
+		},
+		{
+			"name": "Complete Workflow",
+			"item": [
+				{
+					"name": "1. Create Person",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"pm.environment.set(\"person_id\", jsonData.person_id);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"type\": \"individual\",\n  \"full_name\": \"Alice Johnson\",\n  \"dob\": \"1985-08-22\",\n  \"gender\": \"female\",\n  \"nationality\": \"US\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/persons",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "persons"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "2. Add Passport",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"pm.environment.set(\"passport_id\", jsonData.identity_id);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"id_type\": \"passport\",\n  \"id_no\": \"AB9876543\",\n  \"country\": \"US\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/persons/{{person_id}}/identities",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "persons", "{{person_id}}", "identities"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "3. Get Complete Person Info",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/v1/persons/{{person_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "persons", "{{person_id}}"]
+						}
+					},
+					"response": []
+				}
+			],
+			"description": "Complete person onboarding workflow"
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Add X-User-Id header",
+					"pm.request.headers.add({",
+					"  key: 'X-User-Id',",
+					"  value: pm.collectionVariables.get('user_id') || '1'",
+					"});",
+					"",
+					"// Add Idempotency-Key for POST/PUT requests",
+					"if (pm.request.method === 'POST' || pm.request.method === 'PUT') {",
+					"  const existingKey = pm.request.headers.get('Idempotency-Key');",
+					"  if (!existingKey) {",
+					"    pm.request.headers.add({",
+					"      key: 'Idempotency-Key',",
+					"      value: pm.variables.replaceIn('{{$guid}}')",
+					"    });",
+					"  }",
+					"}"
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:3000",
+			"type": "string"
+		},
+		{
+			"key": "user_id",
+			"value": "1",
+			"type": "string"
+		},
+		{
+			"key": "person_id",
+			"value": "1",
+			"type": "string"
+		},
+		{
+			"key": "identity_id",
+			"value": "1",
+			"type": "string"
+		},
+		{
+			"key": "relationship_id",
+			"value": "1",
+			"type": "string"
+		}
+	]
+}

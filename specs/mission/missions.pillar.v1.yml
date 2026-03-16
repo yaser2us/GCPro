@@ -1,0 +1,1142 @@
+version: "1.0"
+spec_id: "missions.pillar.v1"
+domain: "missions"
+plugin: "missions"
+
+ownership:
+  owner_plugin: "missions"
+  owns_tables:
+    - "mission_definition"
+    - "mission_assignment"
+    - "mission_progress"
+    - "mission_submission"
+    - "mission_submission_file"
+    - "mission_reward_grant"
+    - "mission_event"
+  cross_plugin_writes: false
+  cross_plugin_integration:
+    allowed_via:
+      - "command_api"
+      - "outbox_events"
+
+dependencies:
+  corekit:
+    transaction_wrapper: "withTxn"
+    outbox_service: "OutboxService.emit"
+    guard_helper: "guard"
+    domain_error: "DomainError"
+  core_tables_readonly:
+    - "user"
+
+conventions:
+  workflow_discipline:
+    - "guard"
+    - "write"
+    - "emit"
+    - "commit"
+  status_mutation_policy: "Status fields may only be mutated through commands."
+  outbox:
+    required_envelope_fields:
+      - "event_name"
+      - "event_version"
+      - "aggregate_type"
+      - "aggregate_id"
+      - "actor_user_id"
+      - "occurred_at"
+      - "correlation_id"
+      - "causation_id"
+  idempotency:
+    required_header: "Idempotency-Key"
+    default_scope: "actor_user_id + command_name"
+    db_strategy:
+      - "UNIQUE(idempotency_key) where applicable"
+      - "UNIQUE(user_id, mission_definition_id) for assignment-style dedupe"
+      - "UNIQUE(assignment_id) for reward grant exactly-once"
+      - "MySQL ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)"
+
+resources:
+  - name: "mission_definition"
+    kind: "aggregate"
+    table: "mission_definition"
+    primary_key: "id"
+    statuses:
+      - "draft"
+      - "published"
+      - "paused"
+      - "retired"
+    api_surface:
+      - "create"
+      - "get"
+      - "list"
+      - "publish"
+      - "pause"
+      - "retire"
+
+  - name: "mission_assignment"
+    kind: "aggregate"
+    table: "mission_assignment"
+    primary_key: "id"
+    statuses:
+      - "assigned"
+      - "in_progress"
+      - "submitted"
+      - "completed"
+      - "cancelled"
+    api_surface:
+      - "assign"
+      - "get"
+      - "listByUser"
+      - "cancel"
+
+  - name: "mission_submission"
+    kind: "aggregate"
+    table: "mission_submission"
+    primary_key: "id"
+    statuses:
+      - "pending"
+      - "approved"
+      - "rejected"
+      - "invalidated"
+    api_surface:
+      - "submit"
+      - "get"
+      - "approve"
+      - "reject"
+
+  - name: "mission_progress"
+    kind: "resource"
+    table: "mission_progress"
+    primary_key: "id"
+    api_surface:
+      - "record"
+      - "get"
+      - "listByAssignment"
+
+  - name: "mission_submission_file"
+    kind: "resource"
+    table: "mission_submission_file"
+    primary_key: "id"
+    api_surface:
+      - "listBySubmission"
+
+  - name: "mission_reward_grant"
+    kind: "aggregate"
+    table: "mission_reward_grant"
+    primary_key: "id"
+    statuses:
+      - "created"
+      - "requested"
+      - "granted"
+      - "failed"
+      - "revoked"
+    api_surface:
+      - "get"
+      - "listByAssignment"
+
+  - name: "mission_event"
+    kind: "resource"
+    table: "mission_event"
+    primary_key: "id"
+    api_surface:
+      - "listByAssignment"
+
+aggregates:
+  MISSION_DEFINITION:
+    root_table: "mission_definition"
+    primary_key: "id"
+    statuses:
+      - "draft"
+      - "published"
+      - "paused"
+      - "retired"
+
+  MISSION_ASSIGNMENT:
+    root_table: "mission_assignment"
+    primary_key: "id"
+    statuses:
+      - "assigned"
+      - "in_progress"
+      - "submitted"
+      - "completed"
+      - "cancelled"
+
+  MISSION_SUBMISSION:
+    root_table: "mission_submission"
+    primary_key: "id"
+    statuses:
+      - "pending"
+      - "approved"
+      - "rejected"
+      - "invalidated"
+
+  MISSION_REWARD_GRANT:
+    root_table: "mission_reward_grant"
+    primary_key: "id"
+    statuses:
+      - "created"
+      - "requested"
+      - "granted"
+      - "failed"
+      - "revoked"
+
+types:
+  Actor:
+    fields:
+      - { name: "actor_user_id", type: "string", required: true }
+      - { name: "roles", type: "string[]", required: false }
+
+  MissionDefinitionSummary:
+    fields:
+      - { name: "id", type: "string", required: true }
+      - { name: "code", type: "string", required: true }
+      - { name: "title", type: "string", required: true }
+      - { name: "status", type: "string", required: true }
+
+  MissionAssignmentSummary:
+    fields:
+      - { name: "id", type: "string", required: true }
+      - { name: "mission_definition_id", type: "string", required: true }
+      - { name: "user_id", type: "string", required: true }
+      - { name: "status", type: "string", required: true }
+
+dtos:
+  MissionDefinitionCreateRequest:
+    fields:
+      - { name: "code", type: "string", required: true, max_len: 64 }
+      - { name: "title", type: "string", required: true, max_len: 200 }
+      - { name: "description", type: "string", required: false, max_len: 5000 }
+      - { name: "cadence", type: "string", required: true, example: "one_time" }
+      - { name: "starts_at", type: "datetime", required: false }
+      - { name: "ends_at", type: "datetime", required: false }
+      - { name: "max_total", type: "int32", required: false }
+      - { name: "max_per_user", type: "int32", required: false }
+      - { name: "criteria_json", type: "json", required: false }
+      - { name: "reward_json", type: "json", required: false }
+
+  MissionDefinitionStateChangeRequest:
+    fields:
+      - { name: "reason", type: "string", required: false, max_len: 500 }
+
+  MissionAssignRequest:
+    fields:
+      - { name: "user_id", type: "string", required: true }
+
+  MissionSubmitRequest:
+    fields:
+      - { name: "content_json", type: "json", required: false }
+      - { name: "file_ids", type: "string[]", required: false }
+
+  MissionSubmissionReviewRequest:
+    fields:
+      - { name: "feedback", type: "string", required: false, max_len: 1000 }
+
+  MissionProgressRecordRequest:
+    fields:
+      - { name: "metric_code", type: "string", required: true, max_len: 64 }
+      - { name: "metric_value", type: "string", required: true, max_len: 255 }
+      - { name: "progress_json", type: "json", required: false }
+
+events:
+  - name: "MISSION_DEFINITION_CREATED"
+    version: 1
+    aggregate_type: "MISSION_DEFINITION"
+
+  - name: "MISSION_DEFINITION_PUBLISHED"
+    version: 1
+    aggregate_type: "MISSION_DEFINITION"
+
+  - name: "MISSION_DEFINITION_PAUSED"
+    version: 1
+    aggregate_type: "MISSION_DEFINITION"
+
+  - name: "MISSION_DEFINITION_RETIRED"
+    version: 1
+    aggregate_type: "MISSION_DEFINITION"
+
+  - name: "MISSION_ASSIGNED"
+    version: 1
+    aggregate_type: "MISSION_ASSIGNMENT"
+
+  - name: "MISSION_PROGRESS_RECORDED"
+    version: 1
+    aggregate_type: "MISSION_ASSIGNMENT"
+
+  - name: "MISSION_SUBMITTED"
+    version: 1
+    aggregate_type: "MISSION_SUBMISSION"
+
+  - name: "MISSION_SUBMISSION_APPROVED"
+    version: 1
+    aggregate_type: "MISSION_SUBMISSION"
+
+  - name: "MISSION_SUBMISSION_REJECTED"
+    version: 1
+    aggregate_type: "MISSION_SUBMISSION"
+
+  - name: "MISSION_COMPLETED"
+    version: 1
+    aggregate_type: "MISSION_ASSIGNMENT"
+
+  - name: "MISSION_REWARD_REQUESTED"
+    version: 1
+    aggregate_type: "MISSION_REWARD_GRANT"
+
+commands:
+  - name: "MissionDefinition.Create"
+    path: "/v1/missions/definitions"
+    method: "POST"
+    idempotent: true
+    input: "MissionDefinitionCreateRequest"
+    steps:
+      - kind: "guard"
+        expr: "request.code != null && request.code != ''"
+        error_code: "MISSION_CODE_REQUIRED"
+        error_status: 400
+
+      - kind: "upsert"
+        table: "mission_definition"
+        unique_by: ["code"]
+        values:
+          code: "request.code"
+          title: "request.title"
+          description: "request.description"
+          cadence: "request.cadence"
+          starts_at: "request.starts_at"
+          ends_at: "request.ends_at"
+          max_total: "request.max_total"
+          max_per_user: "request.max_per_user"
+          criteria_json: "request.criteria_json"
+          reward_json: "request.reward_json"
+          status: "draft"
+
+      - kind: "insert"
+        table: "mission_event"
+        values:
+          mission_definition_id: "last_insert_id()"
+          assignment_id: null
+          event_type: "definition_created"
+          payload_json:
+            code: "request.code"
+            title: "request.title"
+
+      - kind: "outbox_emit"
+        event: "MISSION_DEFINITION_CREATED"
+        aggregate_type: "MISSION_DEFINITION"
+        aggregate_id: "last_insert_id()"
+        payload:
+          mission_definition_id: "last_insert_id()"
+          code: "request.code"
+          title: "request.title"
+    response:
+      status: 201
+      body:
+        mission_definition_id: "last_insert_id()"
+        status: "draft"
+
+  - name: "MissionDefinition.Get"
+    path: "/v1/missions/definitions/{mission_definition_id}"
+    method: "GET"
+    idempotent: false
+    input: null
+    steps:
+      - kind: "read"
+        table: "mission_definition"
+        where:
+          id: "path.mission_definition_id"
+        into: "definition"
+
+      - kind: "guard"
+        expr: "definition != null"
+        error_code: "MISSION_DEFINITION_NOT_FOUND"
+        error_status: 404
+    response:
+      status: 200
+      body: "definition"
+
+  - name: "MissionDefinition.List"
+    path: "/v1/missions/definitions"
+    method: "GET"
+    idempotent: false
+    input: null
+    steps:
+      - kind: "read"
+        table: "mission_definition"
+        where: {}
+        into: "definitions"
+    response:
+      status: 200
+      body:
+        items: "definitions"
+
+  - name: "MissionDefinition.Publish"
+    path: "/v1/missions/definitions/{mission_definition_id}/publish"
+    method: "POST"
+    idempotent: true
+    input: "MissionDefinitionStateChangeRequest"
+    steps:
+      - kind: "read"
+        table: "mission_definition"
+        where:
+          id: "path.mission_definition_id"
+        into: "definition"
+
+      - kind: "guard"
+        expr: "definition != null"
+        error_code: "MISSION_DEFINITION_NOT_FOUND"
+        error_status: 404
+
+      - kind: "guard"
+        expr: "definition.status == 'draft' || definition.status == 'paused'"
+        error_code: "MISSION_DEFINITION_NOT_PUBLISHABLE"
+        error_status: 409
+
+      - kind: "update"
+        table: "mission_definition"
+        where:
+          id: "path.mission_definition_id"
+        values:
+          status: "published"
+
+      - kind: "insert"
+        table: "mission_event"
+        values:
+          mission_definition_id: "path.mission_definition_id"
+          assignment_id: null
+          event_type: "definition_published"
+          payload_json:
+            reason: "request.reason"
+
+      - kind: "outbox_emit"
+        event: "MISSION_DEFINITION_PUBLISHED"
+        aggregate_type: "MISSION_DEFINITION"
+        aggregate_id: "path.mission_definition_id"
+        payload:
+          mission_definition_id: "path.mission_definition_id"
+          reason: "request.reason"
+    response:
+      status: 200
+      body:
+        mission_definition_id: "path.mission_definition_id"
+        status: "published"
+
+  - name: "MissionDefinition.Pause"
+    path: "/v1/missions/definitions/{mission_definition_id}/pause"
+    method: "POST"
+    idempotent: true
+    input: "MissionDefinitionStateChangeRequest"
+    steps:
+      - kind: "read"
+        table: "mission_definition"
+        where:
+          id: "path.mission_definition_id"
+        into: "definition"
+
+      - kind: "guard"
+        expr: "definition != null"
+        error_code: "MISSION_DEFINITION_NOT_FOUND"
+        error_status: 404
+
+      - kind: "guard"
+        expr: "definition.status == 'published'"
+        error_code: "MISSION_DEFINITION_NOT_PAUSABLE"
+        error_status: 409
+
+      - kind: "update"
+        table: "mission_definition"
+        where:
+          id: "path.mission_definition_id"
+        values:
+          status: "paused"
+
+      - kind: "insert"
+        table: "mission_event"
+        values:
+          mission_definition_id: "path.mission_definition_id"
+          assignment_id: null
+          event_type: "definition_paused"
+          payload_json:
+            reason: "request.reason"
+
+      - kind: "outbox_emit"
+        event: "MISSION_DEFINITION_PAUSED"
+        aggregate_type: "MISSION_DEFINITION"
+        aggregate_id: "path.mission_definition_id"
+        payload:
+          mission_definition_id: "path.mission_definition_id"
+          reason: "request.reason"
+    response:
+      status: 200
+      body:
+        mission_definition_id: "path.mission_definition_id"
+        status: "paused"
+
+  - name: "MissionDefinition.Retire"
+    path: "/v1/missions/definitions/{mission_definition_id}/retire"
+    method: "POST"
+    idempotent: true
+    input: "MissionDefinitionStateChangeRequest"
+    steps:
+      - kind: "read"
+        table: "mission_definition"
+        where:
+          id: "path.mission_definition_id"
+        into: "definition"
+
+      - kind: "guard"
+        expr: "definition != null"
+        error_code: "MISSION_DEFINITION_NOT_FOUND"
+        error_status: 404
+
+      - kind: "guard"
+        expr: "definition.status != 'retired'"
+        error_code: "MISSION_DEFINITION_ALREADY_RETIRED"
+        error_status: 409
+
+      - kind: "update"
+        table: "mission_definition"
+        where:
+          id: "path.mission_definition_id"
+        values:
+          status: "retired"
+
+      - kind: "insert"
+        table: "mission_event"
+        values:
+          mission_definition_id: "path.mission_definition_id"
+          assignment_id: null
+          event_type: "definition_retired"
+          payload_json:
+            reason: "request.reason"
+
+      - kind: "outbox_emit"
+        event: "MISSION_DEFINITION_RETIRED"
+        aggregate_type: "MISSION_DEFINITION"
+        aggregate_id: "path.mission_definition_id"
+        payload:
+          mission_definition_id: "path.mission_definition_id"
+          reason: "request.reason"
+    response:
+      status: 200
+      body:
+        mission_definition_id: "path.mission_definition_id"
+        status: "retired"
+
+  - name: "MissionAssignment.Assign"
+    path: "/v1/missions/definitions/{mission_definition_id}/assignments"
+    method: "POST"
+    idempotent: true
+    input: "MissionAssignRequest"
+    steps:
+      - kind: "read"
+        table: "mission_definition"
+        where:
+          id: "path.mission_definition_id"
+        into: "definition"
+
+      - kind: "guard"
+        expr: "definition != null"
+        error_code: "MISSION_DEFINITION_NOT_FOUND"
+        error_status: 404
+
+      - kind: "guard"
+        expr: "definition.status == 'published'"
+        error_code: "MISSION_DEFINITION_NOT_ASSIGNABLE"
+        error_status: 409
+
+      - kind: "upsert"
+        table: "mission_assignment"
+        unique_by: ["mission_definition_id", "user_id"]
+        values:
+          mission_definition_id: "path.mission_definition_id"
+          user_id: "request.user_id"
+          status: "assigned"
+
+      - kind: "insert"
+        table: "mission_event"
+        values:
+          mission_definition_id: "path.mission_definition_id"
+          assignment_id: "last_insert_id()"
+          event_type: "assigned"
+          payload_json:
+            user_id: "request.user_id"
+
+      - kind: "outbox_emit"
+        event: "MISSION_ASSIGNED"
+        aggregate_type: "MISSION_ASSIGNMENT"
+        aggregate_id: "last_insert_id()"
+        payload:
+          assignment_id: "last_insert_id()"
+          mission_definition_id: "path.mission_definition_id"
+          user_id: "request.user_id"
+    response:
+      status: 201
+      body:
+        assignment_id: "last_insert_id()"
+        mission_definition_id: "path.mission_definition_id"
+        user_id: "request.user_id"
+        status: "assigned"
+
+  - name: "MissionAssignment.Get"
+    path: "/v1/missions/assignments/{assignment_id}"
+    method: "GET"
+    idempotent: false
+    input: null
+    steps:
+      - kind: "read"
+        table: "mission_assignment"
+        where:
+          id: "path.assignment_id"
+        into: "assignment"
+
+      - kind: "guard"
+        expr: "assignment != null"
+        error_code: "MISSION_ASSIGNMENT_NOT_FOUND"
+        error_status: 404
+    response:
+      status: 200
+      body: "assignment"
+
+  - name: "MissionAssignment.ListByUser"
+    path: "/v1/users/{user_id}/mission-assignments"
+    method: "GET"
+    idempotent: false
+    input: null
+    steps:
+      - kind: "read"
+        table: "mission_assignment"
+        where:
+          user_id: "path.user_id"
+        into: "assignments"
+    response:
+      status: 200
+      body:
+        items: "assignments"
+
+  - name: "MissionProgress.Record"
+    path: "/v1/missions/assignments/{assignment_id}/progress"
+    method: "POST"
+    idempotent: true
+    input: "MissionProgressRecordRequest"
+    steps:
+      - kind: "read"
+        table: "mission_assignment"
+        where:
+          id: "path.assignment_id"
+        into: "assignment"
+
+      - kind: "guard"
+        expr: "assignment != null"
+        error_code: "MISSION_ASSIGNMENT_NOT_FOUND"
+        error_status: 404
+
+      - kind: "guard"
+        expr: "assignment.status == 'assigned' || assignment.status == 'in_progress'"
+        error_code: "MISSION_PROGRESS_NOT_ALLOWED"
+        error_status: 409
+
+      - kind: "upsert"
+        table: "mission_progress"
+        unique_by: ["assignment_id", "metric_code"]
+        values:
+          assignment_id: "path.assignment_id"
+          metric_code: "request.metric_code"
+          metric_value: "request.metric_value"
+          progress_json: "request.progress_json"
+
+      - kind: "when"
+        condition: "assignment.status == 'assigned'"
+        steps:
+          - kind: "update"
+            table: "mission_assignment"
+            where:
+              id: "path.assignment_id"
+            values:
+              status: "in_progress"
+
+      - kind: "insert"
+        table: "mission_event"
+        values:
+          mission_definition_id: "assignment.mission_definition_id"
+          assignment_id: "path.assignment_id"
+          event_type: "progress_recorded"
+          payload_json:
+            metric_code: "request.metric_code"
+            metric_value: "request.metric_value"
+
+      - kind: "outbox_emit"
+        event: "MISSION_PROGRESS_RECORDED"
+        aggregate_type: "MISSION_ASSIGNMENT"
+        aggregate_id: "path.assignment_id"
+        payload:
+          assignment_id: "path.assignment_id"
+          metric_code: "request.metric_code"
+          metric_value: "request.metric_value"
+    response:
+      status: 200
+      body:
+        assignment_id: "path.assignment_id"
+        metric_code: "request.metric_code"
+        metric_value: "request.metric_value"
+
+  - name: "MissionSubmission.Submit"
+    path: "/v1/missions/assignments/{assignment_id}/submissions"
+    method: "POST"
+    idempotent: true
+    input: "MissionSubmitRequest"
+    steps:
+      - kind: "read"
+        table: "mission_assignment"
+        where:
+          id: "path.assignment_id"
+        into: "assignment"
+
+      - kind: "guard"
+        expr: "assignment != null"
+        error_code: "MISSION_ASSIGNMENT_NOT_FOUND"
+        error_status: 404
+
+      - kind: "guard"
+        expr: "assignment.status == 'assigned' || assignment.status == 'in_progress'"
+        error_code: "MISSION_SUBMISSION_NOT_ALLOWED"
+        error_status: 409
+
+      - kind: "insert"
+        table: "mission_submission"
+        values:
+          assignment_id: "path.assignment_id"
+          content_json: "request.content_json"
+          status: "pending"
+
+      - kind: "when"
+        condition: "request.file_ids != null && length(request.file_ids) > 0"
+        steps:
+          - kind: "hook"
+            name: "missions.attachSubmissionFiles"
+
+      - kind: "update"
+        table: "mission_assignment"
+        where:
+          id: "path.assignment_id"
+        values:
+          status: "submitted"
+
+      - kind: "insert"
+        table: "mission_event"
+        values:
+          mission_definition_id: "assignment.mission_definition_id"
+          assignment_id: "path.assignment_id"
+          event_type: "submitted"
+          payload_json:
+            submission_id: "last_insert_id()"
+
+      - kind: "outbox_emit"
+        event: "MISSION_SUBMITTED"
+        aggregate_type: "MISSION_SUBMISSION"
+        aggregate_id: "last_insert_id()"
+        payload:
+          submission_id: "last_insert_id()"
+          assignment_id: "path.assignment_id"
+          mission_definition_id: "assignment.mission_definition_id"
+          user_id: "assignment.user_id"
+    response:
+      status: 201
+      body:
+        submission_id: "last_insert_id()"
+        assignment_id: "path.assignment_id"
+        status: "pending"
+
+  - name: "MissionSubmission.Get"
+    path: "/v1/missions/submissions/{submission_id}"
+    method: "GET"
+    idempotent: false
+    input: null
+    steps:
+      - kind: "read"
+        table: "mission_submission"
+        where:
+          id: "path.submission_id"
+        into: "submission"
+
+      - kind: "guard"
+        expr: "submission != null"
+        error_code: "MISSION_SUBMISSION_NOT_FOUND"
+        error_status: 404
+    response:
+      status: 200
+      body: "submission"
+
+  - name: "MissionSubmission.ListFiles"
+    path: "/v1/missions/submissions/{submission_id}/files"
+    method: "GET"
+    idempotent: false
+    input: null
+    steps:
+      - kind: "read"
+        table: "mission_submission_file"
+        where:
+          submission_id: "path.submission_id"
+        into: "files"
+    response:
+      status: 200
+      body:
+        items: "files"
+
+  - name: "MissionSubmission.Approve"
+    path: "/v1/missions/submissions/{submission_id}/approve"
+    method: "POST"
+    idempotent: true
+    input: "MissionSubmissionReviewRequest"
+    steps:
+      - kind: "read"
+        table: "mission_submission"
+        where:
+          id: "path.submission_id"
+        into: "submission"
+
+      - kind: "guard"
+        expr: "submission != null"
+        error_code: "MISSION_SUBMISSION_NOT_FOUND"
+        error_status: 404
+
+      - kind: "read"
+        table: "mission_assignment"
+        where:
+          id: "submission.assignment_id"
+        into: "assignment"
+
+      - kind: "guard"
+        expr: "assignment != null"
+        error_code: "MISSION_ASSIGNMENT_NOT_FOUND"
+        error_status: 404
+
+      - kind: "read"
+        table: "mission_definition"
+        where:
+          id: "assignment.mission_definition_id"
+        into: "definition"
+
+      - kind: "guard"
+        expr: "definition != null"
+        error_code: "MISSION_DEFINITION_NOT_FOUND"
+        error_status: 404
+
+      - kind: "guard"
+        expr: "submission.status == 'pending'"
+        error_code: "SUBMISSION_NOT_APPROVABLE"
+        error_status: 409
+
+      - kind: "update"
+        table: "mission_submission"
+        where:
+          id: "path.submission_id"
+        values:
+          status: "approved"
+          reviewed_by_user_id: "actor.actor_user_id"
+          feedback: "request.feedback"
+
+      - kind: "update"
+        table: "mission_assignment"
+        where:
+          id: "assignment.id"
+        values:
+          status: "completed"
+
+      - kind: "upsert"
+        table: "mission_reward_grant"
+        unique_by: ["assignment_id"]
+        values:
+          assignment_id: "assignment.id"
+          reward_type: "json_get(definition.reward_json,'reward_type')"
+          amount: "json_get(definition.reward_json,'amount')"
+          currency: "coalesce(json_get(definition.reward_json,'currency'),'MYR')"
+          status: "requested"
+          idempotency_key: "concat('mission_reward:', assignment.id)"
+
+      - kind: "insert"
+        table: "mission_event"
+        values:
+          mission_definition_id: "assignment.mission_definition_id"
+          assignment_id: "assignment.id"
+          event_type: "approved"
+          payload_json:
+            submission_id: "path.submission_id"
+
+      - kind: "outbox_emit"
+        event: "MISSION_SUBMISSION_APPROVED"
+        aggregate_type: "MISSION_SUBMISSION"
+        aggregate_id: "path.submission_id"
+        payload:
+          submission_id: "path.submission_id"
+          assignment_id: "assignment.id"
+          reviewed_by_user_id: "actor.actor_user_id"
+
+      - kind: "outbox_emit"
+        event: "MISSION_COMPLETED"
+        aggregate_type: "MISSION_ASSIGNMENT"
+        aggregate_id: "assignment.id"
+        payload:
+          assignment_id: "assignment.id"
+          mission_definition_id: "assignment.mission_definition_id"
+          user_id: "assignment.user_id"
+
+      - kind: "outbox_emit"
+        event: "MISSION_REWARD_REQUESTED"
+        aggregate_type: "MISSION_REWARD_GRANT"
+        aggregate_id: "last_insert_id()"
+        payload:
+          reward_grant_id: "last_insert_id()"
+          assignment_id: "assignment.id"
+          mission_definition_id: "assignment.mission_definition_id"
+          user_id: "assignment.user_id"
+          reward_json: "definition.reward_json"
+          idempotency_key: "concat('mission_reward:', assignment.id)"
+    response:
+      status: 200
+      body:
+        submission_id: "path.submission_id"
+        submission_status: "approved"
+        assignment_id: "assignment.id"
+        assignment_status: "completed"
+        reward_grant_id: "last_insert_id()"
+        reward_status: "requested"
+
+  - name: "MissionSubmission.Reject"
+    path: "/v1/missions/submissions/{submission_id}/reject"
+    method: "POST"
+    idempotent: true
+    input: "MissionSubmissionReviewRequest"
+    steps:
+      - kind: "read"
+        table: "mission_submission"
+        where:
+          id: "path.submission_id"
+        into: "submission"
+
+      - kind: "guard"
+        expr: "submission != null"
+        error_code: "MISSION_SUBMISSION_NOT_FOUND"
+        error_status: 404
+
+      - kind: "read"
+        table: "mission_assignment"
+        where:
+          id: "submission.assignment_id"
+        into: "assignment"
+
+      - kind: "guard"
+        expr: "assignment != null"
+        error_code: "MISSION_ASSIGNMENT_NOT_FOUND"
+        error_status: 404
+
+      - kind: "guard"
+        expr: "submission.status == 'pending'"
+        error_code: "SUBMISSION_NOT_REJECTABLE"
+        error_status: 409
+
+      - kind: "update"
+        table: "mission_submission"
+        where:
+          id: "path.submission_id"
+        values:
+          status: "rejected"
+          reviewed_by_user_id: "actor.actor_user_id"
+          feedback: "request.feedback"
+
+      - kind: "update"
+        table: "mission_assignment"
+        where:
+          id: "assignment.id"
+        values:
+          status: "in_progress"
+
+      - kind: "insert"
+        table: "mission_event"
+        values:
+          mission_definition_id: "assignment.mission_definition_id"
+          assignment_id: "assignment.id"
+          event_type: "rejected"
+          payload_json:
+            submission_id: "path.submission_id"
+            feedback: "request.feedback"
+
+      - kind: "outbox_emit"
+        event: "MISSION_SUBMISSION_REJECTED"
+        aggregate_type: "MISSION_SUBMISSION"
+        aggregate_id: "path.submission_id"
+        payload:
+          submission_id: "path.submission_id"
+          assignment_id: "assignment.id"
+          reviewed_by_user_id: "actor.actor_user_id"
+          feedback: "request.feedback"
+    response:
+      status: 200
+      body:
+        submission_id: "path.submission_id"
+        submission_status: "rejected"
+        assignment_id: "assignment.id"
+        assignment_status: "in_progress"
+
+  - name: "MissionRewardGrant.GetByAssignment"
+    path: "/v1/missions/assignments/{assignment_id}/reward-grant"
+    method: "GET"
+    idempotent: false
+    input: null
+    steps:
+      - kind: "read"
+        table: "mission_reward_grant"
+        where:
+          assignment_id: "path.assignment_id"
+        into: "reward_grant"
+    response:
+      status: 200
+      body: "reward_grant"
+
+  - name: "MissionEvent.ListByAssignment"
+    path: "/v1/missions/assignments/{assignment_id}/events"
+    method: "GET"
+    idempotent: false
+    input: null
+    steps:
+      - kind: "read"
+        table: "mission_event"
+        where:
+          assignment_id: "path.assignment_id"
+        into: "events"
+    response:
+      status: 200
+      body:
+        items: "events"
+
+coverage:
+  tables:
+    mission_definition:
+      touched_by:
+        - "MissionDefinition.Create"
+        - "MissionDefinition.Get"
+        - "MissionDefinition.List"
+        - "MissionDefinition.Publish"
+        - "MissionDefinition.Pause"
+        - "MissionDefinition.Retire"
+
+    mission_assignment:
+      touched_by:
+        - "MissionAssignment.Assign"
+        - "MissionAssignment.Get"
+        - "MissionAssignment.ListByUser"
+        - "MissionProgress.Record"
+        - "MissionSubmission.Submit"
+        - "MissionSubmission.Approve"
+        - "MissionSubmission.Reject"
+
+    mission_progress:
+      touched_by:
+        - "MissionProgress.Record"
+
+    mission_submission:
+      touched_by:
+        - "MissionSubmission.Submit"
+        - "MissionSubmission.Get"
+        - "MissionSubmission.Approve"
+        - "MissionSubmission.Reject"
+
+    mission_submission_file:
+      touched_by:
+        - "MissionSubmission.Submit"
+        - "MissionSubmission.ListFiles"
+
+    mission_reward_grant:
+      touched_by:
+        - "MissionSubmission.Approve"
+        - "MissionRewardGrant.GetByAssignment"
+
+    mission_event:
+      touched_by:
+        - "MissionDefinition.Create"
+        - "MissionDefinition.Publish"
+        - "MissionDefinition.Pause"
+        - "MissionDefinition.Retire"
+        - "MissionAssignment.Assign"
+        - "MissionProgress.Record"
+        - "MissionSubmission.Submit"
+        - "MissionSubmission.Approve"
+        - "MissionSubmission.Reject"
+        - "MissionEvent.ListByAssignment"
+
+  aggregate_transitions:
+    MISSION_DEFINITION:
+      draft:
+        - "MissionDefinition.Publish"
+        - "MissionDefinition.Retire"
+      published:
+        - "MissionDefinition.Pause"
+        - "MissionDefinition.Retire"
+      paused:
+        - "MissionDefinition.Publish"
+        - "MissionDefinition.Retire"
+
+    MISSION_ASSIGNMENT:
+      assigned:
+        - "MissionProgress.Record"
+        - "MissionSubmission.Submit"
+      in_progress:
+        - "MissionProgress.Record"
+        - "MissionSubmission.Submit"
+      submitted:
+        - "MissionSubmission.Approve"
+        - "MissionSubmission.Reject"
+
+    MISSION_SUBMISSION:
+      pending:
+        - "MissionSubmission.Approve"
+        - "MissionSubmission.Reject"
+
+    MISSION_REWARD_GRANT:
+      requested:
+        - "external wallet/ledger consumer"
+
+  events:
+    MISSION_DEFINITION_CREATED:
+      emitted_by:
+        - "MissionDefinition.Create"
+    MISSION_DEFINITION_PUBLISHED:
+      emitted_by:
+        - "MissionDefinition.Publish"
+    MISSION_DEFINITION_PAUSED:
+      emitted_by:
+        - "MissionDefinition.Pause"
+    MISSION_DEFINITION_RETIRED:
+      emitted_by:
+        - "MissionDefinition.Retire"
+    MISSION_ASSIGNED:
+      emitted_by:
+        - "MissionAssignment.Assign"
+    MISSION_PROGRESS_RECORDED:
+      emitted_by:
+        - "MissionProgress.Record"
+    MISSION_SUBMITTED:
+      emitted_by:
+        - "MissionSubmission.Submit"
+    MISSION_SUBMISSION_APPROVED:
+      emitted_by:
+        - "MissionSubmission.Approve"
+    MISSION_SUBMISSION_REJECTED:
+      emitted_by:
+        - "MissionSubmission.Reject"
+    MISSION_COMPLETED:
+      emitted_by:
+        - "MissionSubmission.Approve"
+    MISSION_REWARD_REQUESTED:
+      emitted_by:
+        - "MissionSubmission.Approve"
+
+codegen:
+  targets:
+    - "nestjs"
+    - "typescript"
+  outputs:
+    dto: "src/plugins/missions/commands/dto"
+    controller: "src/plugins/missions/commands/missions-commands.controller.ts"
+    service: "src/plugins/missions/commands/missions-commands.service.ts"
+    tests: "test/plugins/missions"
+    openapi: "openapi/plugins/missions.yaml"
+    sdk: "sdk/missions"

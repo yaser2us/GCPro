@@ -1,0 +1,1590 @@
+version: "2.0.0"
+spec_id: "survey.pillar.v2"
+domain: "survey"
+plugin: "survey"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# OWNERSHIP
+# ──────────────────────────────────────────────────────────────────────────────
+
+ownership:
+  owner_plugin: "survey"
+  owns_tables:
+    - "survey"
+    - "survey_version"
+    - "survey_question"
+    - "survey_question_option"
+    - "survey_response"
+    - "survey_response_file"
+    - "survey_answer"
+  cross_plugin_writes: false
+  cross_plugin_integration:
+    allowed_via:
+      - "command_api"
+      - "outbox_events"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DEPENDENCIES
+# ──────────────────────────────────────────────────────────────────────────────
+
+dependencies:
+  corekit:
+    transaction_wrapper: "withTxn"
+    outbox_service: "OutboxService.emit"
+    guard_helper: "guard"
+    domain_error: "DomainError"
+
+  core_tables_readonly:
+    - "resource_ref"  # referenced by survey_response for actor and subject
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CONVENTIONS
+# ──────────────────────────────────────────────────────────────────────────────
+
+conventions:
+  workflow_discipline:
+    - "guard"
+    - "write"
+    - "emit"
+    - "commit"
+
+  status_mutation_policy: "Status fields may only be mutated through commands."
+
+  outbox:
+    required_envelope_fields:
+      - "event_name"
+      - "event_version"
+      - "aggregate_type"
+      - "aggregate_id"
+      - "actor_user_id"
+      - "occurred_at"
+      - "correlation_id"
+      - "causation_id"
+
+  idempotency:
+    required_header: "Idempotency-Key"
+    default_scope: "actor_user_id + command_name"
+    db_strategy:
+      - "UNIQUE(idempotency_key) where applicable"
+      - "MySQL ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)"
+      - "survey: UNIQUE(code) prevents duplicate survey codes"
+      - "survey_version: UNIQUE(survey_id, version) prevents duplicate versions"
+      - "survey_question: UNIQUE(survey_version_id, code) prevents duplicate question codes"
+      - "survey_question_option: UNIQUE(question_id, value) prevents duplicate option values"
+      - "survey_response: UNIQUE(idempotency_key) for response submission idempotency"
+      - "survey_response_file: UNIQUE(response_id, file_upload_id) prevents duplicate file attachments"
+      - "survey_answer: UNIQUE(response_id, question_id) ensures one answer per question"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SCHEMA
+# ──────────────────────────────────────────────────────────────────────────────
+
+schema:
+  tables:
+    survey:
+      description: "Survey catalog with metadata"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        code:
+          type: "varchar"
+          length: 64
+          nullable: false
+          description: "Unique survey code"
+        name:
+          type: "varchar"
+          length: 255
+          nullable: false
+          description: "Survey display name"
+        description:
+          type: "varchar"
+          length: 512
+          nullable: true
+          description: "Survey description"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "active"
+          description: "Survey status"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          - name: "uk_survey_code"
+            columns: ["code"]
+        indexes:
+          - name: "idx_survey_status"
+            columns: ["status"]
+
+    survey_version:
+      description: "Survey version management with schema and logic"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        survey_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to survey"
+        version:
+          type: "varchar"
+          length: 32
+          nullable: false
+          description: "Version identifier"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "draft"
+          description: "Version status"
+        schema_json:
+          type: "json"
+          nullable: true
+          description: "Survey schema definition"
+        logic_json:
+          type: "json"
+          nullable: true
+          description: "Survey logic and branching rules"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional metadata"
+        published_at:
+          type: "datetime"
+          nullable: true
+          description: "Publication timestamp"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          - name: "uk_survey_version"
+            columns: ["survey_id", "version"]
+        foreign_keys:
+          - name: "fk_sv_survey"
+            columns: ["survey_id"]
+            references:
+              table: "survey"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+        indexes:
+          - name: "idx_sv_status"
+            columns: ["status"]
+          - name: "idx_sv_survey_status"
+            columns: ["survey_id", "status"]
+
+    survey_question:
+      description: "Questions for a survey version"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        survey_version_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to survey_version"
+        code:
+          type: "varchar"
+          length: 64
+          nullable: false
+          description: "Question code"
+        label:
+          type: "varchar"
+          length: 255
+          nullable: false
+          description: "Question label"
+        help_text:
+          type: "varchar"
+          length: 512
+          nullable: true
+          description: "Help text for question"
+        answer_type:
+          type: "varchar"
+          length: 16
+          nullable: false
+          description: "Answer type (text, number, date, etc.)"
+        required:
+          type: "tinyint"
+          nullable: false
+          default: 0
+          description: "Whether question is required"
+        sort_order:
+          type: "int"
+          nullable: false
+          default: 0
+          description: "Question display order"
+        rules_json:
+          type: "json"
+          nullable: true
+          description: "Validation rules"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional metadata"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          - name: "uk_sq_code"
+            columns: ["survey_version_id", "code"]
+        foreign_keys:
+          - name: "fk_sq_version"
+            columns: ["survey_version_id"]
+            references:
+              table: "survey_version"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+        indexes:
+          - name: "idx_sq_version_sort"
+            columns: ["survey_version_id", "sort_order"]
+          - name: "idx_sq_answer_type"
+            columns: ["answer_type"]
+
+    survey_question_option:
+      description: "Options for choice-based questions"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        question_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to survey_question"
+        value:
+          type: "varchar"
+          length: 128
+          nullable: false
+          description: "Option value"
+        label:
+          type: "varchar"
+          length: 255
+          nullable: false
+          description: "Option label"
+        sort_order:
+          type: "int"
+          nullable: false
+          default: 0
+          description: "Option display order"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          - name: "uk_sqo_question_value"
+            columns: ["question_id", "value"]
+        foreign_keys:
+          - name: "fk_sqo_question"
+            columns: ["question_id"]
+            references:
+              table: "survey_question"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+        indexes:
+          - name: "idx_sqo_question_sort"
+            columns: ["question_id", "sort_order"]
+
+    survey_response:
+      description: "User responses to surveys"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        survey_version_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to survey_version"
+        actor_ref_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to actor resource_ref"
+        subject_ref_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to subject resource_ref"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "draft"
+          description: "Response status"
+        submitted_at:
+          type: "datetime"
+          nullable: true
+          description: "Submission timestamp"
+        created_by_user_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "User who created the response"
+        idempotency_key:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "Idempotency key"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional metadata"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          - name: "uk_sr_idempotency"
+            columns: ["idempotency_key"]
+        foreign_keys:
+          - name: "fk_sr_version"
+            columns: ["survey_version_id"]
+            references:
+              table: "survey_version"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+          - name: "fk_sr_actor_ref"
+            columns: ["actor_ref_id"]
+            references:
+              table: "resource_ref"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+          - name: "fk_sr_subject_ref"
+            columns: ["subject_ref_id"]
+            references:
+              table: "resource_ref"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+        indexes:
+          - name: "idx_sr_subject_time"
+            columns: ["subject_ref_id", "created_at"]
+          - name: "idx_sr_actor_time"
+            columns: ["actor_ref_id", "created_at"]
+          - name: "idx_sr_status_time"
+            columns: ["status", "submitted_at"]
+          - name: "idx_sr_version_time"
+            columns: ["survey_version_id", "created_at"]
+
+    survey_response_file:
+      description: "Files attached to survey responses"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        response_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to survey_response"
+        file_upload_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to file upload"
+        kind:
+          type: "varchar"
+          length: 32
+          nullable: false
+          default: "evidence"
+          description: "File kind"
+        sort_order:
+          type: "int"
+          nullable: false
+          default: 0
+          description: "File display order"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional metadata"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          - name: "uk_srf_response_file"
+            columns: ["response_id", "file_upload_id"]
+        foreign_keys:
+          - name: "fk_srf_response"
+            columns: ["response_id"]
+            references:
+              table: "survey_response"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+        indexes:
+          - name: "idx_srf_response_sort"
+            columns: ["response_id", "sort_order"]
+          - name: "idx_srf_file"
+            columns: ["file_upload_id"]
+
+    survey_answer:
+      description: "Individual answers to survey questions"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        response_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to survey_response"
+        question_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to survey_question"
+        value_bool:
+          type: "tinyint"
+          nullable: true
+          description: "Boolean answer value"
+        value_text:
+          type: "text"
+          nullable: true
+          description: "Text answer value"
+        value_num:
+          type: "decimal"
+          precision: [18, 6]
+          nullable: true
+          description: "Numeric answer value"
+        value_date:
+          type: "date"
+          nullable: true
+          description: "Date answer value"
+        value_json:
+          type: "json"
+          nullable: true
+          description: "JSON answer value"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          - name: "uk_sa_response_question"
+            columns: ["response_id", "question_id"]
+        foreign_keys:
+          - name: "fk_sa_response"
+            columns: ["response_id"]
+            references:
+              table: "survey_response"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+          - name: "fk_sa_question"
+            columns: ["question_id"]
+            references:
+              table: "survey_question"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+        indexes:
+          - name: "idx_sa_question"
+            columns: ["question_id"]
+          - name: "idx_sa_response"
+            columns: ["response_id"]
+
+resources:
+  - name: "survey"
+    kind: "aggregate"
+    table: "survey"
+    primary_key: "id"
+    statuses:
+      - "active"
+      - "inactive"
+    api_surface:
+      - "create"
+      - "get"
+      - "list"
+      - "deactivate"
+
+  - name: "survey_version"
+    kind: "aggregate"
+    table: "survey_version"
+    primary_key: "id"
+    statuses:
+      - "draft"
+      - "published"
+      - "archived"
+    api_surface:
+      - "create"
+      - "get"
+      - "listBySurvey"
+      - "publish"
+
+  - name: "survey_question"
+    kind: "resource"
+    table: "survey_question"
+    primary_key: "id"
+    api_surface:
+      - "createBulk"
+      - "get"
+      - "listByVersion"
+
+  - name: "survey_question_option"
+    kind: "resource"
+    table: "survey_question_option"
+    primary_key: "id"
+    api_surface:
+      - "createBulk"
+      - "listByQuestion"
+
+  - name: "survey_response"
+    kind: "aggregate"
+    table: "survey_response"
+    primary_key: "id"
+    statuses:
+      - "draft"
+      - "submitted"
+      - "completed"
+      - "invalidated"
+    api_surface:
+      - "create"
+      - "get"
+      - "list"
+      - "submit"
+
+  - name: "survey_response_file"
+    kind: "resource"
+    table: "survey_response_file"
+    primary_key: "id"
+    api_surface:
+      - "attach"
+      - "listByResponse"
+
+  - name: "survey_answer"
+    kind: "resource"
+    table: "survey_answer"
+    primary_key: "id"
+    api_surface:
+      - "upsert"
+      - "get"
+      - "listByResponse"
+
+aggregates:
+  SURVEY:
+    root_table: "survey"
+    primary_key: "id"
+    statuses:
+      - "active"
+      - "inactive"
+
+  SURVEY_VERSION:
+    root_table: "survey_version"
+    primary_key: "id"
+    statuses:
+      - "draft"
+      - "published"
+      - "archived"
+
+  SURVEY_RESPONSE:
+    root_table: "survey_response"
+    primary_key: "id"
+    statuses:
+      - "draft"
+      - "submitted"
+      - "completed"
+      - "invalidated"
+
+types:
+  Actor:
+    fields:
+      - { name: "actor_user_id", type: "string", required: true }
+      - { name: "roles", type: "string[]", required: false }
+
+  SurveySummary:
+    fields:
+      - { name: "id", type: "string", required: true }
+      - { name: "code", type: "string", required: true }
+      - { name: "name", type: "string", required: true }
+      - { name: "status", type: "string", required: true }
+
+  SurveyVersionSummary:
+    fields:
+      - { name: "id", type: "string", required: true }
+      - { name: "survey_id", type: "string", required: true }
+      - { name: "version", type: "string", required: true }
+      - { name: "status", type: "string", required: true }
+
+  SurveyResponseSummary:
+    fields:
+      - { name: "id", type: "string", required: true }
+      - { name: "survey_version_id", type: "string", required: true }
+      - { name: "status", type: "string", required: true }
+      - { name: "submitted_at", type: "datetime", required: false }
+
+dtos:
+  SurveyCreateRequest:
+    fields:
+      - { name: "code", type: "string", required: true, max_len: 64 }
+      - { name: "name", type: "string", required: true, max_len: 255 }
+      - { name: "description", type: "string", required: false, max_len: 512 }
+
+  SurveyVersionCreateRequest:
+    fields:
+      - { name: "survey_id", type: "string", required: true }
+      - { name: "version", type: "string", required: true, max_len: 32 }
+      - { name: "schema_json", type: "object", required: false }
+      - { name: "logic_json", type: "object", required: false }
+      - { name: "meta_json", type: "object", required: false }
+
+  SurveyQuestionCreateRequest:
+    fields:
+      - { name: "code", type: "string", required: true, max_len: 64 }
+      - { name: "label", type: "string", required: true, max_len: 255 }
+      - { name: "help_text", type: "string", required: false, max_len: 512 }
+      - { name: "answer_type", type: "string", required: true, max_len: 16 }
+      - { name: "required", type: "boolean", required: false, default: false }
+      - { name: "sort_order", type: "integer", required: false, default: 0 }
+      - { name: "rules_json", type: "object", required: false }
+      - { name: "meta_json", type: "object", required: false }
+
+  SurveyQuestionBulkCreateRequest:
+    fields:
+      - { name: "survey_version_id", type: "string", required: true }
+      - { name: "questions", type: "array", required: true }
+
+  SurveyQuestionOptionCreateRequest:
+    fields:
+      - { name: "value", type: "string", required: true, max_len: 128 }
+      - { name: "label", type: "string", required: true, max_len: 255 }
+      - { name: "sort_order", type: "integer", required: false, default: 0 }
+
+  SurveyQuestionOptionBulkCreateRequest:
+    fields:
+      - { name: "question_id", type: "string", required: true }
+      - { name: "options", type: "array", required: true }
+
+  SurveyResponseCreateRequest:
+    fields:
+      - { name: "survey_version_id", type: "string", required: true }
+      - { name: "actor_ref_id", type: "string", required: true }
+      - { name: "subject_ref_id", type: "string", required: true }
+      - { name: "meta_json", type: "object", required: false }
+
+  SurveyResponseSubmitRequest:
+    fields:
+      - { name: "answers", type: "array", required: true }
+
+  SurveyAnswerUpsertRequest:
+    fields:
+      - { name: "response_id", type: "string", required: true }
+      - { name: "question_id", type: "string", required: true }
+      - { name: "value_bool", type: "boolean", required: false }
+      - { name: "value_text", type: "string", required: false }
+      - { name: "value_num", type: "number", required: false }
+      - { name: "value_date", type: "date", required: false }
+      - { name: "value_json", type: "object", required: false }
+
+  SurveyResponseFileAttachRequest:
+    fields:
+      - { name: "response_id", type: "string", required: true }
+      - { name: "file_upload_id", type: "string", required: true }
+      - { name: "kind", type: "string", required: false, max_len: 32, default: "evidence" }
+      - { name: "sort_order", type: "integer", required: false, default: 0 }
+      - { name: "meta_json", type: "object", required: false }
+
+events:
+  - name: "SURVEY_CREATED"
+    version: 1
+    aggregate_type: "SURVEY"
+    description: "Emitted when survey is created"
+
+  - name: "SURVEY_DEACTIVATED"
+    version: 1
+    aggregate_type: "SURVEY"
+    description: "Emitted when survey is deactivated"
+
+  - name: "SURVEY_VERSION_CREATED"
+    version: 1
+    aggregate_type: "SURVEY_VERSION"
+    description: "Emitted when survey version is created"
+
+  - name: "SURVEY_VERSION_PUBLISHED"
+    version: 1
+    aggregate_type: "SURVEY_VERSION"
+    description: "Emitted when survey version is published"
+
+  - name: "SURVEY_QUESTIONS_CREATED"
+    version: 1
+    aggregate_type: "SURVEY_VERSION"
+    description: "Emitted when survey questions are created"
+
+  - name: "SURVEY_QUESTION_OPTIONS_CREATED"
+    version: 1
+    aggregate_type: "SURVEY_VERSION"
+    description: "Emitted when survey question options are created"
+
+  - name: "SURVEY_RESPONSE_CREATED"
+    version: 1
+    aggregate_type: "SURVEY_RESPONSE"
+    description: "Emitted when survey response is created"
+
+  - name: "SURVEY_RESPONSE_SUBMITTED"
+    version: 1
+    aggregate_type: "SURVEY_RESPONSE"
+    description: "Emitted when survey response is submitted"
+
+  - name: "SURVEY_ANSWER_SAVED"
+    version: 1
+    aggregate_type: "SURVEY_RESPONSE"
+    description: "Emitted when survey answer is saved"
+
+  - name: "SURVEY_RESPONSE_FILE_ATTACHED"
+    version: 1
+    aggregate_type: "SURVEY_RESPONSE"
+    description: "Emitted when file is attached to survey response"
+
+commands:
+  - name: "Survey.Create"
+    description: "Create survey"
+    path: "/v1/surveys"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "SurveyCreateRequest"
+    steps:
+      - kind: "guard"
+        expr: "request.code != null && request.code != ''"
+        error_code: "SURVEY_CODE_REQUIRED"
+        error_status: 400
+
+      - kind: "upsert"
+        table: "survey"
+        unique_by: ["code"]
+        values:
+          code: "request.code"
+          name: "request.name"
+          description: "request.description"
+          status: "active"
+
+      - kind: "outbox_emit"
+        event: "SURVEY_CREATED"
+        aggregate_type: "SURVEY"
+        aggregate_id: "last_insert_id()"
+        payload:
+          survey_id: "last_insert_id()"
+          code: "request.code"
+          name: "request.name"
+
+    response:
+      status: 201
+      body:
+        survey_id: "last_insert_id()"
+        status: "active"
+
+  - name: "Survey.Get"
+    description: "Get survey by ID"
+    path: "/v1/surveys/{survey_id}"
+    method: "GET"
+    idempotent: false
+    permissions: []
+    input: null
+    steps:
+      - kind: "read"
+        table: "survey"
+        where:
+          id: "path.survey_id"
+        into: "survey"
+
+      - kind: "guard"
+        expr: "survey != null"
+        error_code: "SURVEY_NOT_FOUND"
+        error_status: 404
+
+    response:
+      status: 200
+      body: "survey"
+
+  - name: "Survey.List"
+    description: "List surveys"
+    path: "/v1/surveys"
+    method: "GET"
+    idempotent: false
+    permissions: []
+    input: null
+    steps:
+      - kind: "read"
+        table: "survey"
+        where: {}
+        into: "surveys"
+
+    response:
+      status: 200
+      body:
+        items: "surveys"
+
+  - name: "Survey.Deactivate"
+    description: "Deactivate survey"
+    path: "/v1/surveys/{survey_id}/deactivate"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: null
+    steps:
+      - kind: "read"
+        table: "survey"
+        where:
+          id: "path.survey_id"
+        into: "survey"
+
+      - kind: "guard"
+        expr: "survey != null"
+        error_code: "SURVEY_NOT_FOUND"
+        error_status: 404
+
+      - kind: "guard"
+        expr: "survey.status == 'active'"
+        error_code: "SURVEY_NOT_ACTIVE"
+        error_status: 409
+
+      - kind: "update"
+        table: "survey"
+        where:
+          id: "path.survey_id"
+        values:
+          status: "inactive"
+
+      - kind: "outbox_emit"
+        event: "SURVEY_DEACTIVATED"
+        aggregate_type: "SURVEY"
+        aggregate_id: "path.survey_id"
+        payload:
+          survey_id: "path.survey_id"
+
+    response:
+      status: 200
+      body:
+        survey_id: "path.survey_id"
+        status: "inactive"
+
+  - name: "SurveyVersion.Create"
+    description: "Create survey version"
+    path: "/v1/surveys/{survey_id}/versions"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "SurveyVersionCreateRequest"
+    steps:
+      - kind: "read"
+        table: "survey"
+        where:
+          id: "request.survey_id"
+        into: "survey"
+
+      - kind: "guard"
+        expr: "survey != null"
+        error_code: "SURVEY_NOT_FOUND"
+        error_status: 404
+
+      - kind: "upsert"
+        table: "survey_version"
+        unique_by: ["survey_id", "version"]
+        values:
+          survey_id: "request.survey_id"
+          version: "request.version"
+          schema_json: "request.schema_json"
+          logic_json: "request.logic_json"
+          meta_json: "request.meta_json"
+          status: "draft"
+
+      - kind: "outbox_emit"
+        event: "SURVEY_VERSION_CREATED"
+        aggregate_type: "SURVEY_VERSION"
+        aggregate_id: "last_insert_id()"
+        payload:
+          survey_version_id: "last_insert_id()"
+          survey_id: "request.survey_id"
+          version: "request.version"
+
+    response:
+      status: 201
+      body:
+        survey_version_id: "last_insert_id()"
+        status: "draft"
+
+  - name: "SurveyVersion.Get"
+    description: "Get survey version by ID"
+    path: "/v1/survey-versions/{survey_version_id}"
+    method: "GET"
+    idempotent: false
+    permissions: []
+    input: null
+    steps:
+      - kind: "read"
+        table: "survey_version"
+        where:
+          id: "path.survey_version_id"
+        into: "version"
+
+      - kind: "guard"
+        expr: "version != null"
+        error_code: "SURVEY_VERSION_NOT_FOUND"
+        error_status: 404
+
+    response:
+      status: 200
+      body: "version"
+
+  - name: "SurveyVersion.ListBySurvey"
+    description: "List survey versions by survey"
+    path: "/v1/surveys/{survey_id}/versions"
+    method: "GET"
+    idempotent: false
+    permissions: []
+    input: null
+    steps:
+      - kind: "read"
+        table: "survey_version"
+        where:
+          survey_id: "path.survey_id"
+        into: "versions"
+
+    response:
+      status: 200
+      body:
+        items: "versions"
+
+  - name: "SurveyVersion.Publish"
+    description: "Publish survey version"
+    path: "/v1/survey-versions/{survey_version_id}/publish"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: null
+    steps:
+      - kind: "read"
+        table: "survey_version"
+        where:
+          id: "path.survey_version_id"
+        into: "version"
+
+      - kind: "guard"
+        expr: "version != null"
+        error_code: "SURVEY_VERSION_NOT_FOUND"
+        error_status: 404
+
+      - kind: "guard"
+        expr: "version.status == 'draft'"
+        error_code: "SURVEY_VERSION_NOT_DRAFT"
+        error_status: 409
+
+      - kind: "update"
+        table: "survey_version"
+        where:
+          id: "path.survey_version_id"
+        values:
+          status: "published"
+          published_at: "NOW()"
+
+      - kind: "outbox_emit"
+        event: "SURVEY_VERSION_PUBLISHED"
+        aggregate_type: "SURVEY_VERSION"
+        aggregate_id: "path.survey_version_id"
+        payload:
+          survey_version_id: "path.survey_version_id"
+
+    response:
+      status: 200
+      body:
+        survey_version_id: "path.survey_version_id"
+        status: "published"
+
+  - name: "SurveyQuestion.CreateBulk"
+    description: "Create survey questions in bulk"
+    path: "/v1/survey-versions/{survey_version_id}/questions/bulk"
+    method: "POST"
+    idempotent: false
+    permissions: []
+    input: "SurveyQuestionBulkCreateRequest"
+    steps:
+      - kind: "read"
+        table: "survey_version"
+        where:
+          id: "request.survey_version_id"
+        into: "version"
+
+      - kind: "guard"
+        expr: "version != null"
+        error_code: "SURVEY_VERSION_NOT_FOUND"
+        error_status: 404
+
+      - kind: "guard"
+        expr: "version.status == 'draft'"
+        error_code: "SURVEY_VERSION_NOT_DRAFT"
+        error_status: 409
+
+      - kind: "hook"
+        action: "bulk_insert_questions"
+        params:
+          survey_version_id: "request.survey_version_id"
+          questions: "request.questions"
+
+      - kind: "outbox_emit"
+        event: "SURVEY_QUESTIONS_CREATED"
+        aggregate_type: "SURVEY_VERSION"
+        aggregate_id: "request.survey_version_id"
+        payload:
+          survey_version_id: "request.survey_version_id"
+          count: "request.questions.length"
+
+    response:
+      status: 201
+      body:
+        created_count: "request.questions.length"
+
+  - name: "SurveyQuestion.Get"
+    description: "Get survey question by ID"
+    path: "/v1/survey-questions/{question_id}"
+    method: "GET"
+    idempotent: false
+    permissions: []
+    input: null
+    steps:
+      - kind: "read"
+        table: "survey_question"
+        where:
+          id: "path.question_id"
+        into: "question"
+
+      - kind: "guard"
+        expr: "question != null"
+        error_code: "SURVEY_QUESTION_NOT_FOUND"
+        error_status: 404
+
+    response:
+      status: 200
+      body: "question"
+
+  - name: "SurveyQuestion.ListByVersion"
+    description: "List survey questions by version"
+    path: "/v1/survey-versions/{survey_version_id}/questions"
+    method: "GET"
+    idempotent: false
+    permissions: []
+    input: null
+    steps:
+      - kind: "read"
+        table: "survey_question"
+        where:
+          survey_version_id: "path.survey_version_id"
+        into: "questions"
+
+    response:
+      status: 200
+      body:
+        items: "questions"
+
+  - name: "SurveyQuestionOption.CreateBulk"
+    description: "Create survey question options in bulk"
+    path: "/v1/survey-questions/{question_id}/options/bulk"
+    method: "POST"
+    idempotent: false
+    permissions: []
+    input: "SurveyQuestionOptionBulkCreateRequest"
+    steps:
+      - kind: "read"
+        table: "survey_question"
+        where:
+          id: "request.question_id"
+        into: "question"
+
+      - kind: "guard"
+        expr: "question != null"
+        error_code: "SURVEY_QUESTION_NOT_FOUND"
+        error_status: 404
+
+      - kind: "hook"
+        action: "bulk_insert_options"
+        params:
+          question_id: "request.question_id"
+          options: "request.options"
+
+      - kind: "outbox_emit"
+        event: "SURVEY_QUESTION_OPTIONS_CREATED"
+        aggregate_type: "SURVEY_VERSION"
+        aggregate_id: "question.survey_version_id"
+        payload:
+          question_id: "request.question_id"
+          count: "request.options.length"
+
+    response:
+      status: 201
+      body:
+        created_count: "request.options.length"
+
+  - name: "SurveyQuestionOption.ListByQuestion"
+    description: "List survey question options by question"
+    path: "/v1/survey-questions/{question_id}/options"
+    method: "GET"
+    idempotent: false
+    permissions: []
+    input: null
+    steps:
+      - kind: "read"
+        table: "survey_question_option"
+        where:
+          question_id: "path.question_id"
+        into: "options"
+
+    response:
+      status: 200
+      body:
+        items: "options"
+
+  - name: "SurveyResponse.Create"
+    description: "Create survey response"
+    path: "/v1/survey-responses"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "SurveyResponseCreateRequest"
+    steps:
+      - kind: "read"
+        table: "survey_version"
+        where:
+          id: "request.survey_version_id"
+        into: "version"
+
+      - kind: "guard"
+        expr: "version != null"
+        error_code: "SURVEY_VERSION_NOT_FOUND"
+        error_status: 404
+
+      - kind: "guard"
+        expr: "version.status == 'published'"
+        error_code: "SURVEY_VERSION_NOT_PUBLISHED"
+        error_status: 409
+
+      - kind: "insert"
+        table: "survey_response"
+        values:
+          survey_version_id: "request.survey_version_id"
+          actor_ref_id: "request.actor_ref_id"
+          subject_ref_id: "request.subject_ref_id"
+          created_by_user_id: "actor.actor_user_id"
+          meta_json: "request.meta_json"
+          status: "draft"
+
+      - kind: "outbox_emit"
+        event: "SURVEY_RESPONSE_CREATED"
+        aggregate_type: "SURVEY_RESPONSE"
+        aggregate_id: "last_insert_id()"
+        payload:
+          survey_response_id: "last_insert_id()"
+          survey_version_id: "request.survey_version_id"
+
+    response:
+      status: 201
+      body:
+        survey_response_id: "last_insert_id()"
+        status: "draft"
+
+  - name: "SurveyResponse.Get"
+    description: "Get survey response by ID"
+    path: "/v1/survey-responses/{response_id}"
+    method: "GET"
+    idempotent: false
+    permissions: []
+    input: null
+    steps:
+      - kind: "read"
+        table: "survey_response"
+        where:
+          id: "path.response_id"
+        into: "response"
+
+      - kind: "guard"
+        expr: "response != null"
+        error_code: "SURVEY_RESPONSE_NOT_FOUND"
+        error_status: 404
+
+    response:
+      status: 200
+      body: "response"
+
+  - name: "SurveyResponse.List"
+    description: "List survey responses"
+    path: "/v1/survey-responses"
+    method: "GET"
+    idempotent: false
+    permissions: []
+    input: null
+    steps:
+      - kind: "read"
+        table: "survey_response"
+        where: {}
+        into: "responses"
+
+    response:
+      status: 200
+      body:
+        items: "responses"
+
+  - name: "SurveyResponse.Submit"
+    description: "Submit survey response"
+    path: "/v1/survey-responses/{response_id}/submit"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "SurveyResponseSubmitRequest"
+    steps:
+      - kind: "read"
+        table: "survey_response"
+        where:
+          id: "path.response_id"
+        into: "response"
+
+      - kind: "guard"
+        expr: "response != null"
+        error_code: "SURVEY_RESPONSE_NOT_FOUND"
+        error_status: 404
+
+      - kind: "guard"
+        expr: "response.status == 'draft'"
+        error_code: "SURVEY_RESPONSE_NOT_DRAFT"
+        error_status: 409
+
+      - kind: "hook"
+        action: "validate_and_save_answers"
+        params:
+          response_id: "path.response_id"
+          answers: "request.answers"
+
+      - kind: "update"
+        table: "survey_response"
+        where:
+          id: "path.response_id"
+        values:
+          status: "submitted"
+          submitted_at: "NOW()"
+
+      - kind: "outbox_emit"
+        event: "SURVEY_RESPONSE_SUBMITTED"
+        aggregate_type: "SURVEY_RESPONSE"
+        aggregate_id: "path.response_id"
+        payload:
+          survey_response_id: "path.response_id"
+
+    response:
+      status: 200
+      body:
+        survey_response_id: "path.response_id"
+        status: "submitted"
+
+  - name: "SurveyAnswer.Upsert"
+    description: "Create or update survey answer"
+    path: "/v1/survey-answers"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "SurveyAnswerUpsertRequest"
+    steps:
+      - kind: "read"
+        table: "survey_response"
+        where:
+          id: "request.response_id"
+        into: "response"
+
+      - kind: "guard"
+        expr: "response != null"
+        error_code: "SURVEY_RESPONSE_NOT_FOUND"
+        error_status: 404
+
+      - kind: "guard"
+        expr: "response.status == 'draft'"
+        error_code: "SURVEY_RESPONSE_NOT_DRAFT"
+        error_status: 409
+
+      - kind: "upsert"
+        table: "survey_answer"
+        unique_by: ["response_id", "question_id"]
+        values:
+          response_id: "request.response_id"
+          question_id: "request.question_id"
+          value_bool: "request.value_bool"
+          value_text: "request.value_text"
+          value_num: "request.value_num"
+          value_date: "request.value_date"
+          value_json: "request.value_json"
+
+      - kind: "outbox_emit"
+        event: "SURVEY_ANSWER_SAVED"
+        aggregate_type: "SURVEY_RESPONSE"
+        aggregate_id: "request.response_id"
+        payload:
+          survey_answer_id: "last_insert_id()"
+          response_id: "request.response_id"
+          question_id: "request.question_id"
+
+    response:
+      status: 200
+      body:
+        survey_answer_id: "last_insert_id()"
+
+  - name: "SurveyAnswer.Get"
+    description: "Get survey answer by ID"
+    path: "/v1/survey-answers/{answer_id}"
+    method: "GET"
+    idempotent: false
+    permissions: []
+    input: null
+    steps:
+      - kind: "read"
+        table: "survey_answer"
+        where:
+          id: "path.answer_id"
+        into: "answer"
+
+      - kind: "guard"
+        expr: "answer != null"
+        error_code: "SURVEY_ANSWER_NOT_FOUND"
+        error_status: 404
+
+    response:
+      status: 200
+      body: "answer"
+
+  - name: "SurveyAnswer.ListByResponse"
+    description: "List survey answers by response"
+    path: "/v1/survey-responses/{response_id}/answers"
+    method: "GET"
+    idempotent: false
+    permissions: []
+    input: null
+    steps:
+      - kind: "read"
+        table: "survey_answer"
+        where:
+          response_id: "path.response_id"
+        into: "answers"
+
+    response:
+      status: 200
+      body:
+        items: "answers"
+
+  - name: "SurveyResponseFile.Attach"
+    description: "Attach file to survey response"
+    path: "/v1/survey-responses/{response_id}/files"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "SurveyResponseFileAttachRequest"
+    steps:
+      - kind: "read"
+        table: "survey_response"
+        where:
+          id: "request.response_id"
+        into: "response"
+
+      - kind: "guard"
+        expr: "response != null"
+        error_code: "SURVEY_RESPONSE_NOT_FOUND"
+        error_status: 404
+
+      - kind: "upsert"
+        table: "survey_response_file"
+        unique_by: ["response_id", "file_upload_id"]
+        values:
+          response_id: "request.response_id"
+          file_upload_id: "request.file_upload_id"
+          kind: "coalesce(request.kind, 'evidence')"
+          sort_order: "coalesce(request.sort_order, 0)"
+          meta_json: "request.meta_json"
+
+      - kind: "outbox_emit"
+        event: "SURVEY_RESPONSE_FILE_ATTACHED"
+        aggregate_type: "SURVEY_RESPONSE"
+        aggregate_id: "request.response_id"
+        payload:
+          survey_response_file_id: "last_insert_id()"
+          response_id: "request.response_id"
+          file_upload_id: "request.file_upload_id"
+
+    response:
+      status: 201
+      body:
+        survey_response_file_id: "last_insert_id()"
+
+  - name: "SurveyResponseFile.ListByResponse"
+    description: "List files by survey response"
+    path: "/v1/survey-responses/{response_id}/files"
+    method: "GET"
+    idempotent: false
+    permissions: []
+    input: null
+    steps:
+      - kind: "read"
+        table: "survey_response_file"
+        where:
+          response_id: "path.response_id"
+        into: "files"
+
+    response:
+      status: 200
+      body:
+        items: "files"
+
+changelog:
+  - version: "2.0"
+    date: "2026-03-13"
+    author: "Platform Team"
+    description: "Generated from FULL-DDL.md using bottom-up approach"
+    changes:
+      - "Extracted 7 survey tables from FULL-DDL.md"
+      - "Built schema section with exact DDL mapping"
+      - "Generated 23 commands from schema and domain workflows"
+      - "Mapped 10 events to aggregate state changes"
+      - "Documented all UNIQUE constraints for idempotency"
+      - "Documented all foreign keys for dependencies"
+      - "Identified 3 aggregates: SURVEY, SURVEY_VERSION, SURVEY_RESPONSE"
+      - "Identified 4 resource tables: survey_question, survey_question_option, survey_response_file, survey_answer"
+    breaking_changes: []
+    migrations_required:
+      - "Initial implementation aligned with existing DDL"
+
+coverage:
+  tables:
+    survey:
+      touched_by:
+        - "Survey.Create"
+        - "Survey.Get"
+        - "Survey.List"
+        - "Survey.Deactivate"
+        - "SurveyVersion.Create"
+    survey_version:
+      touched_by:
+        - "SurveyVersion.Create"
+        - "SurveyVersion.Get"
+        - "SurveyVersion.ListBySurvey"
+        - "SurveyVersion.Publish"
+        - "SurveyQuestion.CreateBulk"
+        - "SurveyResponse.Create"
+    survey_question:
+      touched_by:
+        - "SurveyQuestion.CreateBulk"
+        - "SurveyQuestion.Get"
+        - "SurveyQuestion.ListByVersion"
+        - "SurveyQuestionOption.CreateBulk"
+    survey_question_option:
+      touched_by:
+        - "SurveyQuestionOption.CreateBulk"
+        - "SurveyQuestionOption.ListByQuestion"
+    survey_response:
+      touched_by:
+        - "SurveyResponse.Create"
+        - "SurveyResponse.Get"
+        - "SurveyResponse.List"
+        - "SurveyResponse.Submit"
+        - "SurveyAnswer.Upsert"
+        - "SurveyResponseFile.Attach"
+    survey_response_file:
+      touched_by:
+        - "SurveyResponseFile.Attach"
+        - "SurveyResponseFile.ListByResponse"
+    survey_answer:
+      touched_by:
+        - "SurveyAnswer.Upsert"
+        - "SurveyAnswer.Get"
+        - "SurveyAnswer.ListByResponse"
+        - "SurveyResponse.Submit"
+
+  events:
+    SURVEY_CREATED:
+      emitted_by:
+        - "Survey.Create"
+    SURVEY_DEACTIVATED:
+      emitted_by:
+        - "Survey.Deactivate"
+    SURVEY_VERSION_CREATED:
+      emitted_by:
+        - "SurveyVersion.Create"
+    SURVEY_VERSION_PUBLISHED:
+      emitted_by:
+        - "SurveyVersion.Publish"
+    SURVEY_QUESTIONS_CREATED:
+      emitted_by:
+        - "SurveyQuestion.CreateBulk"
+    SURVEY_QUESTION_OPTIONS_CREATED:
+      emitted_by:
+        - "SurveyQuestionOption.CreateBulk"
+    SURVEY_RESPONSE_CREATED:
+      emitted_by:
+        - "SurveyResponse.Create"
+    SURVEY_RESPONSE_SUBMITTED:
+      emitted_by:
+        - "SurveyResponse.Submit"
+    SURVEY_ANSWER_SAVED:
+      emitted_by:
+        - "SurveyAnswer.Upsert"
+    SURVEY_RESPONSE_FILE_ATTACHED:
+      emitted_by:
+        - "SurveyResponseFile.Attach"
+
+  aggregate_transitions:
+    SURVEY:
+      active:
+        - "Survey.Deactivate"
+    SURVEY_VERSION:
+      draft:
+        - "SurveyVersion.Publish"
+    SURVEY_RESPONSE:
+      draft:
+        - "SurveyResponse.Submit"

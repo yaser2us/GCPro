@@ -1,5 +1,7 @@
 import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import { PERMISSIONS_KEY } from '../decorators/require-permissions.decorator';
 import { Actor } from '../types/actor.type';
 
@@ -9,14 +11,16 @@ import { Actor } from '../types/actor.type';
  * Works with @RequirePermissions decorator
  * User must have ANY of the listed permissions
  *
- * In production, this would query a database for user permissions
- * For demo, we'll use a simple role-based check
+ * Queries database for actual user permissions via role assignments
  */
 @Injectable()
 export class PermissionsGuard implements CanActivate {
-  constructor(private reflector: Reflector) {}
+  constructor(
+    private reflector: Reflector,
+    @InjectDataSource() private dataSource: DataSource,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const requiredPermissions = this.reflector.getAllAndOverride<string[]>(
       PERMISSIONS_KEY,
       [context.getHandler(), context.getClass()],
@@ -34,8 +38,8 @@ export class PermissionsGuard implements CanActivate {
       throw new ForbiddenException('No actor found in request');
     }
 
-    // Simple permission check: map roles to permissions
-    const userPermissions = this.getRolePermissions(actor.actor_role);
+    // Query database for user permissions
+    const userPermissions = await this.getUserPermissions(actor.actor_user_id);
 
     // Check if user has ANY of the required permissions
     const hasPermission = requiredPermissions.some((permission) =>
@@ -52,23 +56,19 @@ export class PermissionsGuard implements CanActivate {
   }
 
   /**
-   * Map role to permissions
-   * In production, this would be a database lookup
+   * Get user permissions from database via role assignments
    */
-  private getRolePermissions(role: string): string[] {
-    const rolePermissionMap: Record<string, string[]> = {
-      ADMIN: [
-        'missions:admin',
-        'missions:manage',
-        'missions:review',
-        'missions:enroll',
-        'missions:participant',
-      ],
-      REVIEWER: ['missions:review', 'missions:enroll', 'missions:participant'],
-      USER: ['missions:enroll', 'missions:participant'],
-      SYSTEM: ['*'], // System has all permissions
-    };
+  private async getUserPermissions(userId: string): Promise<string[]> {
+    const query = `
+      SELECT DISTINCT p.code
+      FROM permission p
+      INNER JOIN role_permission rp ON p.id = rp.permission_id
+      INNER JOIN user_role ur ON rp.role_id = ur.role_id
+      WHERE ur.user_id = ?
+        AND p.status = 'active'
+    `;
 
-    return rolePermissionMap[role] || [];
+    const results = await this.dataSource.query(query, [userId]);
+    return results.map((row: any) => row.code);
   }
 }

@@ -1,0 +1,757 @@
+version: "2.0.0"
+spec_id: "permission.pillar.v2"
+domain: "permission"
+plugin: "permission"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# OWNERSHIP
+# ──────────────────────────────────────────────────────────────────────────────
+
+ownership:
+  owner_plugin: "permission"
+  owns_tables:
+    - "permission"
+    - "role"
+    - "role_permission"
+  cross_plugin_writes: false
+  cross_plugin_integration:
+    allowed_via:
+      - "command_api"
+      - "outbox_events"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DEPENDENCIES
+# ──────────────────────────────────────────────────────────────────────────────
+
+dependencies:
+  corekit:
+    transaction_wrapper: "withTxn"
+    outbox_service: "OutboxService.emit"
+    guard_helper: "guard"
+    domain_error: "DomainError"
+
+  core_tables_readonly: []
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CONVENTIONS
+# ──────────────────────────────────────────────────────────────────────────────
+
+conventions:
+  workflow_discipline:
+    - "guard"
+    - "write"
+    - "emit"
+    - "commit"
+
+  status_mutation_policy: "Status fields may only be mutated through commands."
+
+  outbox:
+    required_envelope_fields:
+      - "event_name"
+      - "event_version"
+      - "aggregate_type"
+      - "aggregate_id"
+      - "actor_user_id"
+      - "occurred_at"
+      - "correlation_id"
+      - "causation_id"
+
+  idempotency:
+    required_header: "Idempotency-Key"
+    default_scope: "actor_user_id + command_name"
+    db_strategy:
+      - "UNIQUE(idempotency_key) where applicable"
+      - "MySQL ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)"
+      - "permission: UNIQUE(code) prevents duplicate permission codes"
+      - "role: UNIQUE(code) prevents duplicate role codes"
+      - "role_permission: UNIQUE(role_id, permission_id) prevents duplicate assignments"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SCHEMA
+# ──────────────────────────────────────────────────────────────────────────────
+
+schema:
+  tables:
+    permission:
+      description: "Permission definitions for RBAC system"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        code:
+          type: "varchar"
+          length: 128
+          nullable: false
+          description: "Unique permission code (e.g., 'user:create', 'policy:read')"
+        name:
+          type: "varchar"
+          length: 255
+          nullable: false
+          description: "Human-readable permission name"
+        description:
+          type: "varchar"
+          length: 512
+          nullable: true
+          description: "Permission description"
+        scope:
+          type: "varchar"
+          length: 32
+          nullable: false
+          default: "api"
+          description: "Permission scope (api, admin, etc.)"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "active"
+          description: "Permission status"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          - name: "uk_permission_code"
+            columns: ["code"]
+        indexes:
+          - name: "idx_permission_status"
+            columns: ["status"]
+
+    role:
+      description: "Role definitions for RBAC system"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        code:
+          type: "varchar"
+          length: 64
+          nullable: false
+          description: "Unique role code (e.g., 'admin', 'agent', 'customer')"
+        name:
+          type: "varchar"
+          length: 128
+          nullable: false
+          description: "Human-readable role name"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          - name: "uk_role_code"
+            columns: ["code"]
+
+    role_permission:
+      description: "Role-Permission assignments (junction table)"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        role_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to role"
+        permission_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to permission"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          - name: "uk_role_permission"
+            columns: ["role_id", "permission_id"]
+        foreign_keys:
+          - name: "fk_rp_role"
+            columns: ["role_id"]
+            references:
+              table: "role"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+          - name: "fk_rp_permission"
+            columns: ["permission_id"]
+            references:
+              table: "permission"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+        indexes:
+          - name: "idx_rp_permission"
+            columns: ["permission_id"]
+
+resources:
+  - name: "permission"
+    kind: "resource"
+    table: "permission"
+    primary_key: "id"
+    api_surface:
+      - "create"
+      - "get"
+      - "list"
+      - "update"
+      - "deactivate"
+
+  - name: "role"
+    kind: "aggregate"
+    table: "role"
+    primary_key: "id"
+    statuses:
+      - "active"
+      - "inactive"
+    api_surface:
+      - "create"
+      - "get"
+      - "list"
+      - "assignPermission"
+      - "revokePermission"
+      - "listPermissions"
+
+  - name: "role_permission"
+    kind: "resource"
+    table: "role_permission"
+    primary_key: "id"
+    api_surface:
+      - "listByRole"
+      - "listByPermission"
+
+aggregates:
+  ROLE:
+    root_table: "role"
+    primary_key: "id"
+    statuses:
+      - "active"
+      - "inactive"
+
+types:
+  Actor:
+    fields:
+      - { name: "actor_user_id", type: "string", required: true }
+      - { name: "roles", type: "string[]", required: false }
+
+  PermissionSummary:
+    fields:
+      - { name: "id", type: "string", required: true }
+      - { name: "code", type: "string", required: true }
+      - { name: "name", type: "string", required: true }
+      - { name: "scope", type: "string", required: true }
+
+  RoleSummary:
+    fields:
+      - { name: "id", type: "string", required: true }
+      - { name: "code", type: "string", required: true }
+      - { name: "name", type: "string", required: true }
+
+dtos:
+  PermissionCreateRequest:
+    fields:
+      - { name: "code", type: "string", required: true, max_len: 128 }
+      - { name: "name", type: "string", required: true, max_len: 255 }
+      - { name: "description", type: "string", required: false, max_len: 512 }
+      - { name: "scope", type: "string", required: false, max_len: 32, default: "api" }
+
+  PermissionUpdateRequest:
+    fields:
+      - { name: "name", type: "string", required: false, max_len: 255 }
+      - { name: "description", type: "string", required: false, max_len: 512 }
+      - { name: "scope", type: "string", required: false, max_len: 32 }
+
+  RoleCreateRequest:
+    fields:
+      - { name: "code", type: "string", required: true, max_len: 64 }
+      - { name: "name", type: "string", required: true, max_len: 128 }
+
+  RoleAssignPermissionRequest:
+    fields:
+      - { name: "permission_id", type: "string", required: true }
+
+  RoleRevokePermissionRequest:
+    fields:
+      - { name: "permission_id", type: "string", required: true }
+
+events:
+  - name: "PERMISSION_CREATED"
+    version: 1
+    aggregate_type: "PERMISSION"
+    description: "Emitted when permission is created"
+
+  - name: "PERMISSION_UPDATED"
+    version: 1
+    aggregate_type: "PERMISSION"
+    description: "Emitted when permission is updated"
+
+  - name: "PERMISSION_DEACTIVATED"
+    version: 1
+    aggregate_type: "PERMISSION"
+    description: "Emitted when permission is deactivated"
+
+  - name: "ROLE_CREATED"
+    version: 1
+    aggregate_type: "ROLE"
+    description: "Emitted when role is created"
+
+  - name: "ROLE_PERMISSION_ASSIGNED"
+    version: 1
+    aggregate_type: "ROLE"
+    description: "Emitted when permission is assigned to role"
+
+  - name: "ROLE_PERMISSION_REVOKED"
+    version: 1
+    aggregate_type: "ROLE"
+    description: "Emitted when permission is revoked from role"
+
+commands:
+  - name: "Permission.Create"
+    description: "Create permission"
+    path: "/v1/permissions"
+    method: "POST"
+    idempotent: true
+    permissions: ["permission:admin"]
+    input: "PermissionCreateRequest"
+    steps:
+      - kind: "guard"
+        expr: "request.code != null && request.code != ''"
+        error_code: "PERMISSION_CODE_REQUIRED"
+        error_status: 400
+
+      - kind: "upsert"
+        table: "permission"
+        unique_by: ["code"]
+        values:
+          code: "request.code"
+          name: "request.name"
+          description: "request.description"
+          scope: "coalesce(request.scope, 'api')"
+          status: "active"
+
+      - kind: "outbox_emit"
+        event: "PERMISSION_CREATED"
+        aggregate_type: "PERMISSION"
+        aggregate_id: "last_insert_id()"
+        payload:
+          permission_id: "last_insert_id()"
+          code: "request.code"
+          name: "request.name"
+
+    response:
+      status: 201
+      body:
+        permission_id: "last_insert_id()"
+        status: "active"
+
+  - name: "Permission.Get"
+    description: "Get permission by ID"
+    path: "/v1/permissions/{permission_id}"
+    method: "GET"
+    idempotent: false
+    permissions: ["permission:read"]
+    input: null
+    steps:
+      - kind: "read"
+        table: "permission"
+        where:
+          id: "path.permission_id"
+        into: "permission"
+
+      - kind: "guard"
+        expr: "permission != null"
+        error_code: "PERMISSION_NOT_FOUND"
+        error_status: 404
+
+    response:
+      status: 200
+      body: "permission"
+
+  - name: "Permission.List"
+    description: "List permissions"
+    path: "/v1/permissions"
+    method: "GET"
+    idempotent: false
+    permissions: ["permission:read"]
+    input: null
+    steps:
+      - kind: "read"
+        table: "permission"
+        where: {}
+        into: "permissions"
+
+    response:
+      status: 200
+      body:
+        items: "permissions"
+
+  - name: "Permission.Update"
+    description: "Update permission"
+    path: "/v1/permissions/{permission_id}"
+    method: "PUT"
+    idempotent: true
+    permissions: ["permission:admin"]
+    input: "PermissionUpdateRequest"
+    steps:
+      - kind: "read"
+        table: "permission"
+        where:
+          id: "path.permission_id"
+        into: "permission"
+
+      - kind: "guard"
+        expr: "permission != null"
+        error_code: "PERMISSION_NOT_FOUND"
+        error_status: 404
+
+      - kind: "update"
+        table: "permission"
+        where:
+          id: "path.permission_id"
+        values:
+          name: "coalesce(request.name, permission.name)"
+          description: "coalesce(request.description, permission.description)"
+          scope: "coalesce(request.scope, permission.scope)"
+
+      - kind: "outbox_emit"
+        event: "PERMISSION_UPDATED"
+        aggregate_type: "PERMISSION"
+        aggregate_id: "path.permission_id"
+        payload:
+          permission_id: "path.permission_id"
+
+    response:
+      status: 200
+      body:
+        permission_id: "path.permission_id"
+
+  - name: "Permission.Deactivate"
+    description: "Deactivate permission"
+    path: "/v1/permissions/{permission_id}/deactivate"
+    method: "POST"
+    idempotent: true
+    permissions: ["permission:admin"]
+    input: null
+    steps:
+      - kind: "read"
+        table: "permission"
+        where:
+          id: "path.permission_id"
+        into: "permission"
+
+      - kind: "guard"
+        expr: "permission != null"
+        error_code: "PERMISSION_NOT_FOUND"
+        error_status: 404
+
+      - kind: "guard"
+        expr: "permission.status == 'active'"
+        error_code: "PERMISSION_NOT_ACTIVE"
+        error_status: 409
+
+      - kind: "update"
+        table: "permission"
+        where:
+          id: "path.permission_id"
+        values:
+          status: "inactive"
+
+      - kind: "outbox_emit"
+        event: "PERMISSION_DEACTIVATED"
+        aggregate_type: "PERMISSION"
+        aggregate_id: "path.permission_id"
+        payload:
+          permission_id: "path.permission_id"
+
+    response:
+      status: 200
+      body:
+        permission_id: "path.permission_id"
+        status: "inactive"
+
+  - name: "Role.Create"
+    description: "Create role"
+    path: "/v1/roles"
+    method: "POST"
+    idempotent: true
+    permissions: ["role:admin"]
+    input: "RoleCreateRequest"
+    steps:
+      - kind: "guard"
+        expr: "request.code != null && request.code != ''"
+        error_code: "ROLE_CODE_REQUIRED"
+        error_status: 400
+
+      - kind: "upsert"
+        table: "role"
+        unique_by: ["code"]
+        values:
+          code: "request.code"
+          name: "request.name"
+
+      - kind: "outbox_emit"
+        event: "ROLE_CREATED"
+        aggregate_type: "ROLE"
+        aggregate_id: "last_insert_id()"
+        payload:
+          role_id: "last_insert_id()"
+          code: "request.code"
+          name: "request.name"
+
+    response:
+      status: 201
+      body:
+        role_id: "last_insert_id()"
+
+  - name: "Role.Get"
+    description: "Get role by ID"
+    path: "/v1/roles/{role_id}"
+    method: "GET"
+    idempotent: false
+    permissions: ["role:read"]
+    input: null
+    steps:
+      - kind: "read"
+        table: "role"
+        where:
+          id: "path.role_id"
+        into: "role"
+
+      - kind: "guard"
+        expr: "role != null"
+        error_code: "ROLE_NOT_FOUND"
+        error_status: 404
+
+    response:
+      status: 200
+      body: "role"
+
+  - name: "Role.List"
+    description: "List roles"
+    path: "/v1/roles"
+    method: "GET"
+    idempotent: false
+    permissions: ["role:read"]
+    input: null
+    steps:
+      - kind: "read"
+        table: "role"
+        where: {}
+        into: "roles"
+
+    response:
+      status: 200
+      body:
+        items: "roles"
+
+  - name: "Role.AssignPermission"
+    description: "Assign permission to role"
+    path: "/v1/roles/{role_id}/permissions"
+    method: "POST"
+    idempotent: true
+    permissions: ["role:admin"]
+    input: "RoleAssignPermissionRequest"
+    steps:
+      - kind: "read"
+        table: "role"
+        where:
+          id: "path.role_id"
+        into: "role"
+
+      - kind: "guard"
+        expr: "role != null"
+        error_code: "ROLE_NOT_FOUND"
+        error_status: 404
+
+      - kind: "read"
+        table: "permission"
+        where:
+          id: "request.permission_id"
+        into: "permission"
+
+      - kind: "guard"
+        expr: "permission != null"
+        error_code: "PERMISSION_NOT_FOUND"
+        error_status: 404
+
+      - kind: "upsert"
+        table: "role_permission"
+        unique_by: ["role_id", "permission_id"]
+        values:
+          role_id: "path.role_id"
+          permission_id: "request.permission_id"
+
+      - kind: "outbox_emit"
+        event: "ROLE_PERMISSION_ASSIGNED"
+        aggregate_type: "ROLE"
+        aggregate_id: "path.role_id"
+        payload:
+          role_id: "path.role_id"
+          permission_id: "request.permission_id"
+          role_permission_id: "last_insert_id()"
+
+    response:
+      status: 201
+      body:
+        role_permission_id: "last_insert_id()"
+
+  - name: "Role.RevokePermission"
+    description: "Revoke permission from role"
+    path: "/v1/roles/{role_id}/permissions/{permission_id}"
+    method: "DELETE"
+    idempotent: true
+    permissions: ["role:admin"]
+    input: null
+    steps:
+      - kind: "read"
+        table: "role"
+        where:
+          id: "path.role_id"
+        into: "role"
+
+      - kind: "guard"
+        expr: "role != null"
+        error_code: "ROLE_NOT_FOUND"
+        error_status: 404
+
+      - kind: "read"
+        table: "role_permission"
+        where:
+          role_id: "path.role_id"
+          permission_id: "path.permission_id"
+        into: "assignment"
+
+      - kind: "guard"
+        expr: "assignment != null"
+        error_code: "ROLE_PERMISSION_NOT_FOUND"
+        error_status: 404
+
+      - kind: "hook"
+        action: "delete_role_permission"
+        params:
+          role_id: "path.role_id"
+          permission_id: "path.permission_id"
+
+      - kind: "outbox_emit"
+        event: "ROLE_PERMISSION_REVOKED"
+        aggregate_type: "ROLE"
+        aggregate_id: "path.role_id"
+        payload:
+          role_id: "path.role_id"
+          permission_id: "path.permission_id"
+
+    response:
+      status: 200
+      body:
+        role_id: "path.role_id"
+        permission_id: "path.permission_id"
+
+  - name: "Role.ListPermissions"
+    description: "List permissions assigned to role"
+    path: "/v1/roles/{role_id}/permissions"
+    method: "GET"
+    idempotent: false
+    permissions: ["role:read"]
+    input: null
+    steps:
+      - kind: "read"
+        table: "role"
+        where:
+          id: "path.role_id"
+        into: "role"
+
+      - kind: "guard"
+        expr: "role != null"
+        error_code: "ROLE_NOT_FOUND"
+        error_status: 404
+
+      - kind: "hook"
+        action: "join_role_permissions"
+        params:
+          role_id: "path.role_id"
+        into: "permissions"
+
+    response:
+      status: 200
+      body:
+        items: "permissions"
+
+changelog:
+  - version: "2.0"
+    date: "2026-03-13"
+    author: "Platform Team"
+    description: "Generated from FULL-DDL.md using bottom-up approach"
+    changes:
+      - "Extracted 3 permission/role tables from FULL-DDL.md"
+      - "Built schema section with exact DDL mapping"
+      - "Generated 11 commands from schema and RBAC workflows"
+      - "Mapped 6 events to aggregate state changes"
+      - "Documented all UNIQUE constraints for idempotency"
+      - "Documented all foreign keys for dependencies"
+      - "Identified 1 aggregate: ROLE"
+      - "Identified 2 resource tables: permission, role_permission"
+    breaking_changes: []
+    migrations_required:
+      - "Initial implementation aligned with existing DDL"
+
+coverage:
+  tables:
+    permission:
+      touched_by:
+        - "Permission.Create"
+        - "Permission.Get"
+        - "Permission.List"
+        - "Permission.Update"
+        - "Permission.Deactivate"
+        - "Role.AssignPermission"
+    role:
+      touched_by:
+        - "Role.Create"
+        - "Role.Get"
+        - "Role.List"
+        - "Role.AssignPermission"
+        - "Role.RevokePermission"
+        - "Role.ListPermissions"
+    role_permission:
+      touched_by:
+        - "Role.AssignPermission"
+        - "Role.RevokePermission"
+        - "Role.ListPermissions"
+
+  events:
+    PERMISSION_CREATED:
+      emitted_by:
+        - "Permission.Create"
+    PERMISSION_UPDATED:
+      emitted_by:
+        - "Permission.Update"
+    PERMISSION_DEACTIVATED:
+      emitted_by:
+        - "Permission.Deactivate"
+    ROLE_CREATED:
+      emitted_by:
+        - "Role.Create"
+    ROLE_PERMISSION_ASSIGNED:
+      emitted_by:
+        - "Role.AssignPermission"
+    ROLE_PERMISSION_REVOKED:
+      emitted_by:
+        - "Role.RevokePermission"
+
+  aggregate_transitions:
+    ROLE:
+      active:
+        - "Role.AssignPermission"
+        - "Role.RevokePermission"

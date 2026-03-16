@@ -51,4 +51,37 @@ export class MissionRewardGrantRepository {
     const manager = queryRunner ? queryRunner.manager : this.repo.manager;
     await manager.update(MissionRewardGrant, { id }, data);
   }
+
+  /**
+   * Upsert reward grant by assignment_id (exactly-once semantics)
+   * Based on missions.pillar.v1.yml lines 844-853
+   */
+  async upsert(
+    data: Partial<MissionRewardGrant>,
+    queryRunner?: QueryRunner,
+  ): Promise<number> {
+    const manager = queryRunner ? queryRunner.manager : this.repo.manager;
+
+    const query = `
+      INSERT INTO mission_reward_grant
+        (assignment_id, user_id, amount, status, idempotency_key, created_at, updated_at)
+      VALUES
+        (?, ?, ?, ?, ?, NOW(), NOW())
+      ON DUPLICATE KEY UPDATE
+        status = VALUES(status),
+        amount = VALUES(amount),
+        updated_at = NOW(),
+        id = LAST_INSERT_ID(id)
+    `;
+
+    const result = await manager.query(query, [
+      data.assignment_id,
+      data.user_id,
+      data.amount,
+      data.status,
+      data.idempotency_key || null,
+    ]);
+
+    return result.insertId;
+  }
 }

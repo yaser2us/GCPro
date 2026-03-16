@@ -1,0 +1,1107 @@
+version: "2.0.0"
+spec_id: "user.pillar.v2"
+domain: "user"
+plugin: "user"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# OWNERSHIP
+# ──────────────────────────────────────────────────────────────────────────────
+
+ownership:
+  owner_plugin: "user"
+  owns_tables:
+    - "user"
+    - "user_credential"
+    - "user_permission"
+    - "user_role"
+  cross_plugin_writes: false
+  cross_plugin_integration:
+    allowed_via:
+      - "command_api"
+      - "outbox_events"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DEPENDENCIES
+# ──────────────────────────────────────────────────────────────────────────────
+
+dependencies:
+  corekit:
+    transaction_wrapper: "withTxn"
+    outbox_service: "OutboxService.emit"
+    guard_helper: "guard"
+    domain_error: "DomainError"
+
+  core_tables_readonly:
+    - table_name: "permission"
+      usage: "user_permission.permission_id references permission.id"
+      access: "readonly_fk"
+
+    - table_name: "role"
+      usage: "user_role.role_id references role.id"
+      access: "readonly_fk"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CONVENTIONS
+# ──────────────────────────────────────────────────────────────────────────────
+
+conventions:
+  workflow_discipline:
+    - "guard"
+    - "write"
+    - "emit"
+    - "commit"
+
+  status_mutation_policy: "Status fields may only be mutated through commands."
+
+  outbox:
+    required_envelope_fields:
+      - "event_name"
+      - "event_version"
+      - "aggregate_type"
+      - "aggregate_id"
+      - "actor_user_id"
+      - "occurred_at"
+      - "correlation_id"
+      - "causation_id"
+
+  idempotency:
+    required_header: "Idempotency-Key"
+    default_scope: "actor_user_id + command_name"
+    db_strategy:
+      - "UNIQUE(idempotency_key) for user creation"
+      - "MySQL ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)"
+      - "user: UNIQUE(phone_number), UNIQUE(email) prevents duplicate users"
+      - "user_permission: UNIQUE(user_id, permission_id) prevents duplicate permissions"
+      - "user_role: PRIMARY KEY(user_id, role_id) prevents duplicate role assignments"
+
+  security:
+    - "Passwords must be hashed using bcrypt before storage in user_credential.secret_hash"
+    - "Never return secret_hash in API responses"
+    - "Credential verification must use constant-time comparison"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SCHEMA
+# ──────────────────────────────────────────────────────────────────────────────
+
+schema:
+  tables:
+    user:
+      description: "User account for system access"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        phone_number:
+          type: "varchar"
+          length: 32
+          nullable: true
+          description: "Phone number (unique)"
+        email:
+          type: "varchar"
+          length: 255
+          nullable: true
+          description: "Email address (unique)"
+        email_verified_at:
+          type: "datetime"
+          nullable: true
+          description: "Email verification timestamp"
+        status:
+          type: "varchar"
+          length: 32
+          nullable: false
+          default: "active"
+          description: "Status: active, suspended, inactive"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+          description: "Record update timestamp"
+
+      primary_key: ["id"]
+
+      unique_keys:
+        uk_user_phone:
+          columns: ["phone_number"]
+          description: "Prevent duplicate phone numbers"
+        uk_user_email:
+          columns: ["email"]
+          description: "Prevent duplicate emails"
+
+      indexes:
+        idx_user_status:
+          columns: ["status"]
+          unique: false
+
+    user_credential:
+      description: "User authentication credentials (passwords, OAuth tokens, etc.)"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        user_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to user"
+        type:
+          type: "varchar"
+          length: 32
+          nullable: false
+          description: "Credential type (e.g., 'password', 'oauth_google', 'oauth_facebook')"
+        secret_hash:
+          type: "varchar"
+          length: 255
+          nullable: true
+          description: "Hashed secret (bcrypt for passwords)"
+        provider_ref:
+          type: "varchar"
+          length: 255
+          nullable: true
+          description: "External provider reference (for OAuth)"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+
+      primary_key: ["id"]
+
+      indexes:
+        idx_user_credential_user:
+          columns: ["user_id"]
+          unique: false
+        idx_user_credential_type:
+          columns: ["type"]
+          unique: false
+
+      foreign_keys:
+        fk_user_credential_user:
+          columns: ["user_id"]
+          references:
+            table: "user"
+            columns: ["id"]
+          on_delete: "CASCADE"
+          on_update: "CASCADE"
+
+    user_permission:
+      description: "User-specific permission overrides"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        user_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to user"
+        permission_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to permission"
+        effect:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "allow"
+          description: "Permission effect: allow, deny"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+
+      primary_key: ["id"]
+
+      unique_keys:
+        uk_user_permission:
+          columns: ["user_id", "permission_id"]
+          description: "Prevent duplicate user-permission assignments"
+
+      indexes:
+        idx_up_permission:
+          columns: ["permission_id"]
+          unique: false
+
+      foreign_keys:
+        fk_up_user:
+          columns: ["user_id"]
+          references:
+            table: "user"
+            columns: ["id"]
+          on_delete: "CASCADE"
+          on_update: "CASCADE"
+        fk_up_permission:
+          columns: ["permission_id"]
+          references:
+            table: "permission"
+            columns: ["id"]
+          on_delete: "CASCADE"
+          on_update: "CASCADE"
+
+    user_role:
+      description: "User-role assignments"
+      columns:
+        user_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to user"
+        role_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to role"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+
+      primary_key: ["user_id", "role_id"]
+
+      indexes:
+        idx_user_role_role:
+          columns: ["role_id"]
+          unique: false
+
+      foreign_keys:
+        fk_user_role_user:
+          columns: ["user_id"]
+          references:
+            table: "user"
+            columns: ["id"]
+          on_delete: "CASCADE"
+          on_update: "CASCADE"
+        fk_user_role_role:
+          columns: ["role_id"]
+          references:
+            table: "role"
+            columns: ["id"]
+          on_delete: "RESTRICT"
+          on_update: "CASCADE"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# RESOURCES
+# ──────────────────────────────────────────────────────────────────────────────
+
+resources:
+  aggregates:
+    USER:
+      root_table: "user"
+      status_field: "status"
+      allowed_statuses:
+        - "active"
+        - "suspended"
+        - "inactive"
+      description: "User account aggregate"
+
+  non_aggregate_resources:
+    - table_name: "user_credential"
+      description: "Authentication credentials for users"
+      parent_aggregate: "USER"
+
+    - table_name: "user_permission"
+      description: "User-specific permission overrides"
+      parent_aggregate: "USER"
+
+    - table_name: "user_role"
+      description: "Role assignments to users"
+      parent_aggregate: "USER"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DTOS
+# ──────────────────────────────────────────────────────────────────────────────
+
+dtos:
+  UserCreateRequestDto:
+    fields:
+      - name: "phone_number"
+        type: "string"
+        required: false
+        max_length: 32
+        description: "Phone number (must be unique)"
+      - name: "email"
+        type: "string"
+        required: false
+        max_length: 255
+        description: "Email address (must be unique)"
+
+  UserUpdateProfileRequestDto:
+    fields:
+      - name: "phone_number"
+        type: "string"
+        required: false
+        max_length: 32
+        description: "Phone number"
+      - name: "email"
+        type: "string"
+        required: false
+        max_length: 255
+        description: "Email address"
+
+  UserVerifyEmailRequestDto:
+    fields:
+      - name: "verification_token"
+        type: "string"
+        required: true
+        description: "Email verification token"
+
+  UserCredentialCreateRequestDto:
+    fields:
+      - name: "type"
+        type: "string"
+        required: true
+        max_length: 32
+        description: "Credential type (e.g., 'password', 'oauth_google')"
+      - name: "secret"
+        type: "string"
+        required: false
+        description: "Plain secret (will be hashed for passwords)"
+      - name: "provider_ref"
+        type: "string"
+        required: false
+        max_length: 255
+        description: "External provider reference"
+
+  UserCredentialVerifyRequestDto:
+    fields:
+      - name: "type"
+        type: "string"
+        required: true
+        max_length: 32
+        description: "Credential type"
+      - name: "secret"
+        type: "string"
+        required: true
+        description: "Plain secret to verify"
+
+  UserRoleAssignRequestDto:
+    fields:
+      - name: "role_id"
+        type: "string"
+        required: true
+        description: "Role ID to assign"
+
+  UserPermissionGrantRequestDto:
+    fields:
+      - name: "permission_id"
+        type: "string"
+        required: true
+        description: "Permission ID to grant"
+      - name: "effect"
+        type: "string"
+        required: false
+        default: "allow"
+        description: "Permission effect: allow or deny"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# EVENTS
+# ──────────────────────────────────────────────────────────────────────────────
+
+events:
+  USER_CREATED:
+    version: 1
+    aggregate_type: "USER"
+    description: "User account was created"
+    payload:
+      - "user_id"
+      - "phone_number"
+      - "email"
+
+  USER_PROFILE_UPDATED:
+    version: 1
+    aggregate_type: "USER"
+    description: "User profile was updated"
+    payload:
+      - "user_id"
+
+  USER_EMAIL_VERIFIED:
+    version: 1
+    aggregate_type: "USER"
+    description: "User email was verified"
+    payload:
+      - "user_id"
+      - "email"
+
+  USER_SUSPENDED:
+    version: 1
+    aggregate_type: "USER"
+    description: "User account was suspended"
+    payload:
+      - "user_id"
+
+  USER_ACTIVATED:
+    version: 1
+    aggregate_type: "USER"
+    description: "User account was activated"
+    payload:
+      - "user_id"
+
+  USER_CREDENTIAL_CREATED:
+    version: 1
+    aggregate_type: "USER"
+    description: "User credential was created"
+    payload:
+      - "user_id"
+      - "user_credential_id"
+      - "type"
+
+  USER_CREDENTIAL_VERIFIED:
+    version: 1
+    aggregate_type: "USER"
+    description: "User credential was verified successfully"
+    payload:
+      - "user_id"
+      - "type"
+
+  USER_ROLE_ASSIGNED:
+    version: 1
+    aggregate_type: "USER"
+    description: "Role was assigned to user"
+    payload:
+      - "user_id"
+      - "role_id"
+
+  USER_ROLE_REVOKED:
+    version: 1
+    aggregate_type: "USER"
+    description: "Role was revoked from user"
+    payload:
+      - "user_id"
+      - "role_id"
+
+  USER_PERMISSION_GRANTED:
+    version: 1
+    aggregate_type: "USER"
+    description: "Permission was granted to user"
+    payload:
+      - "user_id"
+      - "permission_id"
+      - "effect"
+
+  USER_PERMISSION_REVOKED:
+    version: 1
+    aggregate_type: "USER"
+    description: "Permission was revoked from user"
+    payload:
+      - "user_id"
+      - "permission_id"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# COMMANDS
+# ──────────────────────────────────────────────────────────────────────────────
+
+commands:
+  USER.CREATE:
+    http:
+      method: "POST"
+      path: "/v1/users"
+
+    request:
+      dto: "UserCreateRequestDto"
+
+    idempotency:
+      strategy: "UNIQUE(phone_number) or UNIQUE(email)"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "at least one of phone_number or email is required"
+
+      - step: "WRITE"
+        operations:
+          - table: "user"
+            action: "INSERT"
+            fields:
+              - "phone_number"
+              - "email"
+              - "status = 'active'"
+
+      - step: "EMIT"
+        events:
+          - "USER_CREATED"
+
+      - step: "COMMIT"
+        returns:
+          - "user_id"
+          - "status"
+
+    permissions:
+      - "user:admin"
+      - "user:manage"
+
+  USER.GET:
+    http:
+      method: "GET"
+      path: "/v1/users/{user_id}"
+
+    workflow:
+      - step: "READ"
+        operations:
+          - table: "user"
+            action: "SELECT"
+            where: "id = :user_id"
+
+      - step: "GUARD"
+        checks:
+          - "user exists"
+
+      - step: "RETURN"
+        returns: "user record (exclude sensitive data)"
+
+    permissions:
+      - "user:read"
+
+  USER.LIST:
+    http:
+      method: "GET"
+      path: "/v1/users"
+
+    workflow:
+      - step: "READ"
+        operations:
+          - table: "user"
+            action: "SELECT"
+            order_by: "created_at DESC"
+
+      - step: "RETURN"
+        returns: "{ items: [user records] }"
+
+    permissions:
+      - "user:read"
+
+  USER.UPDATE_PROFILE:
+    http:
+      method: "PUT"
+      path: "/v1/users/{user_id}/profile"
+
+    request:
+      dto: "UserUpdateProfileRequestDto"
+
+    idempotency:
+      strategy: "idempotent_update"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "user exists"
+
+      - step: "WRITE"
+        operations:
+          - table: "user"
+            action: "UPDATE"
+            where: "id = :user_id"
+            fields:
+              - "phone_number (if provided)"
+              - "email (if provided)"
+
+      - step: "EMIT"
+        events:
+          - "USER_PROFILE_UPDATED"
+
+      - step: "COMMIT"
+        returns:
+          - "user_id"
+
+    permissions:
+      - "user:admin"
+      - "user:manage"
+
+  USER.VERIFY_EMAIL:
+    http:
+      method: "POST"
+      path: "/v1/users/{user_id}/verify-email"
+
+    request:
+      dto: "UserVerifyEmailRequestDto"
+
+    idempotency:
+      strategy: "idempotent_status_change"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "user exists"
+          - "verification_token is valid"
+          - "email not already verified"
+
+      - step: "WRITE"
+        operations:
+          - table: "user"
+            action: "UPDATE"
+            where: "id = :user_id"
+            fields:
+              - "email_verified_at = NOW()"
+
+      - step: "EMIT"
+        events:
+          - "USER_EMAIL_VERIFIED"
+
+      - step: "COMMIT"
+        returns:
+          - "user_id"
+          - "email_verified_at"
+
+    permissions:
+      - "user:admin"
+      - "user:manage"
+
+  USER.SUSPEND:
+    http:
+      method: "POST"
+      path: "/v1/users/{user_id}/suspend"
+
+    idempotency:
+      strategy: "idempotent_status_change"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "user exists"
+          - "user.status = 'active'"
+
+      - step: "WRITE"
+        operations:
+          - table: "user"
+            action: "UPDATE"
+            where: "id = :user_id"
+            fields:
+              - "status = 'suspended'"
+
+      - step: "EMIT"
+        events:
+          - "USER_SUSPENDED"
+
+      - step: "COMMIT"
+        returns:
+          - "user_id"
+          - "status"
+
+    permissions:
+      - "user:admin"
+
+  USER.ACTIVATE:
+    http:
+      method: "POST"
+      path: "/v1/users/{user_id}/activate"
+
+    idempotency:
+      strategy: "idempotent_status_change"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "user exists"
+          - "user.status IN ('suspended', 'inactive')"
+
+      - step: "WRITE"
+        operations:
+          - table: "user"
+            action: "UPDATE"
+            where: "id = :user_id"
+            fields:
+              - "status = 'active'"
+
+      - step: "EMIT"
+        events:
+          - "USER_ACTIVATED"
+
+      - step: "COMMIT"
+        returns:
+          - "user_id"
+          - "status"
+
+    permissions:
+      - "user:admin"
+
+  USER_CREDENTIAL.CREATE:
+    http:
+      method: "POST"
+      path: "/v1/users/{user_id}/credentials"
+
+    request:
+      dto: "UserCredentialCreateRequestDto"
+
+    idempotency:
+      strategy: "manual_check"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "user exists"
+          - "type is required"
+
+      - step: "WRITE"
+        operations:
+          - table: "user_credential"
+            action: "INSERT"
+            fields:
+              - "user_id"
+              - "type"
+              - "secret_hash (bcrypt if type='password')"
+              - "provider_ref"
+
+      - step: "EMIT"
+        events:
+          - "USER_CREDENTIAL_CREATED"
+
+      - step: "COMMIT"
+        returns:
+          - "user_credential_id"
+
+    permissions:
+      - "user:admin"
+      - "user:manage"
+
+  USER_CREDENTIAL.VERIFY:
+    http:
+      method: "POST"
+      path: "/v1/users/{user_id}/credentials/verify"
+
+    request:
+      dto: "UserCredentialVerifyRequestDto"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "user exists"
+
+      - step: "READ"
+        operations:
+          - table: "user_credential"
+            action: "SELECT"
+            where: "user_id = :user_id AND type = :type"
+
+      - step: "VALIDATE"
+        checks:
+          - "credential exists"
+          - "secret matches (constant-time comparison)"
+
+      - step: "EMIT"
+        events:
+          - "USER_CREDENTIAL_VERIFIED"
+
+      - step: "RETURN"
+        returns:
+          - "verified: true"
+          - "user_id"
+
+    permissions:
+      - "public"
+
+  USER_CREDENTIAL.LIST:
+    http:
+      method: "GET"
+      path: "/v1/users/{user_id}/credentials"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "user exists"
+
+      - step: "READ"
+        operations:
+          - table: "user_credential"
+            action: "SELECT"
+            where: "user_id = :user_id"
+            order_by: "created_at ASC"
+
+      - step: "RETURN"
+        returns: "{ items: [credentials without secret_hash] }"
+
+    permissions:
+      - "user:admin"
+      - "user:read"
+
+  USER_ROLE.ASSIGN:
+    http:
+      method: "POST"
+      path: "/v1/users/{user_id}/roles"
+
+    request:
+      dto: "UserRoleAssignRequestDto"
+
+    idempotency:
+      strategy: "PRIMARY KEY(user_id, role_id)"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "user exists"
+          - "role exists"
+
+      - step: "WRITE"
+        operations:
+          - table: "user_role"
+            action: "INSERT IGNORE"
+            fields:
+              - "user_id"
+              - "role_id"
+
+      - step: "EMIT"
+        events:
+          - "USER_ROLE_ASSIGNED"
+
+      - step: "COMMIT"
+        returns:
+          - "user_id"
+          - "role_id"
+
+    permissions:
+      - "user:admin"
+
+  USER_ROLE.REVOKE:
+    http:
+      method: "DELETE"
+      path: "/v1/users/{user_id}/roles/{role_id}"
+
+    idempotency:
+      strategy: "delete_idempotent"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "user exists"
+          - "assignment exists"
+
+      - step: "WRITE"
+        operations:
+          - table: "user_role"
+            action: "DELETE"
+            where: "user_id = :user_id AND role_id = :role_id"
+
+      - step: "EMIT"
+        events:
+          - "USER_ROLE_REVOKED"
+
+      - step: "COMMIT"
+        returns:
+          - "user_id"
+          - "role_id"
+
+    permissions:
+      - "user:admin"
+
+  USER_ROLE.LIST:
+    http:
+      method: "GET"
+      path: "/v1/users/{user_id}/roles"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "user exists"
+
+      - step: "READ"
+        operations:
+          - table: "user_role JOIN role"
+            action: "SELECT role.*"
+            where: "user_role.user_id = :user_id"
+            order_by: "role.code ASC"
+
+      - step: "RETURN"
+        returns: "{ items: [role records] }"
+
+    permissions:
+      - "user:read"
+
+  USER_PERMISSION.GRANT:
+    http:
+      method: "POST"
+      path: "/v1/users/{user_id}/permissions"
+
+    request:
+      dto: "UserPermissionGrantRequestDto"
+
+    idempotency:
+      strategy: "UNIQUE(user_id, permission_id)"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "user exists"
+          - "permission exists"
+
+      - step: "WRITE"
+        operations:
+          - table: "user_permission"
+            action: "INSERT ON DUPLICATE KEY UPDATE effect = VALUES(effect)"
+            fields:
+              - "user_id"
+              - "permission_id"
+              - "effect (default: 'allow')"
+
+      - step: "EMIT"
+        events:
+          - "USER_PERMISSION_GRANTED"
+
+      - step: "COMMIT"
+        returns:
+          - "user_permission_id"
+
+    permissions:
+      - "user:admin"
+
+  USER_PERMISSION.REVOKE:
+    http:
+      method: "DELETE"
+      path: "/v1/users/{user_id}/permissions/{permission_id}"
+
+    idempotency:
+      strategy: "delete_idempotent"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "user exists"
+          - "assignment exists"
+
+      - step: "WRITE"
+        operations:
+          - table: "user_permission"
+            action: "DELETE"
+            where: "user_id = :user_id AND permission_id = :permission_id"
+
+      - step: "EMIT"
+        events:
+          - "USER_PERMISSION_REVOKED"
+
+      - step: "COMMIT"
+        returns:
+          - "user_id"
+          - "permission_id"
+
+    permissions:
+      - "user:admin"
+
+  USER_PERMISSION.LIST:
+    http:
+      method: "GET"
+      path: "/v1/users/{user_id}/permissions"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "user exists"
+
+      - step: "READ"
+        operations:
+          - table: "user_permission JOIN permission"
+            action: "SELECT permission.*, user_permission.effect"
+            where: "user_permission.user_id = :user_id"
+            order_by: "permission.code ASC"
+
+      - step: "RETURN"
+        returns: "{ items: [permission records with effect] }"
+
+    permissions:
+      - "user:read"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# COVERAGE
+# ──────────────────────────────────────────────────────────────────────────────
+
+coverage:
+  tables_touched_by_commands:
+    user:
+      - "USER.CREATE"
+      - "USER.GET"
+      - "USER.LIST"
+      - "USER.UPDATE_PROFILE"
+      - "USER.VERIFY_EMAIL"
+      - "USER.SUSPEND"
+      - "USER.ACTIVATE"
+
+    user_credential:
+      - "USER_CREDENTIAL.CREATE"
+      - "USER_CREDENTIAL.VERIFY"
+      - "USER_CREDENTIAL.LIST"
+
+    user_role:
+      - "USER_ROLE.ASSIGN"
+      - "USER_ROLE.REVOKE"
+      - "USER_ROLE.LIST"
+
+    user_permission:
+      - "USER_PERMISSION.GRANT"
+      - "USER_PERMISSION.REVOKE"
+      - "USER_PERMISSION.LIST"
+
+  events_emitted_by_commands:
+    USER_CREATED:
+      - "USER.CREATE"
+    USER_PROFILE_UPDATED:
+      - "USER.UPDATE_PROFILE"
+    USER_EMAIL_VERIFIED:
+      - "USER.VERIFY_EMAIL"
+    USER_SUSPENDED:
+      - "USER.SUSPEND"
+    USER_ACTIVATED:
+      - "USER.ACTIVATE"
+    USER_CREDENTIAL_CREATED:
+      - "USER_CREDENTIAL.CREATE"
+    USER_CREDENTIAL_VERIFIED:
+      - "USER_CREDENTIAL.VERIFY"
+    USER_ROLE_ASSIGNED:
+      - "USER_ROLE.ASSIGN"
+    USER_ROLE_REVOKED:
+      - "USER_ROLE.REVOKE"
+    USER_PERMISSION_GRANTED:
+      - "USER_PERMISSION.GRANT"
+    USER_PERMISSION_REVOKED:
+      - "USER_PERMISSION.REVOKE"
+
+  aggregate_state_transitions:
+    USER:
+      - from: "null"
+        to: "active"
+        via: "USER.CREATE"
+      - from: "active"
+        to: "suspended"
+        via: "USER.SUSPEND"
+      - from: "suspended"
+        to: "active"
+        via: "USER.ACTIVATE"
+      - from: "inactive"
+        to: "active"
+        via: "USER.ACTIVATE"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CHANGELOG
+# ──────────────────────────────────────────────────────────────────────────────
+
+changelog:
+  - version: "2.0.0"
+    date: "2026-03-15"
+    changes:
+      - "Initial user pillar specification"
+      - "Extracted from FULL-DDL.md"
+      - "Implements user, user_credential, user_permission, user_role tables"
+      - "16 commands: user CRUD, credential management, role assignments, permission grants"
+      - "11 events covering user lifecycle, credentials, roles, and permissions"
+      - "Integrates with permission and role pillars"

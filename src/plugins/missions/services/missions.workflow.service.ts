@@ -10,11 +10,16 @@ import { MissionDefinitionRepository } from '../repositories/mission-definition.
 import { MissionAssignmentRepository } from '../repositories/mission-assignment.repo';
 import { MissionSubmissionRepository } from '../repositories/mission-submission.repo';
 import { MissionRewardGrantRepository } from '../repositories/mission-reward-grant.repo';
+import { MissionEventRepository } from '../repositories/mission-event.repo';
+import { MissionProgressRepository } from '../repositories/mission-progress.repo';
+import { MissionSubmissionFileRepository } from '../repositories/mission-submission-file.repo';
 import { MissionDefinitionCreateRequestDto } from '../dto/mission-definition-create.request.dto';
 import { MissionDefinitionPublishRequestDto } from '../dto/mission-definition-publish.request.dto';
+import { MissionDefinitionStateChangeRequestDto } from '../dto/mission-definition-state-change.request.dto';
 import { MissionAssignRequestDto } from '../dto/mission-assign.request.dto';
 import { MissionSubmitRequestDto } from '../dto/mission-submit.request.dto';
 import { MissionApproveSubmissionRequestDto } from '../dto/mission-approve-submission.request.dto';
+import { MissionProgressRecordRequestDto } from '../dto/mission-progress-record.request.dto';
 import type { Actor } from '../../../corekit/types/actor.type';
 
 /**
@@ -33,6 +38,9 @@ export class MissionsWorkflowService {
     private readonly assignmentRepo: MissionAssignmentRepository,
     private readonly submissionRepo: MissionSubmissionRepository,
     private readonly rewardGrantRepo: MissionRewardGrantRepository,
+    private readonly missionEventRepo: MissionEventRepository,
+    private readonly progressRepo: MissionProgressRepository,
+    private readonly submissionFileRepo: MissionSubmissionFileRepository,
   ) {}
 
   /**
@@ -44,8 +52,8 @@ export class MissionsWorkflowService {
    *
    * Flow:
    * 1. Load: mission_definition by id
-   * 2. Guard: status in ['draft', 'paused']
-   * 3. Write: update status='published', published_at=now()
+   * 2. Guard: status must be 'paused'
+   * 3. Write: update status='active' (activating/publishing)
    * 4. Emit: MISSION_DEFINITION_PUBLISHED event
    */
   async publishMissionDefinition(
@@ -65,19 +73,19 @@ export class MissionsWorkflowService {
         });
       }
 
-      // GUARD: status in ['draft', 'paused'] (lines 188-190)
-      if (defn.status !== 'draft' && defn.status !== 'paused') {
+      // GUARD: status must be 'paused' to activate/publish (lines 188-190)
+      if (defn.status !== 'paused') {
         throw new ConflictException({
           code: 'MISSION_DEFINITION_NOT_PUBLISHABLE',
-          message: `Cannot publish mission in status: ${defn.status}`,
+          message: `Cannot activate/publish mission in status: ${defn.status}. Must be paused.`,
         });
       }
 
-      // WRITE: update mission_definition (lines 193-199)
+      // WRITE: update mission_definition to 'active' (lines 193-199)
       await this.missionDefRepo.update(
         id,
         {
-          status: 'published',
+          status: 'active',
         },
         queryRunner,
       );
@@ -101,8 +109,8 @@ export class MissionsWorkflowService {
 
       // Response (lines 206-208)
       return {
-        id,
-        status: 'published',
+        mission_definition_id: id,
+        status: 'active',
       };
     });
 
@@ -157,12 +165,6 @@ export class MissionsWorkflowService {
         });
       }
 
-      // LOAD: existing_grant (lines 365-368)
-      const existing_grant = await this.rewardGrantRepo.findByAssignmentId(
-        asg.id,
-        queryRunner,
-      );
-
       // GUARD: submission.status == 'pending' (lines 369-371)
       if (sub.status !== 'pending') {
         throw new ConflictException({
@@ -196,24 +198,29 @@ export class MissionsWorkflowService {
       // WRITE: derive reward_dedupe_key (lines 390-392)
       const reward_dedupe_key = `mission_reward:${asg.id}`;
 
-      // WRITE: create reward_grant if not exists (lines 393-408)
-      let reward_grant_id: number;
-      if (existing_grant === null) {
-        reward_grant_id = await this.rewardGrantRepo.create(
-          {
-            assignment_id: asg.id,
-            user_id: asg.user_id,
-            reward_type: defn.reward_json?.reward_type || 'coins',
-            amount: defn.reward_json?.amount || 0,
-            currency: defn.reward_json?.currency || 'MYR',
-            status: 'requested',
-            idempotency_key: reward_dedupe_key,
+      // WRITE: upsert reward_grant (exactly-once by assignment_id) (lines 393-408)
+      const reward_grant_id = await this.rewardGrantRepo.upsert(
+        {
+          assignment_id: asg.id,
+          user_id: asg.user_id,
+          amount: defn.reward_json?.amount || 0,
+          status: 'requested',
+          idempotency_key: reward_dedupe_key,
+        },
+        queryRunner,
+      );
+
+      // WRITE: insert mission_event (audit trail)
+      await this.missionEventRepo.create(
+        {
+          assignment_id: asg.id,
+          event_type: 'approved',
+          payload_json: {
+            submission_id,
           },
-          queryRunner,
-        );
-      } else {
-        reward_grant_id = existing_grant.id;
-      }
+        },
+        queryRunner,
+      );
 
       // EMIT: MISSION_SUBMISSION_APPROVED (lines 420-428)
       await this.outboxService.enqueue(
@@ -302,7 +309,7 @@ export class MissionsWorkflowService {
    *
    * Flow:
    * 1. Guard: validate code length, time range
-   * 2. Write: insert mission_definition with status='draft'
+   * 2. Write: insert mission_definition with status='active'
    * 3. Derive: mission_definition_id (AUTO_INCREMENT)
    * 4. Emit: MISSION_DEFINITION_CREATED event
    */
@@ -322,27 +329,29 @@ export class MissionsWorkflowService {
       }
 
       // GUARD: validate time range (lines 140-141)
-      if (request.ends_at && request.starts_at && request.ends_at <= request.starts_at) {
+      if (request.end_at && request.start_at && request.end_at <= request.start_at) {
         throw new BadRequestException({
           code: 'INVALID_TIME_RANGE',
-          message: 'ends_at must be after starts_at',
+          message: 'end_at must be after start_at',
         });
       }
 
-      // WRITE: insert mission_definition (lines 144-160)
-      const mission_definition_id = await this.missionDefRepo.create(
+      // WRITE: upsert mission_definition (lines 144-160, idempotent by code)
+      const mission_definition_id = await this.missionDefRepo.upsert(
         {
           code: request.code,
-          name: request.title,
+          name: request.name,
           description: request.description || null,
+          scope: request.scope || 'global',
           cadence: request.cadence,
-          start_at: request.starts_at || null,
-          end_at: request.ends_at || null,
+          trigger_type: request.trigger_type || 'event',
+          start_at: request.start_at || null,
+          end_at: request.end_at || null,
           max_total: request.max_total || null,
           max_per_user: request.max_per_user || 1,
           criteria_json: request.criteria_json || null,
           reward_json: request.reward_json || null,
-          status: 'draft',
+          status: 'active',
         },
         queryRunner,
       );
@@ -361,7 +370,7 @@ export class MissionsWorkflowService {
           payload: {
             id: mission_definition_id,
             code: request.code,
-            title: request.title,
+            name: request.name,
             cadence: request.cadence,
           },
           dedupe_key: idempotencyKey,
@@ -371,8 +380,8 @@ export class MissionsWorkflowService {
 
       // Response (lines 173-176)
       return {
-        id: mission_definition_id,
-        status: 'draft',
+        mission_definition_id,
+        status: 'active',
       };
     });
 
@@ -388,7 +397,7 @@ export class MissionsWorkflowService {
    *
    * Flow:
    * 1. Load: definition, existing assignment
-   * 2. Guard: definition.status == 'published', no existing assignment
+   * 2. Guard: definition.status == 'active', no existing assignment
    * 3. Write: insert assignment, insert event
    * 4. Derive: assignment_id (AUTO_INCREMENT)
    * 5. Emit: MISSION_ASSIGNED event
@@ -410,40 +419,37 @@ export class MissionsWorkflowService {
         });
       }
 
-      // LOAD: existing assignment (lines 220-225)
-      const existing = await this.assignmentRepo.findByMissionAndUser(
-        definition_id,
-        request.user_id,
-        queryRunner,
-      );
-
-      // GUARD: definition.status == 'published' (lines 226-228)
-      if (defn.status !== 'published') {
+      // GUARD: definition.status == 'active' (lines 226-228)
+      if (defn.status !== 'active') {
         throw new ConflictException({
           code: 'MISSION_NOT_OPEN',
-          message: `Mission is not published, current status: ${defn.status}`,
-        });
-      }
-
-      // GUARD: no existing assignment (lines 229-231)
-      if (existing !== null) {
-        throw new ConflictException({
-          code: 'ALREADY_ASSIGNED',
-          message: `User ${request.user_id} already has an assignment for mission ${definition_id}`,
+          message: `Mission is not active, current status: ${defn.status}`,
         });
       }
 
       // WRITE: derive assignment_dedupe_key (lines 233-236)
       const assignment_dedupe_key = idempotencyKey || `mission_assign:${definition_id}:${request.user_id}`;
 
-      // WRITE: insert assignment (lines 237-245)
-      const assignment_id = await this.assignmentRepo.create(
+      // WRITE: upsert assignment (idempotent by mission_id + user_id) (lines 237-245)
+      const assignment_id = await this.assignmentRepo.upsert(
         {
           mission_id: definition_id,
-          user_id: request.user_id,
+          user_id: Number(request.user_id),
           status: 'assigned',
           idempotency_key: assignment_dedupe_key,
-          assigned_at: new Date(),
+        },
+        queryRunner,
+      );
+
+      // WRITE: insert mission_event (audit trail)
+      await this.missionEventRepo.create(
+        {
+          assignment_id,
+          event_type: 'assigned',
+          payload_json: {
+            user_id: request.user_id,
+            mission_id: definition_id,
+          },
         },
         queryRunner,
       );
@@ -565,6 +571,18 @@ export class MissionsWorkflowService {
         queryRunner,
       );
 
+      // WRITE: insert mission_event (audit trail)
+      await this.missionEventRepo.create(
+        {
+          assignment_id,
+          event_type: 'submitted',
+          payload_json: {
+            submission_id,
+          },
+        },
+        queryRunner,
+      );
+
       // EMIT: MISSION_SUBMITTED event (lines 336-345)
       await this.outboxService.enqueue(
         {
@@ -590,6 +608,496 @@ export class MissionsWorkflowService {
       return {
         submission_id,
         status: 'pending',
+      };
+    });
+
+    return result;
+  }
+
+  /**
+   * MISSION DEFINITION.GET QUERY
+   * Source: specs/mission/mission.pillar.yml lines 336-354
+   *
+   * HTTP: GET /v1/missions/definitions/{mission_definition_id}
+   *
+   * Flow:
+   * 1. Load: mission_definition by id
+   * 2. Guard: exists
+   */
+  async getMissionDefinition(mission_definition_id: number) {
+    const definition = await this.missionDefRepo.findById(mission_definition_id);
+    if (!definition) {
+      throw new NotFoundException({
+        code: 'MISSION_DEFINITION_NOT_FOUND',
+        message: `Mission definition with id ${mission_definition_id} not found`,
+      });
+    }
+    return definition;
+  }
+
+  /**
+   * MISSION DEFINITION.LIST QUERY
+   * Source: specs/mission/mission.pillar.yml lines 356-369
+   *
+   * HTTP: GET /v1/missions/definitions
+   *
+   * Flow:
+   * 1. Load: all mission_definitions
+   */
+  async listMissionDefinitions() {
+    const definitions = await this.missionDefRepo.findAll();
+    return { items: definitions };
+  }
+
+  /**
+   * MISSION ASSIGNMENT.GET QUERY
+   * Source: specs/mission/mission.pillar.yml lines 579-598
+   *
+   * HTTP: GET /v1/missions/assignments/{assignment_id}
+   *
+   * Flow:
+   * 1. Load: assignment by id
+   * 2. Guard: exists
+   */
+  async getMissionAssignment(assignment_id: number) {
+    const assignment = await this.assignmentRepo.findById(assignment_id);
+    if (!assignment) {
+      throw new NotFoundException({
+        code: 'MISSION_ASSIGNMENT_NOT_FOUND',
+        message: `Assignment ${assignment_id} not found`,
+      });
+    }
+    return assignment;
+  }
+
+  /**
+   * MISSION ASSIGNMENT.LIST BY USER QUERY
+   * Source: specs/mission/mission.pillar.yml lines 599-614
+   *
+   * HTTP: GET /v1/users/{user_id}/mission-assignments
+   *
+   * Flow:
+   * 1. Load: all assignments for user_id
+   */
+  async listMissionAssignmentsByUser(user_id: number) {
+    const assignments = await this.assignmentRepo.findByUserId(user_id);
+    return { items: assignments };
+  }
+
+  /**
+   * MISSION SUBMISSION.GET QUERY
+   * Source: specs/mission/mission.pillar.yml lines 748-766
+   *
+   * HTTP: GET /v1/missions/submissions/{submission_id}
+   *
+   * Flow:
+   * 1. Load: submission by id
+   * 2. Guard: exists
+   */
+  async getMissionSubmission(submission_id: number) {
+    const submission = await this.submissionRepo.findById(submission_id);
+    if (!submission) {
+      throw new NotFoundException({
+        code: 'MISSION_SUBMISSION_NOT_FOUND',
+        message: `Submission ${submission_id} not found`,
+      });
+    }
+    return submission;
+  }
+
+  /**
+   * MISSION REWARD GRANT.GET BY ASSIGNMENT QUERY
+   * Source: specs/mission/mission.pillar.yml lines 979-992
+   *
+   * HTTP: GET /v1/missions/assignments/{assignment_id}/reward-grant
+   *
+   * Flow:
+   * 1. Load: reward_grant by assignment_id
+   */
+  async getRewardGrantByAssignment(assignment_id: number) {
+    const rewardGrant = await this.rewardGrantRepo.findByAssignmentId(assignment_id);
+    return rewardGrant;
+  }
+
+  /**
+   * MISSION EVENT.LIST BY ASSIGNMENT QUERY
+   * Source: specs/mission/mission.pillar.yml lines 994-1008
+   *
+   * HTTP: GET /v1/missions/assignments/{assignment_id}/events
+   *
+   * Flow:
+   * 1. Load: all events for assignment_id
+   */
+  async listEventsByAssignment(assignment_id: number) {
+    const events = await this.missionEventRepo.findByAssignmentId(assignment_id);
+    return { items: events };
+  }
+
+  /**
+   * MISSION PROGRESS.RECORD COMMAND
+   * Source: specs/mission/missions.pillar.v2.yml lines 1198-1268
+   *
+   * HTTP: POST /v1/missions/assignments/{assignment_id}/progress
+   * Idempotency: Via Idempotency-Key header
+   *
+   * Flow:
+   * 1. Load: assignment
+   * 2. Guard: assignment exists and status allows progress
+   * 3. Write: upsert progress, update assignment status if needed
+   * 4. Emit: MISSION_PROGRESS_RECORDED event
+   */
+  async recordMissionProgress(
+    assignment_id: number,
+    request: MissionProgressRecordRequestDto,
+    actor: Actor,
+    idempotencyKey: string,
+  ) {
+    const result = await this.txService.run(async (queryRunner) => {
+      // LOAD: assignment
+      const assignment = await this.assignmentRepo.findById(assignment_id, queryRunner);
+      if (!assignment) {
+        throw new NotFoundException({
+          code: 'MISSION_ASSIGNMENT_NOT_FOUND',
+          message: `Assignment ${assignment_id} not found`,
+        });
+      }
+
+      // GUARD: assignment status allows progress
+      if (!['assigned', 'in_progress'].includes(assignment.status)) {
+        throw new ConflictException({
+          code: 'MISSION_PROGRESS_NOT_ALLOWED',
+          message: `Cannot record progress for assignment in status: ${assignment.status}`,
+        });
+      }
+
+      // WRITE: upsert progress
+      await this.progressRepo.upsert(
+        {
+          assignment_id,
+          metric_code: request.metric_code,
+          current_value: request.current_value,
+          target_value: request.target_value || 1,
+          status: 'tracking',
+          meta_json: request.meta_json || null,
+        },
+        queryRunner,
+      );
+
+      // WRITE: update assignment to in_progress if assigned
+      if (assignment.status === 'assigned') {
+        await this.assignmentRepo.update(
+          assignment_id,
+          {
+            status: 'in_progress',
+            started_at: new Date(),
+          },
+          queryRunner,
+        );
+      }
+
+      // WRITE: insert mission_event
+      await this.missionEventRepo.create(
+        {
+          assignment_id,
+          event_type: 'progress_recorded',
+          payload_json: {
+            metric_code: request.metric_code,
+            current_value: request.current_value,
+          },
+        },
+        queryRunner,
+      );
+
+      // EMIT: MISSION_PROGRESS_RECORDED event
+      await this.outboxService.enqueue(
+        {
+          event_name: 'MISSION_PROGRESS_RECORDED',
+          event_version: 1,
+          aggregate_type: 'MISSION_ASSIGNMENT',
+          aggregate_id: String(assignment_id),
+          actor_user_id: actor.actor_user_id,
+          occurred_at: new Date(),
+          correlation_id: actor.correlation_id || `progress-${assignment_id}-${Date.now()}`,
+          causation_id: actor.causation_id || `cmd-progress-${assignment_id}`,
+          payload: {
+            assignment_id,
+            metric_code: request.metric_code,
+            current_value: request.current_value,
+          },
+          dedupe_key: idempotencyKey,
+        },
+        queryRunner,
+      );
+
+      return {
+        assignment_id,
+        metric_code: request.metric_code,
+        current_value: request.current_value,
+      };
+    });
+
+    return result;
+  }
+
+  /**
+   * MISSION DEFINITION.PAUSE COMMAND
+   * Source: specs/mission/missions.pillar.v2.yml lines 962-1006
+   *
+   * HTTP: POST /v1/missions/definitions/{mission_definition_id}/pause
+   * Idempotency: Via Idempotency-Key header
+   */
+  async pauseMissionDefinition(
+    id: number,
+    request: MissionDefinitionStateChangeRequestDto,
+    actor: Actor,
+    idempotencyKey: string,
+  ) {
+    const result = await this.txService.run(async (queryRunner) => {
+      // LOAD: mission_definition
+      const defn = await this.missionDefRepo.findById(id, queryRunner);
+      if (!defn) {
+        throw new NotFoundException({
+          code: 'MISSION_DEFINITION_NOT_FOUND',
+          message: `Mission definition with id ${id} not found`,
+        });
+      }
+
+      // GUARD: status == 'active'
+      if (defn.status !== 'active') {
+        throw new ConflictException({
+          code: 'MISSION_DEFINITION_NOT_PAUSABLE',
+          message: `Cannot pause mission in status: ${defn.status}`,
+        });
+      }
+
+      // WRITE: update mission_definition
+      await this.missionDefRepo.update(
+        id,
+        {
+          status: 'paused',
+        },
+        queryRunner,
+      );
+
+      // EMIT: MISSION_DEFINITION_PAUSED event
+      await this.outboxService.enqueue(
+        {
+          event_name: 'MISSION_DEFINITION_PAUSED',
+          event_version: 1,
+          aggregate_type: 'MISSION_DEFINITION',
+          aggregate_id: String(id),
+          actor_user_id: actor.actor_user_id,
+          occurred_at: new Date(),
+          correlation_id: actor.correlation_id || `pause-${id}-${Date.now()}`,
+          causation_id: actor.causation_id || `cmd-pause-${id}`,
+          payload: {
+            mission_definition_id: id,
+            reason: request.reason,
+          },
+          dedupe_key: idempotencyKey,
+        },
+        queryRunner,
+      );
+
+      return {
+        mission_definition_id: id,
+        status: 'paused',
+      };
+    });
+
+    return result;
+  }
+
+  /**
+   * MISSION DEFINITION.RETIRE COMMAND
+   * Source: specs/mission/missions.pillar.v2.yml lines 1052-1095
+   *
+   * HTTP: POST /v1/missions/definitions/{mission_definition_id}/retire
+   * Idempotency: Via Idempotency-Key header
+   */
+  async retireMissionDefinition(
+    id: number,
+    request: MissionDefinitionStateChangeRequestDto,
+    actor: Actor,
+    idempotencyKey: string,
+  ) {
+    const result = await this.txService.run(async (queryRunner) => {
+      // LOAD: mission_definition
+      const defn = await this.missionDefRepo.findById(id, queryRunner);
+      if (!defn) {
+        throw new NotFoundException({
+          code: 'MISSION_DEFINITION_NOT_FOUND',
+          message: `Mission definition with id ${id} not found`,
+        });
+      }
+
+      // GUARD: status != 'retired'
+      if (defn.status === 'retired') {
+        throw new ConflictException({
+          code: 'MISSION_DEFINITION_ALREADY_RETIRED',
+          message: `Mission definition is already retired`,
+        });
+      }
+
+      // WRITE: update mission_definition
+      await this.missionDefRepo.update(
+        id,
+        {
+          status: 'retired',
+        },
+        queryRunner,
+      );
+
+      // EMIT: MISSION_DEFINITION_RETIRED event
+      await this.outboxService.enqueue(
+        {
+          event_name: 'MISSION_DEFINITION_RETIRED',
+          event_version: 1,
+          aggregate_type: 'MISSION_DEFINITION',
+          aggregate_id: String(id),
+          actor_user_id: actor.actor_user_id,
+          occurred_at: new Date(),
+          correlation_id: actor.correlation_id || `retire-${id}-${Date.now()}`,
+          causation_id: actor.causation_id || `cmd-retire-${id}`,
+          payload: {
+            mission_definition_id: id,
+            reason: request.reason,
+          },
+          dedupe_key: idempotencyKey,
+        },
+        queryRunner,
+      );
+
+      return {
+        mission_definition_id: id,
+        status: 'retired',
+      };
+    });
+
+    return result;
+  }
+
+  /**
+   * MISSION SUBMISSION FILE.LIST BY SUBMISSION QUERY
+   * Source: specs/mission/missions.pillar.v2.yml lines 1551-1569
+   *
+   * HTTP: GET /v1/missions/submissions/{submission_id}/files
+   *
+   * Flow:
+   * 1. Load: all files for submission_id
+   */
+  async listSubmissionFiles(submission_id: number) {
+    const files = await this.submissionFileRepo.findBySubmissionId(submission_id);
+    return { items: files };
+  }
+
+  /**
+   * MISSION PROGRESS.LIST BY ASSIGNMENT QUERY
+   * HTTP: GET /v1/missions/assignments/{assignment_id}/progress
+   */
+  async listProgressByAssignment(assignment_id: number) {
+    const progress = await this.progressRepo.findByAssignmentId(assignment_id);
+    return { items: progress };
+  }
+
+  /**
+   * MISSION SUBMISSION.REJECT COMMAND
+   * Source: specs/mission/missions.pillar.v2.yml lines 1475-1550
+   *
+   * HTTP: POST /v1/missions/submissions/{submission_id}/reject
+   * Idempotency: Via Idempotency-Key header
+   */
+  async rejectSubmission(
+    submission_id: number,
+    request: MissionApproveSubmissionRequestDto,
+    actor: Actor,
+    idempotencyKey: string,
+  ) {
+    const result = await this.txService.run(async (queryRunner) => {
+      // LOAD: submission
+      const sub = await this.submissionRepo.findById(submission_id, queryRunner);
+      if (!sub) {
+        throw new NotFoundException({
+          code: 'MISSION_SUBMISSION_NOT_FOUND',
+          message: `Submission ${submission_id} not found`,
+        });
+      }
+
+      // LOAD: assignment
+      const asg = await this.assignmentRepo.findById(sub.assignment_id, queryRunner);
+      if (!asg) {
+        throw new NotFoundException({
+          code: 'MISSION_ASSIGNMENT_NOT_FOUND',
+          message: `Assignment ${sub.assignment_id} not found`,
+        });
+      }
+
+      // GUARD: submission.status == 'pending'
+      if (sub.status !== 'pending') {
+        throw new ConflictException({
+          code: 'SUBMISSION_NOT_REJECTABLE',
+          message: `Cannot reject submission in status: ${sub.status}`,
+        });
+      }
+
+      // WRITE: update submission
+      await this.submissionRepo.update(
+        submission_id,
+        {
+          status: 'rejected',
+          reviewed_by_user_id: Number(actor.actor_user_id),
+          feedback: request.feedback || null,
+          reviewed_at: new Date(),
+        },
+        queryRunner,
+      );
+
+      // WRITE: update assignment back to in_progress
+      await this.assignmentRepo.update(
+        asg.id,
+        {
+          status: 'in_progress',
+        },
+        queryRunner,
+      );
+
+      // WRITE: insert mission_event
+      await this.missionEventRepo.create(
+        {
+          assignment_id: asg.id,
+          event_type: 'rejected',
+          payload_json: {
+            submission_id,
+          },
+        },
+        queryRunner,
+      );
+
+      // EMIT: MISSION_SUBMISSION_REJECTED event
+      await this.outboxService.enqueue(
+        {
+          event_name: 'MISSION_SUBMISSION_REJECTED',
+          event_version: 1,
+          aggregate_type: 'MISSION_SUBMISSION',
+          aggregate_id: String(submission_id),
+          actor_user_id: actor.actor_user_id,
+          occurred_at: new Date(),
+          correlation_id: actor.correlation_id || `reject-sub-${submission_id}-${Date.now()}`,
+          causation_id: actor.causation_id || `cmd-reject-${submission_id}`,
+          payload: {
+            submission_id,
+            assignment_id: asg.id,
+          },
+          dedupe_key: idempotencyKey,
+        },
+        queryRunner,
+      );
+
+      return {
+        submission_id,
+        submission_status: 'rejected',
+        assignment_id: asg.id,
+        assignment_status: 'in_progress',
       };
     });
 

@@ -1,0 +1,609 @@
+{
+	"info": {
+		"_postman_id": "user-api-v1",
+		"name": "User API",
+		"description": "User Management - Authentication, RBAC, and Credentials\n\nSource: specs/user/user.pillar.v2.yml",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Users",
+			"item": [
+				{
+					"name": "Create User",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"pm.environment.set(\"user_id\", jsonData.user_id);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"phone_number\": \"+1234567890\",\n  \"email\": \"user@example.com\",\n  \"status\": \"active\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/users",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "users"]
+						},
+						"description": "Create a new user account\n\nIdempotency: Via UNIQUE(phone_number) or UNIQUE(email)"
+					},
+					"response": []
+				},
+				{
+					"name": "Get User",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/v1/users/{{user_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "users", "{{user_id}}"]
+						},
+						"description": "Get user by ID"
+					},
+					"response": []
+				},
+				{
+					"name": "List Users",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/v1/users",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "users"]
+						},
+						"description": "List all users (paginated)"
+					},
+					"response": []
+				},
+				{
+					"name": "Update User Profile",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"updated.user@example.com\",\n  \"phone_number\": \"+1987654321\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/users/{{user_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "users", "{{user_id}}"]
+						},
+						"description": "Update user profile information"
+					},
+					"response": []
+				},
+				{
+					"name": "Suspend User",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/v1/users/{{user_id}}/suspend",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "users", "{{user_id}}", "suspend"]
+						},
+						"description": "Suspend user account"
+					},
+					"response": []
+				},
+				{
+					"name": "Activate User",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/v1/users/{{user_id}}/activate",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "users", "{{user_id}}", "activate"]
+						},
+						"description": "Activate suspended user"
+					},
+					"response": []
+				},
+				{
+					"name": "Verify Email",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/v1/users/{{user_id}}/verify-email",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "users", "{{user_id}}", "verify-email"]
+						},
+						"description": "Mark email as verified"
+					},
+					"response": []
+				}
+			],
+			"description": "User account management"
+		},
+		{
+			"name": "Credentials",
+			"item": [
+				{
+					"name": "Create Password Credential",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"pm.environment.set(\"credential_id\", jsonData.credential_id);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"type\": \"password\",\n  \"secret\": \"SecureP@ssw0rd123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/users/{{user_id}}/credentials",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "users", "{{user_id}}", "credentials"]
+						},
+						"description": "Create password credential (hashed with bcrypt)\n\nIdempotency: Via UNIQUE(user_id, type)"
+					},
+					"response": []
+				},
+				{
+					"name": "Create OAuth Credential",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"type\": \"oauth\",\n  \"provider\": \"google\",\n  \"provider_user_id\": \"google-user-12345\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/users/{{user_id}}/credentials",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "users", "{{user_id}}", "credentials"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Verify Password",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"type\": \"password\",\n  \"secret\": \"SecureP@ssw0rd123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/users/{{user_id}}/credentials/verify",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "users", "{{user_id}}", "credentials", "verify"]
+						},
+						"description": "Verify password credential (bcrypt comparison)"
+					},
+					"response": []
+				},
+				{
+					"name": "Reset Password",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"new_secret\": \"NewSecureP@ssw0rd456\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/user-credentials/{{credential_id}}/reset",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "user-credentials", "{{credential_id}}", "reset"]
+						},
+						"description": "Reset password credential"
+					},
+					"response": []
+				}
+			],
+			"description": "Credential management (passwords, OAuth, etc.)"
+		},
+		{
+			"name": "User Roles",
+			"item": [
+				{
+					"name": "Assign Role to User",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"role_id\": \"{{role_id}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/users/{{user_id}}/roles",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "users", "{{user_id}}", "roles"]
+						},
+						"description": "Assign role to user\n\nIdempotency: Via UNIQUE(user_id, role_id)"
+					},
+					"response": []
+				},
+				{
+					"name": "Revoke Role from User",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/v1/users/{{user_id}}/roles/{{role_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "users", "{{user_id}}", "roles", "{{role_id}}"]
+						},
+						"description": "Revoke role from user"
+					},
+					"response": []
+				},
+				{
+					"name": "List User Roles",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/v1/users/{{user_id}}/roles",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "users", "{{user_id}}", "roles"]
+						},
+						"description": "List all roles assigned to user"
+					},
+					"response": []
+				}
+			],
+			"description": "User role assignments"
+		},
+		{
+			"name": "User Permissions",
+			"item": [
+				{
+					"name": "Grant Permission to User",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"permission_id\": \"{{permission_id}}\",\n  \"effect\": \"allow\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/users/{{user_id}}/permissions",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "users", "{{user_id}}", "permissions"]
+						},
+						"description": "Grant permission override to user\n\nIdempotency: Via UNIQUE(user_id, permission_id)"
+					},
+					"response": []
+				},
+				{
+					"name": "Deny Permission to User",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"permission_id\": \"{{permission_id}}\",\n  \"effect\": \"deny\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/users/{{user_id}}/permissions",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "users", "{{user_id}}", "permissions"]
+						},
+						"description": "Deny permission to user (override role permissions)"
+					},
+					"response": []
+				},
+				{
+					"name": "Revoke Permission from User",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/v1/users/{{user_id}}/permissions/{{permission_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "users", "{{user_id}}", "permissions", "{{permission_id}}"]
+						},
+						"description": "Revoke permission override from user"
+					},
+					"response": []
+				},
+				{
+					"name": "List User Permissions",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/v1/users/{{user_id}}/permissions",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "users", "{{user_id}}", "permissions"]
+						},
+						"description": "List all permission overrides for user"
+					},
+					"response": []
+				}
+			],
+			"description": "User permission overrides (allow/deny)"
+		},
+		{
+			"name": "Complete Workflow",
+			"item": [
+				{
+					"name": "1. Create User",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"pm.environment.set(\"new_user_id\", jsonData.user_id);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"newuser@example.com\",\n  \"phone_number\": \"+1555999888\",\n  \"status\": \"active\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/users",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "users"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "2. Create Password",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"pm.environment.set(\"new_credential_id\", jsonData.credential_id);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"type\": \"password\",\n  \"secret\": \"Welcome123!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/users/{{new_user_id}}/credentials",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "users", "{{new_user_id}}", "credentials"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "3. Assign Manager Role",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"role_id\": \"2\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/users/{{new_user_id}}/roles",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "users", "{{new_user_id}}", "roles"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "4. Grant Special Permission",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"permission_id\": \"3\",\n  \"effect\": \"allow\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/users/{{new_user_id}}/permissions",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "users", "{{new_user_id}}", "permissions"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "5. Verify Email",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/v1/users/{{new_user_id}}/verify-email",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "users", "{{new_user_id}}", "verify-email"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "6. Test Login",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"type\": \"password\",\n  \"secret\": \"Welcome123!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/users/{{new_user_id}}/credentials/verify",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "users", "{{new_user_id}}", "credentials", "verify"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "7. Get User with Roles & Permissions",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/v1/users/{{new_user_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "users", "{{new_user_id}}"]
+						}
+					},
+					"response": []
+				}
+			],
+			"description": "Complete user onboarding with RBAC setup"
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Add X-User-Id header",
+					"pm.request.headers.add({",
+					"  key: 'X-User-Id',",
+					"  value: pm.collectionVariables.get('user_id') || '1'",
+					"});",
+					"",
+					"// Add Idempotency-Key for POST/PUT requests",
+					"if (pm.request.method === 'POST' || pm.request.method === 'PUT') {",
+					"  const existingKey = pm.request.headers.get('Idempotency-Key');",
+					"  if (!existingKey) {",
+					"    pm.request.headers.add({",
+					"      key: 'Idempotency-Key',",
+					"      value: pm.variables.replaceIn('{{$guid}}')",
+					"    });",
+					"  }",
+					"}"
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:3000",
+			"type": "string"
+		},
+		{
+			"key": "user_id",
+			"value": "1",
+			"type": "string"
+		},
+		{
+			"key": "credential_id",
+			"value": "1",
+			"type": "string"
+		},
+		{
+			"key": "role_id",
+			"value": "1",
+			"type": "string"
+		},
+		{
+			"key": "permission_id",
+			"value": "1",
+			"type": "string"
+		}
+	]
+}

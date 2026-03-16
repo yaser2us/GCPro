@@ -1,0 +1,471 @@
+{
+	"info": {
+		"_postman_id": "permission-api-v1",
+		"name": "Permission & Role API",
+		"description": "RBAC System - Permission and Role Management\n\nSource: specs/permission/permission.pillar.v2.yml",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Permissions",
+			"item": [
+				{
+					"name": "Create Permission",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"pm.environment.set(\"permission_id\", jsonData.permission_id);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"code\": \"user.read\",\n  \"name\": \"Read Users\",\n  \"description\": \"Allows reading user data\",\n  \"scope\": \"api\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/permissions",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "permissions"]
+						},
+						"description": "Create a new permission\n\nIdempotency: Via UNIQUE(code)"
+					},
+					"response": []
+				},
+				{
+					"name": "Create Permission - User Write",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"code\": \"user.write\",\n  \"name\": \"Write Users\",\n  \"description\": \"Allows creating and updating users\",\n  \"scope\": \"api\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/permissions",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "permissions"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Permission - Mission Approve",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"code\": \"mission.approve\",\n  \"name\": \"Approve Missions\",\n  \"description\": \"Allows approving mission submissions\",\n  \"scope\": \"api\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/permissions",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "permissions"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Permissions",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/v1/permissions",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "permissions"]
+						},
+						"description": "List all permissions"
+					},
+					"response": []
+				}
+			],
+			"description": "Permission management"
+		},
+		{
+			"name": "Roles",
+			"item": [
+				{
+					"name": "Create Role",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"pm.environment.set(\"role_id\", jsonData.role_id);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"code\": \"admin\",\n  \"name\": \"Administrator\",\n  \"description\": \"Full system access\",\n  \"status\": \"active\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/roles",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "roles"]
+						},
+						"description": "Create a new role\n\nIdempotency: Via UNIQUE(code)"
+					},
+					"response": []
+				},
+				{
+					"name": "Create Role - Manager",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"code\": \"manager\",\n  \"name\": \"Manager\",\n  \"description\": \"Team management access\",\n  \"status\": \"active\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/roles",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "roles"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Role",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/v1/roles/{{role_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "roles", "{{role_id}}"]
+						},
+						"description": "Get role by ID"
+					},
+					"response": []
+				},
+				{
+					"name": "List Roles",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/v1/roles",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "roles"]
+						},
+						"description": "List all roles"
+					},
+					"response": []
+				}
+			],
+			"description": "Role management"
+		},
+		{
+			"name": "Role Permissions",
+			"item": [
+				{
+					"name": "Assign Permission to Role",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"permission_id\": \"{{permission_id}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/roles/{{role_id}}/permissions",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "roles", "{{role_id}}", "permissions"]
+						},
+						"description": "Assign permission to role\n\nIdempotency: Via UNIQUE(role_id, permission_id)"
+					},
+					"response": []
+				},
+				{
+					"name": "Revoke Permission from Role",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/v1/roles/{{role_id}}/permissions/{{permission_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "roles", "{{role_id}}", "permissions", "{{permission_id}}"]
+						},
+						"description": "Revoke permission from role"
+					},
+					"response": []
+				},
+				{
+					"name": "List Role Permissions",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/v1/roles/{{role_id}}/permissions",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "roles", "{{role_id}}", "permissions"]
+						},
+						"description": "List all permissions assigned to role"
+					},
+					"response": []
+				}
+			],
+			"description": "Role permission assignments"
+		},
+		{
+			"name": "Complete Workflow",
+			"item": [
+				{
+					"name": "1. Create Admin Role",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"pm.environment.set(\"admin_role_id\", jsonData.role_id);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"code\": \"super_admin\",\n  \"name\": \"Super Administrator\",\n  \"description\": \"Full system administrator with all permissions\",\n  \"status\": \"active\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/roles",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "roles"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "2. Create User Read Permission",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"pm.environment.set(\"perm_user_read\", jsonData.permission_id);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"code\": \"user.read.all\",\n  \"name\": \"Read All Users\",\n  \"description\": \"View all user information\",\n  \"scope\": \"api\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/permissions",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "permissions"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "3. Create User Write Permission",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"pm.environment.set(\"perm_user_write\", jsonData.permission_id);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"code\": \"user.write.all\",\n  \"name\": \"Write All Users\",\n  \"description\": \"Create and modify users\",\n  \"scope\": \"api\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/permissions",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "permissions"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "4. Assign User Read to Admin",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"permission_id\": \"{{perm_user_read}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/roles/{{admin_role_id}}/permissions",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "roles", "{{admin_role_id}}", "permissions"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "5. Assign User Write to Admin",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"permission_id\": \"{{perm_user_write}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/roles/{{admin_role_id}}/permissions",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "roles", "{{admin_role_id}}", "permissions"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "6. List Admin Role Permissions",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/v1/roles/{{admin_role_id}}/permissions",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "roles", "{{admin_role_id}}", "permissions"]
+						}
+					},
+					"response": []
+				}
+			],
+			"description": "Complete RBAC setup workflow"
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					"// Add X-User-Id header",
+					"pm.request.headers.add({",
+					"  key: 'X-User-Id',",
+					"  value: pm.collectionVariables.get('user_id') || '1'",
+					"});",
+					"",
+					"// Add Idempotency-Key for POST/PUT requests",
+					"if (pm.request.method === 'POST' || pm.request.method === 'PUT') {",
+					"  // Only add if not already present",
+					"  const existingKey = pm.request.headers.get('Idempotency-Key');",
+					"  if (!existingKey) {",
+					"    pm.request.headers.add({",
+					"      key: 'Idempotency-Key',",
+					"      value: pm.variables.replaceIn('{{$guid}}')",
+					"    });",
+					"  }",
+					"}"
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:3000",
+			"type": "string"
+		},
+		{
+			"key": "user_id",
+			"value": "1",
+			"type": "string"
+		},
+		{
+			"key": "permission_id",
+			"value": "1",
+			"type": "string"
+		},
+		{
+			"key": "role_id",
+			"value": "1",
+			"type": "string"
+		}
+	]
+}

@@ -97,7 +97,7 @@ CREATE TABLE `benefit_catalog` (
 
 -- GC_Pro.claim definition
 
-CREATE TABLE `claim` (
+CREATE TABLE `claim_case` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `claim_number` varchar(20) NOT NULL,
   `claim_year` int NOT NULL,
@@ -135,7 +135,7 @@ CREATE TABLE `claim` (
 
 -- GC_Pro.claim_number_sequence definition
 
-CREATE TABLE `claim_number_sequence` (
+CREATE TABLE `claim_case_number_sequence` (
   `claim_year` int NOT NULL,
   `next_seq` int NOT NULL,
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -737,7 +737,7 @@ CREATE TABLE `claim_document` (
   UNIQUE KEY `uk_claim_doc_unique` (`claim_id`,`file_upload_id`),
   KEY `idx_claim_doc_claim` (`claim_id`),
   KEY `idx_claim_doc_type` (`document_type`),
-  CONSTRAINT `fk_claim_document_claim` FOREIGN KEY (`claim_id`) REFERENCES `claim` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
+  CONSTRAINT `fk_claim_document_claim` FOREIGN KEY (`claim_id`) REFERENCES `claim_case` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 
@@ -757,7 +757,7 @@ CREATE TABLE `claim_event` (
   PRIMARY KEY (`id`),
   KEY `idx_claim_event_claim` (`claim_id`,`created_at`),
   KEY `idx_claim_event_type` (`event_type`),
-  CONSTRAINT `fk_claim_event_claim` FOREIGN KEY (`claim_id`) REFERENCES `claim` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
+  CONSTRAINT `fk_claim_event_claim` FOREIGN KEY (`claim_id`) REFERENCES `claim_case` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 
@@ -774,7 +774,7 @@ CREATE TABLE `claim_fraud_signal` (
   KEY `idx_claim_fraud_claim` (`claim_id`,`created_at`),
   KEY `idx_claim_fraud_type` (`signal_type`),
   KEY `idx_claim_fraud_score` (`signal_score`),
-  CONSTRAINT `fk_claim_fraud_claim` FOREIGN KEY (`claim_id`) REFERENCES `claim` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
+  CONSTRAINT `fk_claim_fraud_claim` FOREIGN KEY (`claim_id`) REFERENCES `claim_case` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 
@@ -790,8 +790,8 @@ CREATE TABLE `claim_link` (
   UNIQUE KEY `uk_claim_link_unique` (`from_claim_id`,`to_claim_id`,`link_type`),
   KEY `idx_claim_link_from` (`from_claim_id`),
   KEY `idx_claim_link_to` (`to_claim_id`),
-  CONSTRAINT `fk_claim_link_from` FOREIGN KEY (`from_claim_id`) REFERENCES `claim` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT `fk_claim_link_to` FOREIGN KEY (`to_claim_id`) REFERENCES `claim` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
+  CONSTRAINT `fk_claim_link_from` FOREIGN KEY (`from_claim_id`) REFERENCES `claim_case` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `fk_claim_link_to` FOREIGN KEY (`to_claim_id`) REFERENCES `claim_case` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 
@@ -809,7 +809,7 @@ CREATE TABLE `claim_review` (
   PRIMARY KEY (`id`),
   KEY `idx_claim_review_claim` (`claim_id`,`created_at`),
   KEY `idx_claim_review_reviewer` (`reviewer_id`),
-  CONSTRAINT `fk_claim_review_claim` FOREIGN KEY (`claim_id`) REFERENCES `claim` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
+  CONSTRAINT `fk_claim_review_claim` FOREIGN KEY (`claim_id`) REFERENCES `claim_case` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 
@@ -830,7 +830,7 @@ CREATE TABLE `claim_settlement_flag` (
   UNIQUE KEY `uk_claim_period` (`claim_id`,`period_key`),
   KEY `idx_period_eligible` (`period_key`,`eligible`),
   KEY `idx_claim_settlement` (`claim_id`),
-  CONSTRAINT `fk_claim_settlement_claim` FOREIGN KEY (`claim_id`) REFERENCES `claim` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
+  CONSTRAINT `fk_claim_settlement_claim` FOREIGN KEY (`claim_id`) REFERENCES `claim_case` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 
@@ -1506,7 +1506,7 @@ CREATE TABLE `mission_submission_file` (
 
 -- GC_Pro.notification_channel_pref definition
 
-CREATE TABLE `notification_channel_pref` (
+CREATE TABLE `notification_channel_preference` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `preference_id` bigint NOT NULL,
   `channel` varchar(20) NOT NULL,
@@ -1589,7 +1589,7 @@ CREATE TABLE `onboarding_progress` (
 
 -- GC_Pro.outbox_event_consume definition
 
-CREATE TABLE `outbox_event_consume` (
+CREATE TABLE `outbox_event_consumer` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `consumer_name` varchar(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `event_id` bigint unsigned NOT NULL,
@@ -1949,7 +1949,7 @@ CREATE TABLE `policy_status_event` (
 
 -- GC_Pro.receipt definition
 
-CREATE TABLE `receipt` (
+CREATE TABLE `payment_receipt` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `receipt_no` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `account_id` bigint unsigned NOT NULL,
@@ -2585,7 +2585,7 @@ CREATE TABLE `ledger_entry` (
 
 -- GC_Pro.medical_underwriting_current definition
 
-CREATE TABLE `medical_underwriting_current` (
+CREATE TABLE `medical_underwriting_current_outcome` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
   `subject_ref_id` bigint unsigned NOT NULL,
   `context_ref_id` bigint unsigned DEFAULT NULL,

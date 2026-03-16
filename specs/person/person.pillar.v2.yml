@@ -1,0 +1,828 @@
+version: "2.0.0"
+spec_id: "person.pillar.v2"
+domain: "person"
+plugin: "person"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# OWNERSHIP
+# ──────────────────────────────────────────────────────────────────────────────
+
+ownership:
+  owner_plugin: "person"
+  owns_tables:
+    - "person"
+    - "person_identity"
+    - "person_relationship"
+  cross_plugin_writes: false
+  cross_plugin_integration:
+    allowed_via:
+      - "command_api"
+      - "outbox_events"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DEPENDENCIES
+# ──────────────────────────────────────────────────────────────────────────────
+
+dependencies:
+  corekit:
+    transaction_wrapper: "withTxn"
+    outbox_service: "OutboxService.emit"
+    guard_helper: "guard"
+    domain_error: "DomainError"
+
+  core_tables_readonly:
+    - table_name: "user"
+      usage: "person.primary_user_id references user.id"
+      access: "readonly_fk"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CONVENTIONS
+# ──────────────────────────────────────────────────────────────────────────────
+
+conventions:
+  workflow_discipline:
+    - "guard"
+    - "write"
+    - "emit"
+    - "commit"
+
+  status_mutation_policy: "Status fields may only be mutated through commands."
+
+  outbox:
+    required_envelope_fields:
+      - "event_name"
+      - "event_version"
+      - "aggregate_type"
+      - "aggregate_id"
+      - "actor_user_id"
+      - "occurred_at"
+      - "correlation_id"
+      - "causation_id"
+
+  idempotency:
+    required_header: "Idempotency-Key"
+    default_scope: "actor_user_id + command_name"
+    db_strategy:
+      - "UNIQUE(idempotency_key) for person creation"
+      - "MySQL ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)"
+      - "person_identity: UNIQUE(id_type, id_no) prevents duplicate identity documents"
+      - "person_relationship: UNIQUE(from_person_id, to_person_id, relation_type) prevents duplicate relationships"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SCHEMA
+# ──────────────────────────────────────────────────────────────────────────────
+
+schema:
+  tables:
+    person:
+      description: "Person entity for individuals in the system"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        primary_user_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Primary user account linked to this person"
+        type:
+          type: "varchar"
+          length: 16
+          nullable: false
+          description: "Person type (e.g., 'individual', 'dependent', 'beneficiary')"
+        full_name:
+          type: "varchar"
+          length: 255
+          nullable: false
+          description: "Full legal name"
+        dob:
+          type: "date"
+          nullable: true
+          description: "Date of birth"
+        gender:
+          type: "varchar"
+          length: 16
+          nullable: true
+          description: "Gender (e.g., 'male', 'female', 'other')"
+        nationality:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "Nationality"
+        status:
+          type: "varchar"
+          length: 32
+          nullable: false
+          default: "active"
+          description: "Status: active, inactive, deceased"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+          description: "Record update timestamp"
+
+      primary_key: ["id"]
+
+      indexes:
+        idx_person_primary_user:
+          columns: ["primary_user_id"]
+          unique: false
+        idx_person_type:
+          columns: ["type"]
+          unique: false
+        idx_person_status:
+          columns: ["status"]
+          unique: false
+
+      foreign_keys:
+        fk_person_primary_user:
+          columns: ["primary_user_id"]
+          references:
+            table: "user"
+            columns: ["id"]
+          on_delete: "SET NULL"
+          on_update: "CASCADE"
+
+    person_identity:
+      description: "Identity documents for persons (passport, IC, etc.)"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        person_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to person"
+        id_type:
+          type: "varchar"
+          length: 32
+          nullable: false
+          description: "Identity document type (e.g., 'passport', 'nric', 'ic')"
+        id_no:
+          type: "varchar"
+          length: 64
+          nullable: false
+          description: "Identity document number"
+        country:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "Issuing country code"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+
+      primary_key: ["id"]
+
+      unique_keys:
+        uk_person_identity_type_no:
+          columns: ["id_type", "id_no"]
+          description: "Prevent duplicate identity documents globally"
+
+      indexes:
+        idx_person_identity_person:
+          columns: ["person_id"]
+          unique: false
+
+      foreign_keys:
+        fk_person_identity_person:
+          columns: ["person_id"]
+          references:
+            table: "person"
+            columns: ["id"]
+          on_delete: "CASCADE"
+          on_update: "CASCADE"
+
+    person_relationship:
+      description: "Relationships between persons (family, dependent, etc.)"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        from_person_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Source person in relationship"
+        to_person_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Target person in relationship"
+        relation_type:
+          type: "varchar"
+          length: 32
+          nullable: false
+          description: "Relationship type (e.g., 'parent', 'child', 'spouse', 'dependent')"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+
+      primary_key: ["id"]
+
+      unique_keys:
+        uk_person_relation:
+          columns: ["from_person_id", "to_person_id", "relation_type"]
+          description: "Prevent duplicate relationships"
+
+      indexes:
+        idx_person_rel_from:
+          columns: ["from_person_id"]
+          unique: false
+        idx_person_rel_to:
+          columns: ["to_person_id"]
+          unique: false
+
+      foreign_keys:
+        fk_person_rel_from:
+          columns: ["from_person_id"]
+          references:
+            table: "person"
+            columns: ["id"]
+          on_delete: "CASCADE"
+          on_update: "CASCADE"
+        fk_person_rel_to:
+          columns: ["to_person_id"]
+          references:
+            table: "person"
+            columns: ["id"]
+          on_delete: "CASCADE"
+          on_update: "CASCADE"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# RESOURCES
+# ──────────────────────────────────────────────────────────────────────────────
+
+resources:
+  aggregates:
+    PERSON:
+      root_table: "person"
+      status_field: "status"
+      allowed_statuses:
+        - "active"
+        - "inactive"
+        - "deceased"
+      description: "Person aggregate representing individuals in the system"
+
+  non_aggregate_resources:
+    - table_name: "person_identity"
+      description: "Identity documents attached to persons"
+      parent_aggregate: "PERSON"
+
+    - table_name: "person_relationship"
+      description: "Relationships between persons"
+      parent_aggregate: "PERSON"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DTOS
+# ──────────────────────────────────────────────────────────────────────────────
+
+dtos:
+  PersonCreateRequestDto:
+    fields:
+      - name: "primary_user_id"
+        type: "string"
+        required: false
+        description: "Optional primary user account ID"
+      - name: "type"
+        type: "string"
+        required: true
+        description: "Person type"
+      - name: "full_name"
+        type: "string"
+        required: true
+        max_length: 255
+        description: "Full legal name"
+      - name: "dob"
+        type: "string"
+        required: false
+        format: "date"
+        description: "Date of birth (YYYY-MM-DD)"
+      - name: "gender"
+        type: "string"
+        required: false
+        max_length: 16
+        description: "Gender"
+      - name: "nationality"
+        type: "string"
+        required: false
+        max_length: 64
+        description: "Nationality"
+
+  PersonUpdateRequestDto:
+    fields:
+      - name: "full_name"
+        type: "string"
+        required: false
+        max_length: 255
+        description: "Full legal name"
+      - name: "dob"
+        type: "string"
+        required: false
+        format: "date"
+        description: "Date of birth"
+      - name: "gender"
+        type: "string"
+        required: false
+        max_length: 16
+        description: "Gender"
+      - name: "nationality"
+        type: "string"
+        required: false
+        max_length: 64
+        description: "Nationality"
+
+  PersonIdentityAddRequestDto:
+    fields:
+      - name: "id_type"
+        type: "string"
+        required: true
+        max_length: 32
+        description: "Identity document type"
+      - name: "id_no"
+        type: "string"
+        required: true
+        max_length: 64
+        description: "Identity document number"
+      - name: "country"
+        type: "string"
+        required: false
+        max_length: 64
+        description: "Issuing country"
+
+  PersonRelationshipCreateRequestDto:
+    fields:
+      - name: "to_person_id"
+        type: "string"
+        required: true
+        description: "Target person ID"
+      - name: "relation_type"
+        type: "string"
+        required: true
+        max_length: 32
+        description: "Relationship type"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# EVENTS
+# ──────────────────────────────────────────────────────────────────────────────
+
+events:
+  PERSON_CREATED:
+    version: 1
+    aggregate_type: "PERSON"
+    description: "Person was created"
+    payload:
+      - "person_id"
+      - "type"
+      - "full_name"
+
+  PERSON_UPDATED:
+    version: 1
+    aggregate_type: "PERSON"
+    description: "Person details were updated"
+    payload:
+      - "person_id"
+
+  PERSON_DEACTIVATED:
+    version: 1
+    aggregate_type: "PERSON"
+    description: "Person was deactivated"
+    payload:
+      - "person_id"
+
+  PERSON_DECEASED:
+    version: 1
+    aggregate_type: "PERSON"
+    description: "Person was marked as deceased"
+    payload:
+      - "person_id"
+
+  PERSON_IDENTITY_ADDED:
+    version: 1
+    aggregate_type: "PERSON"
+    description: "Identity document was added to person"
+    payload:
+      - "person_id"
+      - "person_identity_id"
+      - "id_type"
+      - "id_no"
+
+  PERSON_RELATIONSHIP_CREATED:
+    version: 1
+    aggregate_type: "PERSON"
+    description: "Relationship was created between persons"
+    payload:
+      - "person_relationship_id"
+      - "from_person_id"
+      - "to_person_id"
+      - "relation_type"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# COMMANDS
+# ──────────────────────────────────────────────────────────────────────────────
+
+commands:
+  PERSON.CREATE:
+    http:
+      method: "POST"
+      path: "/v1/persons"
+
+    request:
+      dto: "PersonCreateRequestDto"
+
+    idempotency:
+      strategy: "UNIQUE(idempotency_key)"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "type is required"
+          - "full_name is required"
+
+      - step: "WRITE"
+        operations:
+          - table: "person"
+            action: "INSERT"
+            fields:
+              - "primary_user_id"
+              - "type"
+              - "full_name"
+              - "dob"
+              - "gender"
+              - "nationality"
+              - "status = 'active'"
+
+      - step: "EMIT"
+        events:
+          - "PERSON_CREATED"
+
+      - step: "COMMIT"
+        returns:
+          - "person_id"
+          - "status"
+
+    permissions:
+      - "person:admin"
+      - "person:manage"
+
+  PERSON.GET:
+    http:
+      method: "GET"
+      path: "/v1/persons/{person_id}"
+
+    workflow:
+      - step: "READ"
+        operations:
+          - table: "person"
+            action: "SELECT"
+            where: "id = :person_id"
+
+      - step: "GUARD"
+        checks:
+          - "person exists"
+
+      - step: "RETURN"
+        returns: "person record"
+
+    permissions:
+      - "person:read"
+
+  PERSON.LIST:
+    http:
+      method: "GET"
+      path: "/v1/persons"
+
+    workflow:
+      - step: "READ"
+        operations:
+          - table: "person"
+            action: "SELECT"
+            order_by: "created_at DESC"
+
+      - step: "RETURN"
+        returns: "{ items: [person records] }"
+
+    permissions:
+      - "person:read"
+
+  PERSON.UPDATE:
+    http:
+      method: "PUT"
+      path: "/v1/persons/{person_id}"
+
+    request:
+      dto: "PersonUpdateRequestDto"
+
+    idempotency:
+      strategy: "idempotent_update"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "person exists"
+
+      - step: "WRITE"
+        operations:
+          - table: "person"
+            action: "UPDATE"
+            where: "id = :person_id"
+            fields:
+              - "full_name (if provided)"
+              - "dob (if provided)"
+              - "gender (if provided)"
+              - "nationality (if provided)"
+
+      - step: "EMIT"
+        events:
+          - "PERSON_UPDATED"
+
+      - step: "COMMIT"
+        returns:
+          - "person_id"
+
+    permissions:
+      - "person:admin"
+      - "person:manage"
+
+  PERSON.DEACTIVATE:
+    http:
+      method: "POST"
+      path: "/v1/persons/{person_id}/deactivate"
+
+    idempotency:
+      strategy: "idempotent_status_change"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "person exists"
+          - "person.status = 'active'"
+
+      - step: "WRITE"
+        operations:
+          - table: "person"
+            action: "UPDATE"
+            where: "id = :person_id"
+            fields:
+              - "status = 'inactive'"
+
+      - step: "EMIT"
+        events:
+          - "PERSON_DEACTIVATED"
+
+      - step: "COMMIT"
+        returns:
+          - "person_id"
+          - "status"
+
+    permissions:
+      - "person:admin"
+
+  PERSON.MARK_DECEASED:
+    http:
+      method: "POST"
+      path: "/v1/persons/{person_id}/deceased"
+
+    idempotency:
+      strategy: "idempotent_status_change"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "person exists"
+          - "person.status != 'deceased'"
+
+      - step: "WRITE"
+        operations:
+          - table: "person"
+            action: "UPDATE"
+            where: "id = :person_id"
+            fields:
+              - "status = 'deceased'"
+
+      - step: "EMIT"
+        events:
+          - "PERSON_DECEASED"
+
+      - step: "COMMIT"
+        returns:
+          - "person_id"
+          - "status"
+
+    permissions:
+      - "person:admin"
+
+  PERSON_IDENTITY.ADD:
+    http:
+      method: "POST"
+      path: "/v1/persons/{person_id}/identities"
+
+    request:
+      dto: "PersonIdentityAddRequestDto"
+
+    idempotency:
+      strategy: "UNIQUE(id_type, id_no)"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "person exists"
+          - "id_type is required"
+          - "id_no is required"
+
+      - step: "WRITE"
+        operations:
+          - table: "person_identity"
+            action: "INSERT ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)"
+            fields:
+              - "person_id"
+              - "id_type"
+              - "id_no"
+              - "country"
+
+      - step: "EMIT"
+        events:
+          - "PERSON_IDENTITY_ADDED"
+
+      - step: "COMMIT"
+        returns:
+          - "person_identity_id"
+
+    permissions:
+      - "person:admin"
+      - "person:manage"
+
+  PERSON_IDENTITY.LIST:
+    http:
+      method: "GET"
+      path: "/v1/persons/{person_id}/identities"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "person exists"
+
+      - step: "READ"
+        operations:
+          - table: "person_identity"
+            action: "SELECT"
+            where: "person_id = :person_id"
+            order_by: "created_at ASC"
+
+      - step: "RETURN"
+        returns: "{ items: [person_identity records] }"
+
+    permissions:
+      - "person:read"
+
+  PERSON_RELATIONSHIP.CREATE:
+    http:
+      method: "POST"
+      path: "/v1/persons/{person_id}/relationships"
+
+    request:
+      dto: "PersonRelationshipCreateRequestDto"
+
+    idempotency:
+      strategy: "UNIQUE(from_person_id, to_person_id, relation_type)"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "from_person exists"
+          - "to_person exists"
+          - "relation_type is required"
+
+      - step: "WRITE"
+        operations:
+          - table: "person_relationship"
+            action: "INSERT ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)"
+            fields:
+              - "from_person_id = :person_id"
+              - "to_person_id"
+              - "relation_type"
+
+      - step: "EMIT"
+        events:
+          - "PERSON_RELATIONSHIP_CREATED"
+
+      - step: "COMMIT"
+        returns:
+          - "person_relationship_id"
+
+    permissions:
+      - "person:admin"
+      - "person:manage"
+
+  PERSON_RELATIONSHIP.LIST:
+    http:
+      method: "GET"
+      path: "/v1/persons/{person_id}/relationships"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "person exists"
+
+      - step: "READ"
+        operations:
+          - table: "person_relationship"
+            action: "SELECT"
+            where: "from_person_id = :person_id OR to_person_id = :person_id"
+            order_by: "created_at ASC"
+
+      - step: "RETURN"
+        returns: "{ items: [person_relationship records] }"
+
+    permissions:
+      - "person:read"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# COVERAGE
+# ──────────────────────────────────────────────────────────────────────────────
+
+coverage:
+  tables_touched_by_commands:
+    person:
+      - "PERSON.CREATE"
+      - "PERSON.GET"
+      - "PERSON.LIST"
+      - "PERSON.UPDATE"
+      - "PERSON.DEACTIVATE"
+      - "PERSON.MARK_DECEASED"
+
+    person_identity:
+      - "PERSON_IDENTITY.ADD"
+      - "PERSON_IDENTITY.LIST"
+
+    person_relationship:
+      - "PERSON_RELATIONSHIP.CREATE"
+      - "PERSON_RELATIONSHIP.LIST"
+
+  events_emitted_by_commands:
+    PERSON_CREATED:
+      - "PERSON.CREATE"
+    PERSON_UPDATED:
+      - "PERSON.UPDATE"
+    PERSON_DEACTIVATED:
+      - "PERSON.DEACTIVATE"
+    PERSON_DECEASED:
+      - "PERSON.MARK_DECEASED"
+    PERSON_IDENTITY_ADDED:
+      - "PERSON_IDENTITY.ADD"
+    PERSON_RELATIONSHIP_CREATED:
+      - "PERSON_RELATIONSHIP.CREATE"
+
+  aggregate_state_transitions:
+    PERSON:
+      - from: "null"
+        to: "active"
+        via: "PERSON.CREATE"
+      - from: "active"
+        to: "inactive"
+        via: "PERSON.DEACTIVATE"
+      - from: "active"
+        to: "deceased"
+        via: "PERSON.MARK_DECEASED"
+      - from: "inactive"
+        to: "deceased"
+        via: "PERSON.MARK_DECEASED"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CHANGELOG
+# ──────────────────────────────────────────────────────────────────────────────
+
+changelog:
+  - version: "2.0.0"
+    date: "2026-03-15"
+    changes:
+      - "Initial person pillar specification"
+      - "Extracted from FULL-DDL.md"
+      - "Implements person, person_identity, person_relationship tables"
+      - "10 commands: person CRUD, identity management, relationship management"
+      - "6 events covering person lifecycle and relationships"

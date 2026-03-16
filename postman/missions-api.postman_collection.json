@@ -1,0 +1,979 @@
+{
+  "info": {
+    "name": "Missions API - Corrected",
+    "description": "Complete API collection for Missions Plugin (missions.pillar.v2) - Updated to match actual controller implementation",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "2.1.0"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "mission_definition_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "assignment_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "submission_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "user_id",
+      "value": "123",
+      "type": "string"
+    },
+    {
+      "key": "actor_user_id",
+      "value": "999",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "value",
+        "value": "{{actor_user_id}}",
+        "type": "string"
+      },
+      {
+        "key": "key",
+        "value": "X-User-Id",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Mission Definitions",
+      "item": [
+        {
+          "name": "Create Mission Definition",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.mission_definition_id) {",
+                  "        pm.collectionVariables.set('mission_definition_id', jsonData.mission_definition_id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{actor_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"POLICY_5X\",\n  \"name\": \"Complete 5 Policy Applications\",\n  \"description\": \"Submit and get approved for 5 policy applications\",\n  \"scope\": \"global\",\n  \"cadence\": \"one_time\",\n  \"trigger_type\": \"event\",\n  \"criteria_json\": {\n    \"metrics\": [\n      {\n        \"code\": \"policies_completed\",\n        \"target\": 5,\n        \"operator\": \">=\"\n      }\n    ]\n  },\n  \"reward_json\": {\n    \"type\": \"FIXED\",\n    \"amount\": 50,\n    \"currency\": \"MYR\"\n  },\n  \"start_at\": \"2026-03-10 00:00:00\",\n  \"end_at\": \"2026-12-31 23:59:59\",\n  \"max_per_user\": 1,\n  \"max_total\": 1000\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions/definitions",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "missions", "definitions"]
+            },
+            "description": "Create a new mission definition. Requires missions:admin or missions:manage permission."
+          },
+          "response": []
+        },
+        {
+          "name": "List Mission Definitions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{actor_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "USER"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions/definitions",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "missions", "definitions"]
+            },
+            "description": "List all mission definitions. Requires missions:read or missions:admin permission."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Mission Definition",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{actor_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "USER"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions/definitions/{{mission_definition_id}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "missions", "definitions", "{{mission_definition_id}}"]
+            },
+            "description": "Get mission definition by ID. Requires missions:read or missions:admin permission."
+          },
+          "response": []
+        },
+        {
+          "name": "Publish Mission Definition",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{actor_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions/definitions/{{mission_definition_id}}/publish",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "missions", "definitions", "{{mission_definition_id}}", "publish"]
+            },
+            "description": "Publish/activate a mission definition. Changes status from paused to active. Requires missions:admin or missions:manage permission."
+          },
+          "response": []
+        },
+        {
+          "name": "Pause Mission Definition",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{actor_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Temporarily pausing mission for review\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions/definitions/{{mission_definition_id}}/pause",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "missions", "definitions", "{{mission_definition_id}}", "pause"]
+            },
+            "description": "Pause an active mission (stops new assignments). Requires missions:admin or missions:manage permission."
+          },
+          "response": []
+        },
+        {
+          "name": "Retire Mission Definition",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{actor_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Mission campaign has ended\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions/definitions/{{mission_definition_id}}/retire",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "missions", "definitions", "{{mission_definition_id}}", "retire"]
+            },
+            "description": "Retire a mission permanently (final state). Requires missions:admin or missions:manage permission."
+          },
+          "response": []
+        }
+      ],
+      "description": "Mission definition management endpoints"
+    },
+    {
+      "name": "Mission Assignments",
+      "item": [
+        {
+          "name": "Assign Mission to User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.assignment_id) {",
+                  "        pm.collectionVariables.set('assignment_id', jsonData.assignment_id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{actor_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{user_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions/definitions/{{mission_definition_id}}/assignments",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "missions", "definitions", "{{mission_definition_id}}", "assignments"]
+            },
+            "description": "Assign a mission to a user. Requires missions:admin, missions:manage, or missions:enroll permission."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Mission Assignment",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "USER"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions/assignments/{{assignment_id}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "missions", "assignments", "{{assignment_id}}"]
+            },
+            "description": "Get assignment details by ID. Requires missions:read, missions:admin, or missions:enroll permission."
+          },
+          "response": []
+        },
+        {
+          "name": "List User Mission Assignments",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "USER"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/users/{{user_id}}/mission-assignments",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "users", "{{user_id}}", "mission-assignments"]
+            },
+            "description": "Get all missions assigned to a user. Requires missions:read, missions:admin, or missions:enroll permission."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Assignment Events",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "USER"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions/assignments/{{assignment_id}}/events",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "missions", "assignments", "{{assignment_id}}", "events"]
+            },
+            "description": "Get all audit events for an assignment. Requires missions:read or missions:admin permission."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Assignment Reward Grant",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "USER"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions/assignments/{{assignment_id}}/reward-grant",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "missions", "assignments", "{{assignment_id}}", "reward-grant"]
+            },
+            "description": "Get reward grant for a completed assignment. Requires missions:read or missions:admin permission."
+          },
+          "response": []
+        }
+      ],
+      "description": "Mission assignment lifecycle endpoints"
+    },
+    {
+      "name": "Mission Progress",
+      "item": [
+        {
+          "name": "Record Mission Progress",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "USER"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"metric_code\": \"policies_completed\",\n  \"current_value\": 3,\n  \"target_value\": 5,\n  \"unit\": \"count\",\n  \"ref_type\": \"policy_application\",\n  \"ref_id\": \"app_789\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions/assignments/{{assignment_id}}/progress",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "missions", "assignments", "{{assignment_id}}", "progress"]
+            },
+            "description": "Record progress metrics for a mission assignment. Requires missions:enroll or missions:admin permission."
+          },
+          "response": []
+        },
+        {
+          "name": "List Assignment Progress",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "USER"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions/assignments/{{assignment_id}}/progress",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "missions", "assignments", "{{assignment_id}}", "progress"]
+            },
+            "description": "Get all progress records for an assignment. Requires missions:read, missions:admin, or missions:enroll permission."
+          },
+          "response": []
+        }
+      ],
+      "description": "Mission progress tracking endpoints"
+    },
+    {
+      "name": "Mission Submissions",
+      "item": [
+        {
+          "name": "Submit Mission",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.submission_id) {",
+                  "        pm.collectionVariables.set('submission_id', jsonData.submission_id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "USER"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text_content\": \"I completed 5 policy applications successfully!\",\n  \"meta_json\": {\n    \"evidence\": \"screenshots attached\",\n    \"submission_date\": \"2026-03-10\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions/assignments/{{assignment_id}}/submissions",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "missions", "assignments", "{{assignment_id}}", "submissions"]
+            },
+            "description": "Submit a mission for review. Requires missions:enroll permission."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Submission",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{actor_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions/submissions/{{submission_id}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "missions", "submissions", "{{submission_id}}"]
+            },
+            "description": "Get submission details. Requires missions:read, missions:admin, or missions:review permission."
+          },
+          "response": []
+        },
+        {
+          "name": "Approve Submission",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{actor_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"feedback\": \"Great work! All 5 policy applications verified.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions/submissions/{{submission_id}}/approve",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "missions", "submissions", "{{submission_id}}", "approve"]
+            },
+            "description": "Approve a submission and grant rewards. Requires missions:admin or missions:review permission."
+          },
+          "response": []
+        },
+        {
+          "name": "Reject Submission",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{actor_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"feedback\": \"Please provide more evidence for policy applications 3 and 4.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions/submissions/{{submission_id}}/reject",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "missions", "submissions", "{{submission_id}}", "reject"]
+            },
+            "description": "Reject a submission (allows user to resubmit). Requires missions:admin or missions:review permission."
+          },
+          "response": []
+        },
+        {
+          "name": "List Submission Files",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{actor_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions/submissions/{{submission_id}}/files",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "missions", "submissions", "{{submission_id}}", "files"]
+            },
+            "description": "List all files attached to a submission. Requires missions:read, missions:admin, or missions:review permission."
+          },
+          "response": []
+        }
+      ],
+      "description": "Mission submission and review workflow endpoints"
+    },
+    {
+      "name": "Complete Workflow Example",
+      "item": [
+        {
+          "name": "1. Create Mission Definition",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.mission_definition_id) {",
+                  "        pm.collectionVariables.set('mission_definition_id', jsonData.mission_definition_id);",
+                  "        console.log('Saved mission_definition_id: ' + jsonData.mission_definition_id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "create-mission-{{$timestamp}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{actor_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"POLICY_5X_WF\",\n  \"name\": \"Complete 5 Policy Applications (Workflow)\",\n  \"description\": \"Submit and get approved for 5 policy applications\",\n  \"scope\": \"global\",\n  \"cadence\": \"one_time\",\n  \"trigger_type\": \"event\",\n  \"criteria_json\": {\n    \"metrics\": [\n      {\n        \"code\": \"policies_completed\",\n        \"target\": 5,\n        \"operator\": \">=\"\n      }\n    ]\n  },\n  \"reward_json\": {\n    \"type\": \"FIXED\",\n    \"amount\": 50,\n    \"currency\": \"MYR\"\n  },\n  \"max_per_user\": 1\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions/definitions",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "missions", "definitions"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2. Publish Mission",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "publish-mission-{{$timestamp}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{actor_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions/definitions/{{mission_definition_id}}/publish",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "missions", "definitions", "{{mission_definition_id}}", "publish"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3. Assign to User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.assignment_id) {",
+                  "        pm.collectionVariables.set('assignment_id', jsonData.assignment_id);",
+                  "        console.log('Saved assignment_id: ' + jsonData.assignment_id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "assign-mission-{{$timestamp}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{actor_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{user_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions/definitions/{{mission_definition_id}}/assignments",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "missions", "definitions", "{{mission_definition_id}}", "assignments"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "4. Record Progress (3 of 5)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "progress-{{$timestamp}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "USER"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"metric_code\": \"policies_completed\",\n  \"current_value\": 3,\n  \"target_value\": 5,\n  \"unit\": \"count\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions/assignments/{{assignment_id}}/progress",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "missions", "assignments", "{{assignment_id}}", "progress"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5. Record Progress (5 of 5)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "progress-final-{{$timestamp}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "USER"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"metric_code\": \"policies_completed\",\n  \"current_value\": 5,\n  \"target_value\": 5,\n  \"unit\": \"count\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions/assignments/{{assignment_id}}/progress",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "missions", "assignments", "{{assignment_id}}", "progress"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "6. Submit Mission",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.submission_id) {",
+                  "        pm.collectionVariables.set('submission_id', jsonData.submission_id);",
+                  "        console.log('Saved submission_id: ' + jsonData.submission_id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "submit-{{$timestamp}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "USER"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text_content\": \"I completed all 5 policy applications successfully!\",\n  \"meta_json\": {\n    \"evidence\": \"All applications approved\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions/assignments/{{assignment_id}}/submissions",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "missions", "assignments", "{{assignment_id}}", "submissions"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "7. Approve Submission",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "approve-{{$timestamp}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{actor_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"feedback\": \"Great work! All 5 policy applications verified and approved.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/v1/missions/submissions/{{submission_id}}/approve",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "missions", "submissions", "{{submission_id}}", "approve"]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Complete end-to-end workflow: Create mission → Publish → Assign → Track progress → Submit → Approve"
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Add X-User-Id header",
+          "pm.request.headers.add({",
+          "  key: 'X-User-Id',",
+          "  value: pm.collectionVariables.get('user_id') || '1'",
+          "});",
+          "",
+          "// Add Idempotency-Key for POST/PUT requests",
+          "if (pm.request.method === 'POST' || pm.request.method === 'PUT') {",
+          "  const existingKey = pm.request.headers.get('Idempotency-Key');",
+          "  if (!existingKey) {",
+          "    pm.request.headers.add({",
+          "      key: 'Idempotency-Key',",
+          "      value: pm.variables.replaceIn('{{$guid}}')",
+          "    });",
+          "  }",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "user_id",
+      "value": "1",
+      "type": "string"
+    }
+  ]
+}

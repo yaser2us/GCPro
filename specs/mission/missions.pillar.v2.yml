@@ -1,0 +1,1739 @@
+version: "2.0.0"
+spec_id: "missions.pillar.v2"
+domain: "missions"
+plugin: "missions"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# OWNERSHIP
+# ──────────────────────────────────────────────────────────────────────────────
+
+ownership:
+  owner_plugin: "missions"
+  owns_tables:
+    - "mission_definition"
+    - "mission_assignment"
+    - "mission_event"
+    - "mission_progress"
+    - "mission_reward_grant"
+    - "mission_submission"
+    - "mission_submission_file"
+  cross_plugin_writes: false
+  cross_plugin_integration:
+    allowed_via:
+      - "command_api"
+      - "outbox_events"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DEPENDENCIES
+# ──────────────────────────────────────────────────────────────────────────────
+
+dependencies:
+  corekit:
+    transaction_wrapper: "withTxn"
+    outbox_service: "OutboxService.emit"
+    guard_helper: "guard"
+    domain_error: "DomainError"
+
+  core_tables_readonly:
+    - "user"  # referenced by mission_assignment, mission_reward_grant, mission_submission
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CONVENTIONS
+# ──────────────────────────────────────────────────────────────────────────────
+
+conventions:
+  workflow_discipline:
+    - "guard"
+    - "write"
+    - "emit"
+    - "commit"
+
+  status_mutation_policy: "Status fields may only be mutated through commands."
+
+  outbox:
+    required_envelope_fields:
+      - "event_name"
+      - "event_version"
+      - "aggregate_type"
+      - "aggregate_id"
+      - "actor_user_id"
+      - "occurred_at"
+      - "correlation_id"
+      - "causation_id"
+
+  idempotency:
+    required_header: "Idempotency-Key"
+    default_scope: "actor_user_id + command_name"
+    db_strategy:
+      - "UNIQUE(idempotency_key) where applicable"
+      - "MySQL ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)"
+      - "mission_assignment: UNIQUE(mission_id, user_id) prevents duplicate assignments"
+      - "mission_assignment: UNIQUE(idempotency_key) for API-level idempotency"
+      - "mission_event: UNIQUE(idempotency_key) prevents duplicate events"
+      - "mission_reward_grant: UNIQUE(assignment_id) ensures one reward per assignment"
+      - "mission_submission: UNIQUE(idempotency_key) for submission idempotency"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SCHEMA
+# ──────────────────────────────────────────────────────────────────────────────
+
+schema:
+  tables:
+    mission_definition:
+      description: "Mission catalog with criteria and reward definitions"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        code:
+          type: "varchar"
+          length: 64
+          nullable: false
+          description: "Unique mission code"
+        name:
+          type: "varchar"
+          length: 128
+          nullable: false
+          description: "Mission display name"
+        description:
+          type: "varchar"
+          length: 512
+          nullable: true
+          description: "Mission description"
+        scope:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "global"
+          description: "Mission scope"
+        cadence:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "one_time"
+          description: "Mission cadence"
+        trigger_type:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "event"
+          description: "Mission trigger type"
+        criteria_json:
+          type: "json"
+          nullable: true
+          description: "Mission completion criteria"
+        reward_json:
+          type: "json"
+          nullable: true
+          description: "Mission reward specification"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "active"
+          description: "Mission status"
+        start_at:
+          type: "datetime"
+          nullable: true
+          description: "Mission start time"
+        end_at:
+          type: "datetime"
+          nullable: true
+          description: "Mission end time"
+        max_per_user:
+          type: "int"
+          unsigned: true
+          nullable: false
+          default: 1
+          description: "Max completions per user"
+        max_total:
+          type: "int"
+          unsigned: true
+          nullable: true
+          description: "Max total completions"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          - name: "uk_mdef_code"
+            columns: ["code"]
+        indexes:
+          - name: "idx_mdef_status_time"
+            columns: ["status", "start_at", "end_at"]
+          - name: "idx_mdef_scope"
+            columns: ["scope", "cadence", "trigger_type"]
+
+    mission_assignment:
+      description: "Mission assignments to users"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        mission_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to mission_definition"
+        user_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to user"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "assigned"
+          description: "Assignment status"
+        assigned_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Assignment timestamp"
+        started_at:
+          type: "datetime"
+          nullable: true
+          description: "Started timestamp"
+        completed_at:
+          type: "datetime"
+          nullable: true
+          description: "Completed timestamp"
+        expires_at:
+          type: "datetime"
+          nullable: true
+          description: "Expiration timestamp"
+        idempotency_key:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Idempotency key"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional metadata"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          - name: "uk_massign_mission_user"
+            columns: ["mission_id", "user_id"]
+          - name: "uk_massign_idempotency"
+            columns: ["idempotency_key"]
+        foreign_keys:
+          - name: "fk_massign_mission"
+            columns: ["mission_id"]
+            references:
+              table: "mission_definition"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+          - name: "fk_massign_user"
+            columns: ["user_id"]
+            references:
+              table: "user"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+        indexes:
+          - name: "idx_massign_user_status"
+            columns: ["user_id", "status"]
+          - name: "idx_massign_expires"
+            columns: ["expires_at"]
+
+    mission_event:
+      description: "Mission event audit log"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        assignment_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to mission_assignment"
+        event_type:
+          type: "varchar"
+          length: 64
+          nullable: false
+          description: "Event type"
+        ref_type:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "Reference type"
+        ref_id:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Reference ID"
+        payload_json:
+          type: "json"
+          nullable: true
+          description: "Event payload"
+        idempotency_key:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Idempotency key"
+        occurred_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Event occurrence time"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          - name: "uk_mevent_idempotency"
+            columns: ["idempotency_key"]
+        foreign_keys:
+          - name: "fk_mevent_assignment"
+            columns: ["assignment_id"]
+            references:
+              table: "mission_assignment"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+        indexes:
+          - name: "idx_mevent_assignment_time"
+            columns: ["assignment_id", "occurred_at"]
+          - name: "idx_mevent_ref"
+            columns: ["ref_type", "ref_id"]
+
+    mission_progress:
+      description: "Mission progress tracking"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        assignment_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to mission_assignment"
+        metric_code:
+          type: "varchar"
+          length: 64
+          nullable: false
+          description: "Metric code"
+        current_value:
+          type: "decimal"
+          precision: [18, 2]
+          nullable: false
+          default: "0.00"
+          description: "Current value"
+        target_value:
+          type: "decimal"
+          precision: [18, 2]
+          nullable: false
+          default: "1.00"
+          description: "Target value"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "tracking"
+          description: "Progress status"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional metadata"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          - name: "uk_mprog_assignment_metric"
+            columns: ["assignment_id", "metric_code"]
+        foreign_keys:
+          - name: "fk_mprog_assignment"
+            columns: ["assignment_id"]
+            references:
+              table: "mission_assignment"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+        indexes:
+          - name: "idx_mprog_status"
+            columns: ["status"]
+
+    mission_submission:
+      description: "Mission submissions for review"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        assignment_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to mission_assignment"
+        status:
+          type: "varchar"
+          length: 24
+          nullable: false
+          default: "draft"
+          description: "Submission status"
+        text_content:
+          type: "text"
+          nullable: true
+          description: "Submission text content"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional metadata"
+        feedback:
+          type: "text"
+          nullable: true
+          description: "Reviewer feedback"
+        reviewed_by_user_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Reviewer user ID"
+        reviewed_at:
+          type: "datetime"
+          nullable: true
+          description: "Review timestamp"
+        idempotency_key:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Idempotency key"
+        submitted_at:
+          type: "datetime"
+          nullable: true
+          description: "Submission timestamp"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          - name: "uk_msub_idempotency"
+            columns: ["idempotency_key"]
+        foreign_keys:
+          - name: "fk_msub_assignment"
+            columns: ["assignment_id"]
+            references:
+              table: "mission_assignment"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+          - name: "fk_msub_reviewer_user"
+            columns: ["reviewed_by_user_id"]
+            references:
+              table: "user"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+        indexes:
+          - name: "idx_msub_assignment_status"
+            columns: ["assignment_id", "status"]
+          - name: "idx_msub_status_time"
+            columns: ["status", "submitted_at"]
+          - name: "idx_msub_reviewer"
+            columns: ["reviewed_by_user_id", "reviewed_at"]
+
+    mission_submission_file:
+      description: "Mission submission file attachments"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        submission_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to mission_submission"
+        file_ref_type:
+          type: "varchar"
+          length: 32
+          nullable: false
+          default: "file_upload"
+          description: "File reference type"
+        file_ref_id:
+          type: "varchar"
+          length: 128
+          nullable: false
+          description: "File reference ID"
+        sort_order:
+          type: "int"
+          unsigned: true
+          nullable: false
+          default: 0
+          description: "Sort order"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional metadata"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+      constraints:
+        primary_key: ["id"]
+        foreign_keys:
+          - name: "fk_msubf_submission"
+            columns: ["submission_id"]
+            references:
+              table: "mission_submission"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+        indexes:
+          - name: "idx_msubf_submission"
+            columns: ["submission_id"]
+          - name: "idx_msubf_file_ref"
+            columns: ["file_ref_type", "file_ref_id"]
+
+    mission_reward_grant:
+      description: "Mission reward grants"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        assignment_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to mission_assignment"
+        user_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to user"
+        reward_type:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "coins"
+          description: "Reward type"
+        amount:
+          type: "decimal"
+          precision: [18, 2]
+          nullable: false
+          description: "Reward amount"
+        currency:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "COIN"
+          description: "Reward currency"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "granted"
+          description: "Grant status"
+        ref_type:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "Reference type"
+        ref_id:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Reference ID"
+        idempotency_key:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Idempotency key"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional metadata"
+        granted_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Grant timestamp"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          - name: "uk_mgrant_assignment_once"
+            columns: ["assignment_id"]
+          - name: "uk_mgrant_idempotency"
+            columns: ["idempotency_key"]
+        foreign_keys:
+          - name: "fk_mgrant_assignment"
+            columns: ["assignment_id"]
+            references:
+              table: "mission_assignment"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+          - name: "fk_mgrant_user"
+            columns: ["user_id"]
+            references:
+              table: "user"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+        indexes:
+          - name: "idx_mgrant_user_time"
+            columns: ["user_id", "granted_at"]
+          - name: "idx_mgrant_ref"
+            columns: ["ref_type", "ref_id"]
+
+resources:
+  - name: "mission_definition"
+    kind: "aggregate"
+    table: "mission_definition"
+    primary_key: "id"
+    statuses:
+      - "active"
+      - "paused"
+      - "retired"
+    api_surface:
+      - "create"
+      - "get"
+      - "list"
+      - "pause"
+      - "publish"
+      - "retire"
+
+  - name: "mission_assignment"
+    kind: "aggregate"
+    table: "mission_assignment"
+    primary_key: "id"
+    statuses:
+      - "assigned"
+      - "in_progress"
+      - "submitted"
+      - "completed"
+      - "cancelled"
+    api_surface:
+      - "assign"
+      - "get"
+      - "listByUser"
+
+  - name: "mission_event"
+    kind: "resource"
+    table: "mission_event"
+    primary_key: "id"
+    api_surface:
+      - "listByAssignment"
+
+  - name: "mission_progress"
+    kind: "resource"
+    table: "mission_progress"
+    primary_key: "id"
+    api_surface:
+      - "record"
+      - "get"
+      - "listByAssignment"
+
+  - name: "mission_submission"
+    kind: "aggregate"
+    table: "mission_submission"
+    primary_key: "id"
+    statuses:
+      - "draft"
+      - "pending"
+      - "approved"
+      - "rejected"
+      - "invalidated"
+    api_surface:
+      - "submit"
+      - "get"
+      - "approve"
+      - "reject"
+
+  - name: "mission_submission_file"
+    kind: "resource"
+    table: "mission_submission_file"
+    primary_key: "id"
+    api_surface:
+      - "listBySubmission"
+
+  - name: "mission_reward_grant"
+    kind: "aggregate"
+    table: "mission_reward_grant"
+    primary_key: "id"
+    statuses:
+      - "granted"
+      - "revoked"
+      - "expired"
+    api_surface:
+      - "getByAssignment"
+      - "listByUser"
+
+aggregates:
+  MISSION_DEFINITION:
+    root_table: "mission_definition"
+    primary_key: "id"
+    statuses:
+      - "active"
+      - "paused"
+      - "retired"
+
+  MISSION_ASSIGNMENT:
+    root_table: "mission_assignment"
+    primary_key: "id"
+    statuses:
+      - "assigned"
+      - "in_progress"
+      - "submitted"
+      - "completed"
+      - "cancelled"
+
+  MISSION_SUBMISSION:
+    root_table: "mission_submission"
+    primary_key: "id"
+    statuses:
+      - "draft"
+      - "pending"
+      - "approved"
+      - "rejected"
+      - "invalidated"
+
+  MISSION_REWARD_GRANT:
+    root_table: "mission_reward_grant"
+    primary_key: "id"
+    statuses:
+      - "granted"
+      - "revoked"
+      - "expired"
+
+types:
+  Actor:
+    fields:
+      - { name: "actor_user_id", type: "string", required: true }
+      - { name: "roles", type: "string[]", required: false }
+
+  MissionDefinitionSummary:
+    fields:
+      - { name: "id", type: "string", required: true }
+      - { name: "code", type: "string", required: true }
+      - { name: "name", type: "string", required: true }
+      - { name: "status", type: "string", required: true }
+
+  MissionAssignmentSummary:
+    fields:
+      - { name: "id", type: "string", required: true }
+      - { name: "mission_id", type: "string", required: true }
+      - { name: "user_id", type: "string", required: true }
+      - { name: "status", type: "string", required: true }
+
+dtos:
+  MissionDefinitionCreateRequest:
+    fields:
+      - { name: "code", type: "string", required: true, max_len: 64 }
+      - { name: "name", type: "string", required: true, max_len: 128 }
+      - { name: "description", type: "string", required: false, max_len: 512 }
+      - { name: "scope", type: "string", required: false, max_len: 16, default: "global" }
+      - { name: "cadence", type: "string", required: true, max_len: 16, enum: ["one_time", "daily", "weekly", "monthly"] }
+      - { name: "trigger_type", type: "string", required: false, max_len: 16, default: "event" }
+      - { name: "start_at", type: "datetime", required: false }
+      - { name: "end_at", type: "datetime", required: false }
+      - { name: "max_per_user", type: "integer", required: false, default: 1, min: 1 }
+      - { name: "max_total", type: "integer", required: false }
+      - { name: "criteria_json", type: "object", required: false }
+      - { name: "reward_json", type: "object", required: false }
+
+  MissionDefinitionStateChangeRequest:
+    fields:
+      - { name: "reason", type: "string", required: false, max_len: 500 }
+
+  MissionAssignRequest:
+    fields:
+      - { name: "user_id", type: "string", required: true }
+
+  MissionProgressRecordRequest:
+    fields:
+      - { name: "metric_code", type: "string", required: true, max_len: 64 }
+      - { name: "current_value", type: "number", required: true }
+      - { name: "target_value", type: "number", required: false, default: 1.00 }
+      - { name: "meta_json", type: "object", required: false }
+
+  MissionSubmitRequest:
+    fields:
+      - { name: "text_content", type: "string", required: false }
+      - { name: "meta_json", type: "object", required: false }
+
+  MissionSubmissionReviewRequest:
+    fields:
+      - { name: "feedback", type: "string", required: false }
+
+events:
+  - name: "MISSION_DEFINITION_CREATED"
+    version: 1
+    aggregate_type: "MISSION_DEFINITION"
+    description: "Emitted when mission definition is created"
+
+  - name: "MISSION_DEFINITION_PUBLISHED"
+    version: 1
+    aggregate_type: "MISSION_DEFINITION"
+    description: "Emitted when mission definition is published"
+
+  - name: "MISSION_DEFINITION_PAUSED"
+    version: 1
+    aggregate_type: "MISSION_DEFINITION"
+    description: "Emitted when mission definition is paused"
+
+  - name: "MISSION_DEFINITION_RETIRED"
+    version: 1
+    aggregate_type: "MISSION_DEFINITION"
+    description: "Emitted when mission definition is retired"
+
+  - name: "MISSION_ASSIGNED"
+    version: 1
+    aggregate_type: "MISSION_ASSIGNMENT"
+    description: "Emitted when mission is assigned to user"
+
+  - name: "MISSION_PROGRESS_RECORDED"
+    version: 1
+    aggregate_type: "MISSION_ASSIGNMENT"
+    description: "Emitted when mission progress is recorded"
+
+  - name: "MISSION_SUBMITTED"
+    version: 1
+    aggregate_type: "MISSION_SUBMISSION"
+    description: "Emitted when mission is submitted"
+
+  - name: "MISSION_SUBMISSION_APPROVED"
+    version: 1
+    aggregate_type: "MISSION_SUBMISSION"
+    description: "Emitted when submission is approved"
+
+  - name: "MISSION_SUBMISSION_REJECTED"
+    version: 1
+    aggregate_type: "MISSION_SUBMISSION"
+    description: "Emitted when submission is rejected"
+
+  - name: "MISSION_COMPLETED"
+    version: 1
+    aggregate_type: "MISSION_ASSIGNMENT"
+    description: "Emitted when mission assignment is completed"
+
+  - name: "MISSION_REWARD_GRANTED"
+    version: 1
+    aggregate_type: "MISSION_REWARD_GRANT"
+    description: "Emitted when mission reward is granted"
+
+commands:
+  - name: "MissionDefinition.Create"
+    description: "Create mission definition"
+    path: "/v1/missions/definitions"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "MissionDefinitionCreateRequest"
+    steps:
+      - kind: "guard"
+        expr: "request.code != null && request.code != ''"
+        error_code: "MISSION_CODE_REQUIRED"
+        error_status: 400
+
+      - kind: "upsert"
+        table: "mission_definition"
+        unique_by: ["code"]
+        values:
+          code: "request.code"
+          name: "request.name"
+          description: "request.description"
+          scope: "coalesce(request.scope, 'global')"
+          cadence: "request.cadence"
+          trigger_type: "coalesce(request.trigger_type, 'event')"
+          start_at: "request.start_at"
+          end_at: "request.end_at"
+          max_per_user: "coalesce(request.max_per_user, 1)"
+          max_total: "request.max_total"
+          criteria_json: "request.criteria_json"
+          reward_json: "request.reward_json"
+          status: "active"
+
+      - kind: "outbox_emit"
+        event: "MISSION_DEFINITION_CREATED"
+        aggregate_type: "MISSION_DEFINITION"
+        aggregate_id: "last_insert_id()"
+        payload:
+          mission_definition_id: "last_insert_id()"
+          code: "request.code"
+          name: "request.name"
+
+    response:
+      status: 201
+      body:
+        mission_definition_id: "last_insert_id()"
+        status: "active"
+
+  - name: "MissionDefinition.Get"
+    description: "Get mission definition by ID"
+    path: "/v1/missions/definitions/{mission_definition_id}"
+    method: "GET"
+    idempotent: false
+    permissions: []
+    input: null
+    steps:
+      - kind: "read"
+        table: "mission_definition"
+        where:
+          id: "path.mission_definition_id"
+        into: "definition"
+
+      - kind: "guard"
+        expr: "definition != null"
+        error_code: "MISSION_DEFINITION_NOT_FOUND"
+        error_status: 404
+
+    response:
+      status: 200
+      body: "definition"
+
+  - name: "MissionDefinition.List"
+    description: "List mission definitions"
+    path: "/v1/missions/definitions"
+    method: "GET"
+    idempotent: false
+    permissions: []
+    input: null
+    steps:
+      - kind: "read"
+        table: "mission_definition"
+        where: {}
+        into: "definitions"
+
+    response:
+      status: 200
+      body:
+        items: "definitions"
+
+  - name: "MissionDefinition.Pause"
+    description: "Pause mission definition"
+    path: "/v1/missions/definitions/{mission_definition_id}/pause"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "MissionDefinitionStateChangeRequest"
+    steps:
+      - kind: "read"
+        table: "mission_definition"
+        where:
+          id: "path.mission_definition_id"
+        into: "definition"
+
+      - kind: "guard"
+        expr: "definition != null"
+        error_code: "MISSION_DEFINITION_NOT_FOUND"
+        error_status: 404
+
+      - kind: "guard"
+        expr: "definition.status == 'active'"
+        error_code: "MISSION_DEFINITION_NOT_PAUSABLE"
+        error_status: 409
+
+      - kind: "update"
+        table: "mission_definition"
+        where:
+          id: "path.mission_definition_id"
+        values:
+          status: "paused"
+
+      - kind: "outbox_emit"
+        event: "MISSION_DEFINITION_PAUSED"
+        aggregate_type: "MISSION_DEFINITION"
+        aggregate_id: "path.mission_definition_id"
+        payload:
+          mission_definition_id: "path.mission_definition_id"
+          reason: "request.reason"
+
+    response:
+      status: 200
+      body:
+        mission_definition_id: "path.mission_definition_id"
+        status: "paused"
+
+  - name: "MissionDefinition.Publish"
+    description: "Publish mission definition"
+    path: "/v1/missions/definitions/{mission_definition_id}/publish"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "MissionDefinitionStateChangeRequest"
+    steps:
+      - kind: "read"
+        table: "mission_definition"
+        where:
+          id: "path.mission_definition_id"
+        into: "definition"
+
+      - kind: "guard"
+        expr: "definition != null"
+        error_code: "MISSION_DEFINITION_NOT_FOUND"
+        error_status: 404
+
+      - kind: "guard"
+        expr: "definition.status == 'paused'"
+        error_code: "MISSION_DEFINITION_NOT_PUBLISHABLE"
+        error_status: 409
+
+      - kind: "update"
+        table: "mission_definition"
+        where:
+          id: "path.mission_definition_id"
+        values:
+          status: "active"
+
+      - kind: "outbox_emit"
+        event: "MISSION_DEFINITION_PUBLISHED"
+        aggregate_type: "MISSION_DEFINITION"
+        aggregate_id: "path.mission_definition_id"
+        payload:
+          mission_definition_id: "path.mission_definition_id"
+          reason: "request.reason"
+
+    response:
+      status: 200
+      body:
+        mission_definition_id: "path.mission_definition_id"
+        status: "active"
+
+  - name: "MissionDefinition.Retire"
+    description: "Retire mission definition"
+    path: "/v1/missions/definitions/{mission_definition_id}/retire"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "MissionDefinitionStateChangeRequest"
+    steps:
+      - kind: "read"
+        table: "mission_definition"
+        where:
+          id: "path.mission_definition_id"
+        into: "definition"
+
+      - kind: "guard"
+        expr: "definition != null"
+        error_code: "MISSION_DEFINITION_NOT_FOUND"
+        error_status: 404
+
+      - kind: "guard"
+        expr: "definition.status != 'retired'"
+        error_code: "MISSION_DEFINITION_ALREADY_RETIRED"
+        error_status: 409
+
+      - kind: "update"
+        table: "mission_definition"
+        where:
+          id: "path.mission_definition_id"
+        values:
+          status: "retired"
+
+      - kind: "outbox_emit"
+        event: "MISSION_DEFINITION_RETIRED"
+        aggregate_type: "MISSION_DEFINITION"
+        aggregate_id: "path.mission_definition_id"
+        payload:
+          mission_definition_id: "path.mission_definition_id"
+          reason: "request.reason"
+
+    response:
+      status: 200
+      body:
+        mission_definition_id: "path.mission_definition_id"
+        status: "retired"
+
+  - name: "MissionAssignment.Assign"
+    description: "Assign mission to user"
+    path: "/v1/missions/definitions/{mission_definition_id}/assignments"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "MissionAssignRequest"
+    steps:
+      - kind: "read"
+        table: "mission_definition"
+        where:
+          id: "path.mission_definition_id"
+        into: "definition"
+
+      - kind: "guard"
+        expr: "definition != null"
+        error_code: "MISSION_DEFINITION_NOT_FOUND"
+        error_status: 404
+
+      - kind: "guard"
+        expr: "definition.status == 'active'"
+        error_code: "MISSION_DEFINITION_NOT_ASSIGNABLE"
+        error_status: 409
+
+      - kind: "upsert"
+        table: "mission_assignment"
+        unique_by: ["mission_id", "user_id"]
+        values:
+          mission_id: "path.mission_definition_id"
+          user_id: "request.user_id"
+          status: "assigned"
+          idempotency_key: "header.idempotency_key"
+
+      - kind: "insert"
+        table: "mission_event"
+        values:
+          assignment_id: "last_insert_id()"
+          event_type: "assigned"
+          payload_json:
+            user_id: "request.user_id"
+            mission_id: "path.mission_definition_id"
+
+      - kind: "outbox_emit"
+        event: "MISSION_ASSIGNED"
+        aggregate_type: "MISSION_ASSIGNMENT"
+        aggregate_id: "last_insert_id()"
+        payload:
+          assignment_id: "last_insert_id()"
+          mission_definition_id: "path.mission_definition_id"
+          user_id: "request.user_id"
+
+    response:
+      status: 201
+      body:
+        assignment_id: "last_insert_id()"
+        mission_id: "path.mission_definition_id"
+        user_id: "request.user_id"
+        status: "assigned"
+
+  - name: "MissionAssignment.Get"
+    description: "Get mission assignment by ID"
+    path: "/v1/missions/assignments/{assignment_id}"
+    method: "GET"
+    idempotent: false
+    permissions: []
+    input: null
+    steps:
+      - kind: "read"
+        table: "mission_assignment"
+        where:
+          id: "path.assignment_id"
+        into: "assignment"
+
+      - kind: "guard"
+        expr: "assignment != null"
+        error_code: "MISSION_ASSIGNMENT_NOT_FOUND"
+        error_status: 404
+
+    response:
+      status: 200
+      body: "assignment"
+
+  - name: "MissionAssignment.ListByUser"
+    description: "List assignments by user"
+    path: "/v1/users/{user_id}/mission-assignments"
+    method: "GET"
+    idempotent: false
+    permissions: []
+    input: null
+    steps:
+      - kind: "read"
+        table: "mission_assignment"
+        where:
+          user_id: "path.user_id"
+        into: "assignments"
+
+    response:
+      status: 200
+      body:
+        items: "assignments"
+
+  - name: "MissionProgress.Record"
+    description: "Record mission progress"
+    path: "/v1/missions/assignments/{assignment_id}/progress"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "MissionProgressRecordRequest"
+    steps:
+      - kind: "read"
+        table: "mission_assignment"
+        where:
+          id: "path.assignment_id"
+        into: "assignment"
+
+      - kind: "guard"
+        expr: "assignment != null"
+        error_code: "MISSION_ASSIGNMENT_NOT_FOUND"
+        error_status: 404
+
+      - kind: "guard"
+        expr: "assignment.status == 'assigned' || assignment.status == 'in_progress'"
+        error_code: "MISSION_PROGRESS_NOT_ALLOWED"
+        error_status: 409
+
+      - kind: "upsert"
+        table: "mission_progress"
+        unique_by: ["assignment_id", "metric_code"]
+        values:
+          assignment_id: "path.assignment_id"
+          metric_code: "request.metric_code"
+          current_value: "request.current_value"
+          target_value: "coalesce(request.target_value, 1.00)"
+          status: "tracking"
+          meta_json: "request.meta_json"
+
+      - kind: "when"
+        condition: "assignment.status == 'assigned'"
+        steps:
+          - kind: "update"
+            table: "mission_assignment"
+            where:
+              id: "path.assignment_id"
+            values:
+              status: "in_progress"
+              started_at: "NOW()"
+
+      - kind: "insert"
+        table: "mission_event"
+        values:
+          assignment_id: "path.assignment_id"
+          event_type: "progress_recorded"
+          payload_json:
+            metric_code: "request.metric_code"
+            current_value: "request.current_value"
+
+      - kind: "outbox_emit"
+        event: "MISSION_PROGRESS_RECORDED"
+        aggregate_type: "MISSION_ASSIGNMENT"
+        aggregate_id: "path.assignment_id"
+        payload:
+          assignment_id: "path.assignment_id"
+          metric_code: "request.metric_code"
+          current_value: "request.current_value"
+
+    response:
+      status: 200
+      body:
+        assignment_id: "path.assignment_id"
+        metric_code: "request.metric_code"
+        current_value: "request.current_value"
+
+  - name: "MissionSubmission.Submit"
+    description: "Submit mission for review"
+    path: "/v1/missions/assignments/{assignment_id}/submissions"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "MissionSubmitRequest"
+    steps:
+      - kind: "read"
+        table: "mission_assignment"
+        where:
+          id: "path.assignment_id"
+        into: "assignment"
+
+      - kind: "guard"
+        expr: "assignment != null"
+        error_code: "MISSION_ASSIGNMENT_NOT_FOUND"
+        error_status: 404
+
+      - kind: "guard"
+        expr: "assignment.status == 'assigned' || assignment.status == 'in_progress'"
+        error_code: "MISSION_SUBMISSION_NOT_ALLOWED"
+        error_status: 409
+
+      - kind: "insert"
+        table: "mission_submission"
+        values:
+          assignment_id: "path.assignment_id"
+          text_content: "request.text_content"
+          meta_json: "request.meta_json"
+          status: "pending"
+          submitted_at: "NOW()"
+          idempotency_key: "header.idempotency_key"
+
+      - kind: "update"
+        table: "mission_assignment"
+        where:
+          id: "path.assignment_id"
+        values:
+          status: "submitted"
+
+      - kind: "insert"
+        table: "mission_event"
+        values:
+          assignment_id: "path.assignment_id"
+          event_type: "submitted"
+          payload_json:
+            submission_id: "last_insert_id()"
+
+      - kind: "outbox_emit"
+        event: "MISSION_SUBMITTED"
+        aggregate_type: "MISSION_SUBMISSION"
+        aggregate_id: "last_insert_id()"
+        payload:
+          submission_id: "last_insert_id()"
+          assignment_id: "path.assignment_id"
+
+    response:
+      status: 201
+      body:
+        submission_id: "last_insert_id()"
+        assignment_id: "path.assignment_id"
+        status: "pending"
+
+  - name: "MissionSubmission.Get"
+    description: "Get mission submission by ID"
+    path: "/v1/missions/submissions/{submission_id}"
+    method: "GET"
+    idempotent: false
+    permissions: []
+    input: null
+    steps:
+      - kind: "read"
+        table: "mission_submission"
+        where:
+          id: "path.submission_id"
+        into: "submission"
+
+      - kind: "guard"
+        expr: "submission != null"
+        error_code: "MISSION_SUBMISSION_NOT_FOUND"
+        error_status: 404
+
+    response:
+      status: 200
+      body: "submission"
+
+  - name: "MissionSubmission.Approve"
+    description: "Approve mission submission"
+    path: "/v1/missions/submissions/{submission_id}/approve"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "MissionSubmissionReviewRequest"
+    steps:
+      - kind: "read"
+        table: "mission_submission"
+        where:
+          id: "path.submission_id"
+        into: "submission"
+
+      - kind: "guard"
+        expr: "submission != null"
+        error_code: "MISSION_SUBMISSION_NOT_FOUND"
+        error_status: 404
+
+      - kind: "read"
+        table: "mission_assignment"
+        where:
+          id: "submission.assignment_id"
+        into: "assignment"
+
+      - kind: "guard"
+        expr: "assignment != null"
+        error_code: "MISSION_ASSIGNMENT_NOT_FOUND"
+        error_status: 404
+
+      - kind: "read"
+        table: "mission_definition"
+        where:
+          id: "assignment.mission_id"
+        into: "definition"
+
+      - kind: "guard"
+        expr: "definition != null"
+        error_code: "MISSION_DEFINITION_NOT_FOUND"
+        error_status: 404
+
+      - kind: "guard"
+        expr: "submission.status == 'pending'"
+        error_code: "SUBMISSION_NOT_APPROVABLE"
+        error_status: 409
+
+      - kind: "update"
+        table: "mission_submission"
+        where:
+          id: "path.submission_id"
+        values:
+          status: "approved"
+          reviewed_by_user_id: "actor.actor_user_id"
+          reviewed_at: "NOW()"
+          feedback: "request.feedback"
+
+      - kind: "update"
+        table: "mission_assignment"
+        where:
+          id: "assignment.id"
+        values:
+          status: "completed"
+          completed_at: "NOW()"
+
+      - kind: "upsert"
+        table: "mission_reward_grant"
+        unique_by: ["assignment_id"]
+        values:
+          assignment_id: "assignment.id"
+          user_id: "assignment.user_id"
+          reward_type: "json_get(definition.reward_json,'reward_type')"
+          amount: "json_get(definition.reward_json,'amount')"
+          currency: "coalesce(json_get(definition.reward_json,'currency'),'COIN')"
+          status: "granted"
+          idempotency_key: "concat('mission_reward:', assignment.id)"
+
+      - kind: "insert"
+        table: "mission_event"
+        values:
+          assignment_id: "assignment.id"
+          event_type: "approved"
+          payload_json:
+            submission_id: "path.submission_id"
+
+      - kind: "outbox_emit"
+        event: "MISSION_SUBMISSION_APPROVED"
+        aggregate_type: "MISSION_SUBMISSION"
+        aggregate_id: "path.submission_id"
+        payload:
+          submission_id: "path.submission_id"
+          assignment_id: "assignment.id"
+
+      - kind: "outbox_emit"
+        event: "MISSION_COMPLETED"
+        aggregate_type: "MISSION_ASSIGNMENT"
+        aggregate_id: "assignment.id"
+        payload:
+          assignment_id: "assignment.id"
+          mission_definition_id: "assignment.mission_id"
+          user_id: "assignment.user_id"
+
+      - kind: "outbox_emit"
+        event: "MISSION_REWARD_GRANTED"
+        aggregate_type: "MISSION_REWARD_GRANT"
+        aggregate_id: "last_insert_id()"
+        payload:
+          reward_grant_id: "last_insert_id()"
+          assignment_id: "assignment.id"
+          user_id: "assignment.user_id"
+
+    response:
+      status: 200
+      body:
+        submission_id: "path.submission_id"
+        submission_status: "approved"
+        assignment_id: "assignment.id"
+        assignment_status: "completed"
+        reward_grant_id: "last_insert_id()"
+
+  - name: "MissionSubmission.Reject"
+    description: "Reject mission submission"
+    path: "/v1/missions/submissions/{submission_id}/reject"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "MissionSubmissionReviewRequest"
+    steps:
+      - kind: "read"
+        table: "mission_submission"
+        where:
+          id: "path.submission_id"
+        into: "submission"
+
+      - kind: "guard"
+        expr: "submission != null"
+        error_code: "MISSION_SUBMISSION_NOT_FOUND"
+        error_status: 404
+
+      - kind: "read"
+        table: "mission_assignment"
+        where:
+          id: "submission.assignment_id"
+        into: "assignment"
+
+      - kind: "guard"
+        expr: "assignment != null"
+        error_code: "MISSION_ASSIGNMENT_NOT_FOUND"
+        error_status: 404
+
+      - kind: "guard"
+        expr: "submission.status == 'pending'"
+        error_code: "SUBMISSION_NOT_REJECTABLE"
+        error_status: 409
+
+      - kind: "update"
+        table: "mission_submission"
+        where:
+          id: "path.submission_id"
+        values:
+          status: "rejected"
+          reviewed_by_user_id: "actor.actor_user_id"
+          reviewed_at: "NOW()"
+          feedback: "request.feedback"
+
+      - kind: "update"
+        table: "mission_assignment"
+        where:
+          id: "assignment.id"
+        values:
+          status: "in_progress"
+
+      - kind: "insert"
+        table: "mission_event"
+        values:
+          assignment_id: "assignment.id"
+          event_type: "rejected"
+          payload_json:
+            submission_id: "path.submission_id"
+
+      - kind: "outbox_emit"
+        event: "MISSION_SUBMISSION_REJECTED"
+        aggregate_type: "MISSION_SUBMISSION"
+        aggregate_id: "path.submission_id"
+        payload:
+          submission_id: "path.submission_id"
+          assignment_id: "assignment.id"
+
+    response:
+      status: 200
+      body:
+        submission_id: "path.submission_id"
+        submission_status: "rejected"
+        assignment_id: "assignment.id"
+        assignment_status: "in_progress"
+
+  - name: "MissionSubmissionFile.ListBySubmission"
+    description: "List files by submission"
+    path: "/v1/missions/submissions/{submission_id}/files"
+    method: "GET"
+    idempotent: false
+    permissions: []
+    input: null
+    steps:
+      - kind: "read"
+        table: "mission_submission_file"
+        where:
+          submission_id: "path.submission_id"
+        into: "files"
+
+    response:
+      status: 200
+      body:
+        items: "files"
+
+  - name: "MissionRewardGrant.GetByAssignment"
+    description: "Get reward grant by assignment"
+    path: "/v1/missions/assignments/{assignment_id}/reward-grant"
+    method: "GET"
+    idempotent: false
+    permissions: []
+    input: null
+    steps:
+      - kind: "read"
+        table: "mission_reward_grant"
+        where:
+          assignment_id: "path.assignment_id"
+        into: "reward_grant"
+
+    response:
+      status: 200
+      body: "reward_grant"
+
+  - name: "MissionEvent.ListByAssignment"
+    description: "List events by assignment"
+    path: "/v1/missions/assignments/{assignment_id}/events"
+    method: "GET"
+    idempotent: false
+    permissions: []
+    input: null
+    steps:
+      - kind: "read"
+        table: "mission_event"
+        where:
+          assignment_id: "path.assignment_id"
+        into: "events"
+
+    response:
+      status: 200
+      body:
+        items: "events"
+
+changelog:
+  - version: "2.0"
+    date: "2026-03-09"
+    author: "Platform Team"
+    description: "Generated from FULL-DDL.md using bottom-up approach"
+    changes:
+      - "Extracted 7 mission tables from FULL-DDL.md"
+      - "Built schema section with exact DDL mapping"
+      - "Generated 17 commands from schema and domain workflows"
+      - "Mapped 11 events to aggregate state changes"
+      - "Documented all UNIQUE constraints for idempotency"
+      - "Documented all foreign keys for dependencies"
+      - "Used mission_id (not mission_definition_id) per actual DDL"
+      - "Used text_content (not content_json) per actual DDL"
+      - "Used current_value/target_value per actual DDL"
+    breaking_changes: []
+    migrations_required:
+      - "Initial implementation aligned with existing DDL"
+
+coverage:
+  tables:
+    mission_definition:
+      touched_by:
+        - "MissionDefinition.Create"
+        - "MissionDefinition.Get"
+        - "MissionDefinition.List"
+        - "MissionDefinition.Pause"
+        - "MissionDefinition.Publish"
+        - "MissionDefinition.Retire"
+        - "MissionSubmission.Approve"
+    mission_assignment:
+      touched_by:
+        - "MissionAssignment.Assign"
+        - "MissionAssignment.Get"
+        - "MissionAssignment.ListByUser"
+        - "MissionProgress.Record"
+        - "MissionSubmission.Submit"
+        - "MissionSubmission.Approve"
+        - "MissionSubmission.Reject"
+    mission_event:
+      touched_by:
+        - "MissionAssignment.Assign"
+        - "MissionProgress.Record"
+        - "MissionSubmission.Submit"
+        - "MissionSubmission.Approve"
+        - "MissionSubmission.Reject"
+        - "MissionEvent.ListByAssignment"
+    mission_progress:
+      touched_by:
+        - "MissionProgress.Record"
+    mission_submission:
+      touched_by:
+        - "MissionSubmission.Submit"
+        - "MissionSubmission.Get"
+        - "MissionSubmission.Approve"
+        - "MissionSubmission.Reject"
+    mission_submission_file:
+      touched_by:
+        - "MissionSubmissionFile.ListBySubmission"
+    mission_reward_grant:
+      touched_by:
+        - "MissionSubmission.Approve"
+        - "MissionRewardGrant.GetByAssignment"
+
+  events:
+    MISSION_DEFINITION_CREATED:
+      emitted_by:
+        - "MissionDefinition.Create"
+    MISSION_DEFINITION_PUBLISHED:
+      emitted_by:
+        - "MissionDefinition.Publish"
+    MISSION_DEFINITION_PAUSED:
+      emitted_by:
+        - "MissionDefinition.Pause"
+    MISSION_DEFINITION_RETIRED:
+      emitted_by:
+        - "MissionDefinition.Retire"
+    MISSION_ASSIGNED:
+      emitted_by:
+        - "MissionAssignment.Assign"
+    MISSION_PROGRESS_RECORDED:
+      emitted_by:
+        - "MissionProgress.Record"
+    MISSION_SUBMITTED:
+      emitted_by:
+        - "MissionSubmission.Submit"
+    MISSION_SUBMISSION_APPROVED:
+      emitted_by:
+        - "MissionSubmission.Approve"
+    MISSION_SUBMISSION_REJECTED:
+      emitted_by:
+        - "MissionSubmission.Reject"
+    MISSION_COMPLETED:
+      emitted_by:
+        - "MissionSubmission.Approve"
+    MISSION_REWARD_GRANTED:
+      emitted_by:
+        - "MissionSubmission.Approve"
+
+  aggregate_transitions:
+    MISSION_DEFINITION:
+      active:
+        - "MissionDefinition.Pause"
+        - "MissionDefinition.Retire"
+      paused:
+        - "MissionDefinition.Publish"
+        - "MissionDefinition.Retire"
+    MISSION_ASSIGNMENT:
+      assigned:
+        - "MissionProgress.Record"
+        - "MissionSubmission.Submit"
+      in_progress:
+        - "MissionProgress.Record"
+        - "MissionSubmission.Submit"
+      submitted:
+        - "MissionSubmission.Approve"
+        - "MissionSubmission.Reject"
+    MISSION_SUBMISSION:
+      pending:
+        - "MissionSubmission.Approve"
+        - "MissionSubmission.Reject"
+
+codegen:
+  targets:
+    - "nestjs"
+    - "typescript"
+  outputs:
+    dto: "src/plugins/missions/commands/dto"
+    controller: "src/plugins/missions/commands/missions-commands.controller.ts"
+    service: "src/plugins/missions/commands/missions-commands.service.ts"
+    tests: "test/plugins/missions"
+    openapi: "openapi/plugins/missions.yaml"
+    sdk: "sdk/missions"

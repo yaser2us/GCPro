@@ -37,7 +37,7 @@ export class MissionDefinition {
   reward_json: any | null;
 
   @Column({ type: 'varchar', length: 16, default: 'active' })
-  status: 'draft' | 'published' | 'paused' | 'retired';
+  status: 'active' | 'paused' | 'retired';
 
   @Column({ type: 'datetime', nullable: true })
   start_at: Date | null;

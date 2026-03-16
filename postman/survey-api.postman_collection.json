@@ -1,0 +1,1549 @@
+{
+	"info": {
+		"_postman_id": "survey-api-collection",
+		"name": "Survey API",
+		"description": "Complete API collection for Survey Plugin\n\nBased on: specs/survey/survey.pillar.v2.yml\n\nAll write operations require Idempotency-Key header.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Survey",
+			"item": [
+				{
+					"name": "Create Survey",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    const response = pm.response.json();",
+									"    pm.environment.set('survey_id', response.survey_id);",
+									"    pm.test('Survey created successfully', function() {",
+									"        pm.expect(response.status).to.eql('active');",
+									"    });",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Idempotency-Key",
+								"value": "create-survey-{{$randomUUID}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"code\": \"nps-2024-q1\",\n  \"name\": \"Net Promoter Score Q1 2024\",\n  \"description\": \"Quarterly NPS survey for customer satisfaction\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/surveys",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"surveys"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Survey",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/v1/surveys/{{survey_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"surveys",
+								"{{survey_id}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Surveys",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/v1/surveys",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"surveys"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Deactivate Survey",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Idempotency-Key",
+								"value": "deactivate-survey-{{$randomUUID}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/surveys/{{survey_id}}/deactivate",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"surveys",
+								"{{survey_id}}",
+								"deactivate"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Survey Version",
+			"item": [
+				{
+					"name": "Create Survey Version",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    const response = pm.response.json();",
+									"    pm.environment.set('survey_version_id', response.survey_version_id);",
+									"    pm.test('Survey version created successfully', function() {",
+									"        pm.expect(response.status).to.eql('draft');",
+									"    });",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Idempotency-Key",
+								"value": "create-version-{{$randomUUID}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"version\": \"1.0\",\n  \"schema_json\": {\n    \"title\": \"NPS Survey\",\n    \"type\": \"nps\"\n  },\n  \"logic_json\": {\n    \"branching\": false\n  },\n  \"meta_json\": {\n    \"author\": \"Survey Team\"\n  }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/surveys/{{survey_id}}/versions",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"surveys",
+								"{{survey_id}}",
+								"versions"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Survey Version",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/v1/survey-versions/{{survey_version_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"survey-versions",
+								"{{survey_version_id}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Survey Versions by Survey",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/v1/surveys/{{survey_id}}/versions",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"surveys",
+								"{{survey_id}}",
+								"versions"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Publish Survey Version",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Idempotency-Key",
+								"value": "publish-version-{{$randomUUID}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/survey-versions/{{survey_version_id}}/publish",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"survey-versions",
+								"{{survey_version_id}}",
+								"publish"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Survey Question",
+			"item": [
+				{
+					"name": "Create Survey Questions (Bulk)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    const response = pm.response.json();",
+									"    pm.test('Questions created successfully', function() {",
+									"        pm.expect(response.created_count).to.be.above(0);",
+									"    });",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Idempotency-Key",
+								"value": "create-questions-{{$randomUUID}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"questions\": [\n    {\n      \"code\": \"q1_satisfaction\",\n      \"label\": \"How satisfied are you with our service?\",\n      \"help_text\": \"Rate from 1 (Very Dissatisfied) to 5 (Very Satisfied)\",\n      \"answer_type\": \"scale\",\n      \"required\": true,\n      \"sort_order\": 1,\n      \"rules_json\": {\n        \"min\": 1,\n        \"max\": 5\n      }\n    },\n    {\n      \"code\": \"q2_feedback\",\n      \"label\": \"Please provide any additional feedback\",\n      \"help_text\": \"Optional comments\",\n      \"answer_type\": \"text\",\n      \"required\": false,\n      \"sort_order\": 2,\n      \"rules_json\": {\n        \"max_length\": 500\n      }\n    },\n    {\n      \"code\": \"q3_recommend\",\n      \"label\": \"Would you recommend us to a friend?\",\n      \"answer_type\": \"choice\",\n      \"required\": true,\n      \"sort_order\": 3\n    }\n  ]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/survey-versions/{{survey_version_id}}/questions/bulk",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"survey-versions",
+								"{{survey_version_id}}",
+								"questions",
+								"bulk"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Survey Question",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/v1/survey-questions/{{question_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"survey-questions",
+								"{{question_id}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Survey Questions by Version",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    if (response.items && response.items.length > 0) {",
+									"        pm.environment.set('question_id', response.items[0].id);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/v1/survey-versions/{{survey_version_id}}/questions",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"survey-versions",
+								"{{survey_version_id}}",
+								"questions"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Survey Question Option",
+			"item": [
+				{
+					"name": "Create Question Options (Bulk)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Idempotency-Key",
+								"value": "create-options-{{$randomUUID}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"options\": [\n    {\n      \"value\": \"yes\",\n      \"label\": \"Yes, definitely\",\n      \"sort_order\": 1\n    },\n    {\n      \"value\": \"maybe\",\n      \"label\": \"Maybe\",\n      \"sort_order\": 2\n    },\n    {\n      \"value\": \"no\",\n      \"label\": \"No, not likely\",\n      \"sort_order\": 3\n    }\n  ]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/survey-questions/{{question_id}}/options/bulk",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"survey-questions",
+								"{{question_id}}",
+								"options",
+								"bulk"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Question Options",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/v1/survey-questions/{{question_id}}/options",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"survey-questions",
+								"{{question_id}}",
+								"options"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Survey Response",
+			"item": [
+				{
+					"name": "Create Survey Response",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    const response = pm.response.json();",
+									"    pm.environment.set('response_id', response.survey_response_id);",
+									"    pm.test('Survey response created successfully', function() {",
+									"        pm.expect(response.status).to.eql('draft');",
+									"    });",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Idempotency-Key",
+								"value": "create-response-{{$randomUUID}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "USER",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"survey_version_id\": \"{{survey_version_id}}\",\n  \"actor_ref_id\": \"1\",\n  \"subject_ref_id\": \"1\",\n  \"meta_json\": {\n    \"source\": \"web\",\n    \"campaign\": \"Q1-2024\"\n  }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/survey-responses",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"survey-responses"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Survey Response",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "USER",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/v1/survey-responses/{{response_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"survey-responses",
+								"{{response_id}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Survey Responses",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/v1/survey-responses",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"survey-responses"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Submit Survey Response",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Idempotency-Key",
+								"value": "submit-response-{{$randomUUID}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "USER",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"answers\": [\n    {\n      \"question_id\": 1,\n      \"value_num\": 5\n    },\n    {\n      \"question_id\": 2,\n      \"value_text\": \"Excellent service! Very happy with the experience.\"\n    },\n    {\n      \"question_id\": 3,\n      \"value_text\": \"yes\"\n    }\n  ]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/survey-responses/{{response_id}}/submit",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"survey-responses",
+								"{{response_id}}",
+								"submit"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Survey Answer",
+			"item": [
+				{
+					"name": "Upsert Survey Answer (Text)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    pm.environment.set('answer_id', response.survey_answer_id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Idempotency-Key",
+								"value": "save-answer-text-{{$randomUUID}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "USER",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"response_id\": \"{{response_id}}\",\n  \"question_id\": \"{{question_id}}\",\n  \"value_text\": \"Very satisfied with the overall experience\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/survey-answers",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"survey-answers"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Upsert Survey Answer (Number)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Idempotency-Key",
+								"value": "save-answer-num-{{$randomUUID}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "USER",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"response_id\": \"{{response_id}}\",\n  \"question_id\": \"{{question_id}}\",\n  \"value_num\": 4.5\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/survey-answers",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"survey-answers"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Upsert Survey Answer (Boolean)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Idempotency-Key",
+								"value": "save-answer-bool-{{$randomUUID}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "USER",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"response_id\": \"{{response_id}}\",\n  \"question_id\": \"{{question_id}}\",\n  \"value_bool\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/survey-answers",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"survey-answers"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Upsert Survey Answer (Date)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Idempotency-Key",
+								"value": "save-answer-date-{{$randomUUID}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "USER",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"response_id\": \"{{response_id}}\",\n  \"question_id\": \"{{question_id}}\",\n  \"value_date\": \"2024-03-15\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/survey-answers",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"survey-answers"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Upsert Survey Answer (JSON)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Idempotency-Key",
+								"value": "save-answer-json-{{$randomUUID}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "USER",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"response_id\": \"{{response_id}}\",\n  \"question_id\": \"{{question_id}}\",\n  \"value_json\": {\n    \"rating\": 5,\n    \"categories\": [\"quality\", \"service\", \"price\"],\n    \"comments\": \"Excellent overall\"\n  }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/survey-answers",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"survey-answers"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Survey Answer",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "USER",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/v1/survey-answers/{{answer_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"survey-answers",
+								"{{answer_id}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Answers by Response",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "USER",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/v1/survey-responses/{{response_id}}/answers",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"survey-responses",
+								"{{response_id}}",
+								"answers"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Survey Response File",
+			"item": [
+				{
+					"name": "Attach File to Response",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    const response = pm.response.json();",
+									"    pm.environment.set('response_file_id', response.survey_response_file_id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Idempotency-Key",
+								"value": "attach-file-{{$randomUUID}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "USER",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"file_upload_id\": \"999\",\n  \"kind\": \"evidence\",\n  \"sort_order\": 1,\n  \"meta_json\": {\n    \"filename\": \"screenshot.png\",\n    \"description\": \"Supporting evidence\"\n  }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/survey-responses/{{response_id}}/files",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"survey-responses",
+								"{{response_id}}",
+								"files"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List Response Files",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "USER",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/v1/survey-responses/{{response_id}}/files",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"survey-responses",
+								"{{response_id}}",
+								"files"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Complete Survey Workflow",
+			"item": [
+				{
+					"name": "01 - Create Survey",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    const response = pm.response.json();",
+									"    pm.environment.set('survey_id', response.survey_id);",
+									"    console.log('✓ Survey created: ' + response.survey_id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Idempotency-Key",
+								"value": "workflow-create-survey-{{$timestamp}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"code\": \"satisfaction-{{$timestamp}}\",\n  \"name\": \"Customer Satisfaction Survey\",\n  \"description\": \"Quarterly customer satisfaction measurement\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/surveys",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"surveys"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "02 - Create Version",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    const response = pm.response.json();",
+									"    pm.environment.set('survey_version_id', response.survey_version_id);",
+									"    console.log('✓ Version created: ' + response.survey_version_id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Idempotency-Key",
+								"value": "workflow-create-version-{{$timestamp}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"version\": \"1.0\",\n  \"schema_json\": {\n    \"type\": \"satisfaction\"\n  }\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/surveys/{{survey_id}}/versions",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"surveys",
+								"{{survey_id}}",
+								"versions"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "03 - Add Questions",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    console.log('✓ Questions added');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Idempotency-Key",
+								"value": "workflow-add-questions-{{$timestamp}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"questions\": [\n    {\n      \"code\": \"overall_satisfaction\",\n      \"label\": \"Overall Satisfaction\",\n      \"answer_type\": \"scale\",\n      \"required\": true,\n      \"sort_order\": 1\n    },\n    {\n      \"code\": \"feedback\",\n      \"label\": \"Additional Feedback\",\n      \"answer_type\": \"text\",\n      \"required\": false,\n      \"sort_order\": 2\n    }\n  ]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/survey-versions/{{survey_version_id}}/questions/bulk",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"survey-versions",
+								"{{survey_version_id}}",
+								"questions",
+								"bulk"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "04 - Publish Version",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    console.log('✓ Version published');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Idempotency-Key",
+								"value": "workflow-publish-{{$timestamp}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "ADMIN",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/v1/survey-versions/{{survey_version_id}}/publish",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"survey-versions",
+								"{{survey_version_id}}",
+								"publish"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "05 - Create Response",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 201) {",
+									"    const response = pm.response.json();",
+									"    pm.environment.set('response_id', response.survey_response_id);",
+									"    console.log('✓ Response created: ' + response.survey_response_id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Idempotency-Key",
+								"value": "workflow-create-response-{{$timestamp}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "USER",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"survey_version_id\": \"{{survey_version_id}}\",\n  \"actor_ref_id\": \"1\",\n  \"subject_ref_id\": \"1\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/survey-responses",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"survey-responses"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "06 - Submit Response",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    console.log('✓ Response submitted');",
+									"    console.log('');",
+									"    console.log('=== Workflow Complete ===');",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Idempotency-Key",
+								"value": "workflow-submit-{{$timestamp}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Id",
+								"value": "{{user_id}}",
+								"type": "text"
+							},
+							{
+								"key": "X-User-Role",
+								"value": "USER",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"answers\": [\n    {\n      \"question_id\": 1,\n      \"value_num\": 5\n    },\n    {\n      \"question_id\": 2,\n      \"value_text\": \"Everything was great!\"\n    }\n  ]\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/survey-responses/{{response_id}}/submit",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"v1",
+								"survey-responses",
+								"{{response_id}}",
+								"submit"
+							]
+						}
+					},
+					"response": []
+				}
+			],
+			"description": "Run all requests in order to test complete survey workflow from creation to response submission."
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:3000",
+			"type": "string"
+		},
+		{
+			"key": "user_id",
+			"value": "1",
+			"type": "string"
+		},
+		{
+			"key": "survey_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "survey_version_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "question_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "response_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "answer_id",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "response_file_id",
+			"value": "",
+			"type": "string"
+		}
+	]
+}

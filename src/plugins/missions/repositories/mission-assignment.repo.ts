@@ -62,4 +62,49 @@ export class MissionAssignmentRepository {
     const manager = queryRunner ? queryRunner.manager : this.repo.manager;
     await manager.update(MissionAssignment, { id }, data);
   }
+
+  /**
+   * Upsert assignment by mission_definition_id + user_id (idempotent assign)
+   * Based on missions.pillar.v1.yml lines 546-552
+   */
+  async upsert(
+    data: Partial<MissionAssignment>,
+    queryRunner?: QueryRunner,
+  ): Promise<number> {
+    const manager = queryRunner ? queryRunner.manager : this.repo.manager;
+
+    const query = `
+      INSERT INTO mission_assignment
+        (mission_id, user_id, status, idempotency_key, created_at, updated_at)
+      VALUES
+        (?, ?, ?, ?, NOW(), NOW())
+      ON DUPLICATE KEY UPDATE
+        status = VALUES(status),
+        updated_at = NOW(),
+        id = LAST_INSERT_ID(id)
+    `;
+
+    const result = await manager.query(query, [
+      data.mission_id,
+      data.user_id,
+      data.status,
+      data.idempotency_key || null,
+    ]);
+
+    return result.insertId;
+  }
+
+  /**
+   * Find all assignments for a user
+   */
+  async findByUserId(
+    user_id: number,
+    queryRunner?: QueryRunner,
+  ): Promise<MissionAssignment[]> {
+    const manager = queryRunner ? queryRunner.manager : this.repo.manager;
+    return manager.find(MissionAssignment, {
+      where: { user_id },
+      order: { created_at: 'DESC' },
+    });
+  }
 }

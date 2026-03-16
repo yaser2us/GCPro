@@ -61,4 +61,55 @@ export class MissionDefinitionRepository {
     const manager = queryRunner ? queryRunner.manager : this.repo.manager;
     await manager.update(MissionDefinition, { id }, data);
   }
+
+  /**
+   * Upsert mission definition by code (idempotent create)
+   * Based on missions.pillar.v1.yml lines 296-310 (upsert by code)
+   */
+  async upsert(
+    data: Partial<MissionDefinition>,
+    queryRunner?: QueryRunner,
+  ): Promise<number> {
+    const manager = queryRunner ? queryRunner.manager : this.repo.manager;
+
+    // Build field lists for upsert
+    const fields = Object.keys(data).filter((k) => k !== 'id');
+    const values = fields.map((k) => {
+      const value = data[k];
+      // JSON fields need to be stringified for MySQL
+      if ((k === 'criteria_json' || k === 'reward_json') && value !== null && value !== undefined) {
+        return JSON.stringify(value);
+      }
+      return value;
+    });
+
+    // MySQL ON DUPLICATE KEY UPDATE pattern
+    const fieldList = fields.join(', ');
+    const placeholders = fields.map(() => '?').join(', ');
+    const updateList = fields
+      .filter((f) => f !== 'code') // Don't update the unique key
+      .map((f) => `${f} = VALUES(${f})`)
+      .join(', ');
+
+    const query = `
+      INSERT INTO mission_definition (${fieldList})
+      VALUES (${placeholders})
+      ON DUPLICATE KEY UPDATE
+        ${updateList},
+        id = LAST_INSERT_ID(id)
+    `;
+
+    const result = await manager.query(query, values);
+    return result.insertId;
+  }
+
+  /**
+   * List all mission definitions
+   */
+  async findAll(queryRunner?: QueryRunner): Promise<MissionDefinition[]> {
+    const manager = queryRunner ? queryRunner.manager : this.repo.manager;
+    return manager.find(MissionDefinition, {
+      order: { created_at: 'DESC' },
+    });
+  }
 }

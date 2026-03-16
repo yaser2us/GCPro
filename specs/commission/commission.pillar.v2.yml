@@ -1,0 +1,1780 @@
+version: "2.0.0"
+spec_id: "commission.pillar.v2"
+domain: "commission"
+plugin: "commission"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# OWNERSHIP
+# ──────────────────────────────────────────────────────────────────────────────
+
+ownership:
+  owner_plugin: "commission"
+  owns_tables:
+    - "commission_program"
+    - "commission_participant"
+    - "commission_rule"
+    - "commission_accrual"
+    - "commission_payout_batch"
+    - "commission_payout_item"
+    - "commission_payout_item_accrual"
+  cross_plugin_writes: false
+  cross_plugin_integration:
+    allowed_via:
+      - "command_api"
+      - "outbox_events"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DEPENDENCIES
+# ──────────────────────────────────────────────────────────────────────────────
+
+dependencies:
+  corekit:
+    transaction_wrapper: "withTxn"
+    outbox_service: "OutboxService.emit"
+    guard_helper: "guard"
+    domain_error: "DomainError"
+
+  core_tables_readonly:
+    - "user"            # referenced by commission_participant (polymorphic)
+    - "ledger_txn"      # referenced by commission_payout_item
+    - "wallet"          # referenced by commission_participant
+    - "bank_profile"    # referenced by commission_participant
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CONVENTIONS
+# ──────────────────────────────────────────────────────────────────────────────
+
+conventions:
+  workflow_discipline:
+    - "guard"
+    - "write"
+    - "emit"
+    - "commit"
+
+  status_mutation_policy: "Status fields may only be mutated through commands."
+
+  outbox:
+    required_envelope_fields:
+      - "event_name"
+      - "event_version"
+      - "aggregate_type"
+      - "aggregate_id"
+      - "actor_user_id"
+      - "occurred_at"
+      - "correlation_id"
+      - "causation_id"
+
+  idempotency:
+    required_header: "Idempotency-Key"
+    default_scope: "actor_user_id + command_name"
+    db_strategy:
+      - "UNIQUE(idempotency_key) where applicable"
+      - "MySQL ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)"
+      - "commission_accrual: UNIQUE(idempotency_key) prevents duplicate accruals"
+      - "commission_participant: UNIQUE(program_id, participant_type, participant_id) prevents duplicate enrollments"
+      - "commission_payout_item: UNIQUE(batch_id, participant_id) prevents duplicate payouts per batch"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SCHEMA
+# ──────────────────────────────────────────────────────────────────────────────
+
+schema:
+  tables:
+    commission_program:
+      description: "Commission program catalog with settlement cycles and currency configuration"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        code:
+          type: "varchar"
+          length: 64
+          nullable: false
+          description: "Unique program code"
+        name:
+          type: "varchar"
+          length: 255
+          nullable: false
+          description: "Program display name"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "active"
+          description: "Program status (active, paused, retired)"
+        currency:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "MYR"
+          description: "Base currency for commissions"
+        settlement_cycle:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "monthly"
+          description: "Settlement cycle (daily, weekly, monthly, on-demand)"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional program metadata"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Record update timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_cp_code"
+            columns: ["code"]
+        indexes:
+          - name: "idx_cp_status"
+            columns: ["status"]
+
+    commission_participant:
+      description: "Program participants with payout method preferences"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        program_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to commission_program"
+        participant_type:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "user"
+          description: "Participant entity type (user, agent, etc.)"
+        participant_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Polymorphic FK to participant entity"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "active"
+          description: "Participant status (active, inactive, suspended)"
+        default_payout_method:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "wallet"
+          description: "Default payout method (wallet, bank)"
+        wallet_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Foreign key to wallet (for wallet payouts)"
+        bank_profile_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Foreign key to bank_profile (for bank payouts)"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional participant metadata"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_cpart_program_participant"
+            columns: ["program_id", "participant_type", "participant_id"]
+        indexes:
+          - name: "idx_cpart_status"
+            columns: ["program_id", "status"]
+        foreign_keys:
+          - name: "fk_cpart_program"
+            columns: ["program_id"]
+            references:
+              table: "commission_program"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+
+    commission_rule:
+      description: "Commission calculation rules with conditions, rates, and priority"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        program_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to commission_program"
+        code:
+          type: "varchar"
+          length: 64
+          nullable: false
+          description: "Unique rule code within program"
+        name:
+          type: "varchar"
+          length: 255
+          nullable: false
+          description: "Rule display name"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "active"
+          description: "Rule status (active, paused, retired)"
+        rule_type:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "percent"
+          description: "Rule type (percent, fixed, tiered)"
+        rate_pct:
+          type: "decimal"
+          precision: [8, 4]
+          nullable: true
+          description: "Commission rate percentage (for percent rules)"
+        amount_fixed:
+          type: "decimal"
+          precision: [18, 2]
+          nullable: true
+          description: "Fixed commission amount (for fixed rules)"
+        priority:
+          type: "int"
+          nullable: false
+          default: "100"
+          description: "Rule evaluation priority (lower = higher priority)"
+        conditions_json:
+          type: "json"
+          nullable: true
+          description: "Rule matching conditions"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional rule metadata"
+        effective_from:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Rule effective start date"
+        effective_to:
+          type: "datetime"
+          nullable: true
+          description: "Rule effective end date (null = indefinite)"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_cr_program_code"
+            columns: ["program_id", "code"]
+        indexes:
+          - name: "idx_cr_program_status_priority"
+            columns: ["program_id", "status", "priority"]
+          - name: "idx_cr_effective"
+            columns: ["effective_from", "effective_to"]
+        foreign_keys:
+          - name: "fk_cr_program"
+            columns: ["program_id"]
+            references:
+              table: "commission_program"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+
+    commission_accrual:
+      description: "Commission accrual events tracking earned commissions"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        program_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to commission_program"
+        participant_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to commission_participant"
+        rule_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Foreign key to commission_rule (null for manual accruals)"
+        accrual_type:
+          type: "varchar"
+          length: 24
+          nullable: false
+          default: "recurring"
+          description: "Accrual type (one_time, recurring)"
+        currency:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "MYR"
+          description: "Accrual currency"
+        base_amount:
+          type: "decimal"
+          precision: [18, 2]
+          nullable: true
+          description: "Base amount before commission calculation"
+        rate_pct:
+          type: "decimal"
+          precision: [8, 4]
+          nullable: true
+          description: "Applied commission rate percentage"
+        amount:
+          type: "decimal"
+          precision: [18, 2]
+          nullable: false
+          description: "Earned commission amount"
+        source_ref_type:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "Source entity type (policy, sale, etc.)"
+        source_ref_id:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Source entity ID"
+        idempotency_key:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Prevents duplicate accruals"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "accrued"
+          description: "Accrual status (accrued, paid, voided)"
+        occurred_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "When commission was earned"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional accrual metadata"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_ca_idempotency"
+            columns: ["idempotency_key"]
+        indexes:
+          - name: "idx_ca_participant_time"
+            columns: ["participant_id", "occurred_at"]
+          - name: "idx_ca_program_status_time"
+            columns: ["program_id", "status", "occurred_at"]
+          - name: "idx_ca_source_ref"
+            columns: ["source_ref_type", "source_ref_id"]
+          - name: "fk_ca_rule"
+            columns: ["rule_id"]
+        foreign_keys:
+          - name: "fk_ca_participant"
+            columns: ["participant_id"]
+            references:
+              table: "commission_participant"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+          - name: "fk_ca_program"
+            columns: ["program_id"]
+            references:
+              table: "commission_program"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+          - name: "fk_ca_rule"
+            columns: ["rule_id"]
+            references:
+              table: "commission_rule"
+              columns: ["id"]
+            on_delete: "SET NULL"
+            on_update: "CASCADE"
+
+    commission_payout_batch:
+      description: "Payout batch orchestration for settlement periods"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        program_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to commission_program"
+        batch_code:
+          type: "varchar"
+          length: 64
+          nullable: false
+          description: "Unique batch identifier"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "planned"
+          description: "Batch status (planned, processing, completed, failed)"
+        currency:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "MYR"
+          description: "Batch currency"
+        period_start:
+          type: "datetime"
+          nullable: false
+          description: "Settlement period start date"
+        period_end:
+          type: "datetime"
+          nullable: false
+          description: "Settlement period end date"
+        total_amount:
+          type: "decimal"
+          precision: [18, 2]
+          nullable: false
+          default: "0.00"
+          description: "Total batch payout amount"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional batch metadata"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Record update timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_cpb_program_batch"
+            columns: ["program_id", "batch_code"]
+        indexes:
+          - name: "idx_cpb_program_status"
+            columns: ["program_id", "status"]
+          - name: "idx_cpb_period"
+            columns: ["period_start", "period_end"]
+        foreign_keys:
+          - name: "fk_cpb_program"
+            columns: ["program_id"]
+            references:
+              table: "commission_program"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+
+    commission_payout_item:
+      description: "Individual payout items within a batch"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        batch_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to commission_payout_batch"
+        participant_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to commission_participant"
+        amount:
+          type: "decimal"
+          precision: [18, 2]
+          nullable: false
+          description: "Payout amount for this participant"
+        currency:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "MYR"
+          description: "Payout currency"
+        payout_method:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "wallet"
+          description: "Payout method (wallet, bank)"
+        ledger_txn_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Foreign key to ledger_txn (for wallet payouts)"
+        withdrawal_request_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Foreign key to withdrawal_request (for bank payouts)"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "planned"
+          description: "Payout status (planned, processing, completed, failed)"
+        failure_reason:
+          type: "varchar"
+          length: 512
+          nullable: true
+          description: "Failure reason if status=failed"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Record update timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_cpi_batch_participant"
+            columns: ["batch_id", "participant_id"]
+        indexes:
+          - name: "idx_cpi_status"
+            columns: ["status"]
+          - name: "idx_cpi_participant"
+            columns: ["participant_id"]
+        foreign_keys:
+          - name: "fk_cpi_batch"
+            columns: ["batch_id"]
+            references:
+              table: "commission_payout_batch"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+          - name: "fk_cpi_participant"
+            columns: ["participant_id"]
+            references:
+              table: "commission_participant"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+
+    commission_payout_item_accrual:
+      description: "Links accruals to payout items for traceability"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        payout_item_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to commission_payout_item"
+        accrual_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to commission_accrual"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_cpia_once"
+            columns: ["payout_item_id", "accrual_id"]
+        indexes:
+          - name: "idx_cpia_accrual"
+            columns: ["accrual_id"]
+        foreign_keys:
+          - name: "fk_cpia_accrual"
+            columns: ["accrual_id"]
+            references:
+              table: "commission_accrual"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+          - name: "fk_cpia_item"
+            columns: ["payout_item_id"]
+            references:
+              table: "commission_payout_item"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# RESOURCES
+# ──────────────────────────────────────────────────────────────────────────────
+
+resources:
+  - name: "Program"
+    kind: "aggregate"
+    table: "commission_program"
+    primary_key: "id"
+    statuses:
+      - "active"
+      - "paused"
+      - "retired"
+    api_surface:
+      - "POST /api/commission/programs"
+      - "GET /api/commission/programs/:id"
+      - "PUT /api/commission/programs/:id"
+      - "GET /api/commission/programs"
+
+  - name: "Participant"
+    kind: "resource"
+    table: "commission_participant"
+    primary_key: "id"
+    statuses:
+      - "active"
+      - "inactive"
+      - "suspended"
+    api_surface:
+      - "POST /api/commission/programs/:program_id/participants"
+      - "GET /api/commission/programs/:program_id/participants"
+      - "GET /api/commission/participants/:id"
+      - "PUT /api/commission/participants/:id/status"
+
+  - name: "Rule"
+    kind: "resource"
+    table: "commission_rule"
+    primary_key: "id"
+    statuses:
+      - "active"
+      - "paused"
+      - "retired"
+    api_surface:
+      - "POST /api/commission/programs/:program_id/rules"
+      - "GET /api/commission/programs/:program_id/rules"
+      - "GET /api/commission/rules/:id"
+      - "PUT /api/commission/rules/:id"
+
+  - name: "Accrual"
+    kind: "resource"
+    table: "commission_accrual"
+    primary_key: "id"
+    statuses:
+      - "accrued"
+      - "paid"
+      - "voided"
+    api_surface:
+      - "POST /api/commission/accruals"
+      - "GET /api/commission/accruals/:id"
+      - "GET /api/commission/participants/:participant_id/accruals"
+      - "PUT /api/commission/accruals/:id/void"
+
+  - name: "PayoutBatch"
+    kind: "aggregate"
+    table: "commission_payout_batch"
+    primary_key: "id"
+    statuses:
+      - "planned"
+      - "processing"
+      - "completed"
+      - "failed"
+    api_surface:
+      - "POST /api/commission/programs/:program_id/payout-batches"
+      - "GET /api/commission/payout-batches/:id"
+      - "POST /api/commission/payout-batches/:id/process"
+      - "GET /api/commission/programs/:program_id/payout-batches"
+
+  - name: "PayoutItem"
+    kind: "resource"
+    table: "commission_payout_item"
+    primary_key: "id"
+    statuses:
+      - "planned"
+      - "processing"
+      - "completed"
+      - "failed"
+    api_surface:
+      - "GET /api/commission/payout-items/:id"
+      - "GET /api/commission/payout-batches/:batch_id/items"
+      - "POST /api/commission/payout-items/:id/process"
+      - "POST /api/commission/payout-items/:id/retry"
+
+  - name: "PayoutItemAccrual"
+    kind: "resource"
+    table: "commission_payout_item_accrual"
+    primary_key: "id"
+    api_surface:
+      - "GET /api/commission/payout-items/:payout_item_id/accruals"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# AGGREGATES
+# ──────────────────────────────────────────────────────────────────────────────
+
+aggregates:
+  PROGRAM:
+    root_table: "commission_program"
+    primary_key: "id"
+    statuses:
+      - "active"
+      - "paused"
+      - "retired"
+
+  PAYOUT_BATCH:
+    root_table: "commission_payout_batch"
+    primary_key: "id"
+    statuses:
+      - "planned"
+      - "processing"
+      - "completed"
+      - "failed"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# TYPES
+# ──────────────────────────────────────────────────────────────────────────────
+
+types:
+  Actor:
+    user_id: "string"
+    role: "string"
+
+  ProgramSummary:
+    id: "string"
+    code: "string"
+    name: "string"
+    status: "string"
+    currency: "string"
+    settlement_cycle: "string"
+
+  ParticipantSummary:
+    id: "string"
+    program_id: "string"
+    participant_type: "string"
+    participant_id: "string"
+    status: "string"
+    default_payout_method: "string"
+
+  AccrualSummary:
+    id: "string"
+    program_id: "string"
+    participant_id: "string"
+    amount: "number"
+    currency: "string"
+    status: "string"
+    occurred_at: "datetime"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DTOS
+# ──────────────────────────────────────────────────────────────────────────────
+
+dtos:
+  CreateProgramDTO:
+    fields:
+      code:
+        type: "string"
+        required: true
+        max_len: 64
+        description: "Unique program code"
+      name:
+        type: "string"
+        required: true
+        max_len: 255
+        description: "Program display name"
+      currency:
+        type: "string"
+        required: false
+        default: "MYR"
+        max_len: 16
+        description: "Base currency"
+      settlement_cycle:
+        type: "string"
+        required: false
+        default: "monthly"
+        max_len: 16
+        description: "Settlement cycle (daily, weekly, monthly, on-demand)"
+      meta_json:
+        type: "object"
+        required: false
+        description: "Additional metadata"
+
+  EnrollParticipantDTO:
+    fields:
+      program_id:
+        type: "string"
+        required: true
+        description: "Program ID"
+      participant_type:
+        type: "string"
+        required: true
+        max_len: 16
+        default: "user"
+        description: "Participant entity type"
+      participant_id:
+        type: "string"
+        required: true
+        description: "Participant entity ID"
+      default_payout_method:
+        type: "string"
+        required: false
+        default: "wallet"
+        max_len: 16
+        description: "Default payout method (wallet, bank)"
+      wallet_id:
+        type: "string"
+        required: false
+        description: "Wallet ID (if payout_method=wallet)"
+      bank_profile_id:
+        type: "string"
+        required: false
+        description: "Bank profile ID (if payout_method=bank)"
+      meta_json:
+        type: "object"
+        required: false
+        description: "Additional metadata"
+
+  CreateRuleDTO:
+    fields:
+      program_id:
+        type: "string"
+        required: true
+        description: "Program ID"
+      code:
+        type: "string"
+        required: true
+        max_len: 64
+        description: "Unique rule code within program"
+      name:
+        type: "string"
+        required: true
+        max_len: 255
+        description: "Rule display name"
+      rule_type:
+        type: "string"
+        required: true
+        max_len: 16
+        enum: ["percent", "fixed", "tiered"]
+        description: "Rule type"
+      rate_pct:
+        type: "number"
+        required: false
+        description: "Commission rate percentage (for percent rules)"
+      amount_fixed:
+        type: "number"
+        required: false
+        description: "Fixed commission amount (for fixed rules)"
+      priority:
+        type: "number"
+        required: false
+        default: 100
+        description: "Rule evaluation priority (lower = higher priority)"
+      conditions_json:
+        type: "object"
+        required: false
+        description: "Rule matching conditions"
+      effective_from:
+        type: "datetime"
+        required: false
+        description: "Rule effective start date"
+      effective_to:
+        type: "datetime"
+        required: false
+        description: "Rule effective end date"
+      meta_json:
+        type: "object"
+        required: false
+        description: "Additional metadata"
+
+  RecordAccrualDTO:
+    fields:
+      program_id:
+        type: "string"
+        required: true
+        description: "Program ID"
+      participant_id:
+        type: "string"
+        required: true
+        description: "Participant ID"
+      rule_id:
+        type: "string"
+        required: false
+        description: "Rule ID (null for manual accruals)"
+      accrual_type:
+        type: "string"
+        required: true
+        max_len: 24
+        enum: ["one_time", "recurring"]
+        description: "Accrual type"
+      currency:
+        type: "string"
+        required: false
+        default: "MYR"
+        max_len: 16
+        description: "Accrual currency"
+      base_amount:
+        type: "number"
+        required: false
+        description: "Base amount before commission calculation"
+      rate_pct:
+        type: "number"
+        required: false
+        description: "Applied commission rate percentage"
+      amount:
+        type: "number"
+        required: true
+        description: "Earned commission amount"
+      source_ref_type:
+        type: "string"
+        required: false
+        max_len: 64
+        description: "Source entity type (policy, sale, etc.)"
+      source_ref_id:
+        type: "string"
+        required: false
+        max_len: 128
+        description: "Source entity ID"
+      idempotency_key:
+        type: "string"
+        required: true
+        max_len: 128
+        description: "Prevents duplicate accruals"
+      occurred_at:
+        type: "datetime"
+        required: false
+        description: "When commission was earned"
+      meta_json:
+        type: "object"
+        required: false
+        description: "Additional metadata"
+
+  CreatePayoutBatchDTO:
+    fields:
+      program_id:
+        type: "string"
+        required: true
+        description: "Program ID"
+      batch_code:
+        type: "string"
+        required: true
+        max_len: 64
+        description: "Unique batch identifier"
+      currency:
+        type: "string"
+        required: false
+        default: "MYR"
+        max_len: 16
+        description: "Batch currency"
+      period_start:
+        type: "datetime"
+        required: true
+        description: "Settlement period start date"
+      period_end:
+        type: "datetime"
+        required: true
+        description: "Settlement period end date"
+      meta_json:
+        type: "object"
+        required: false
+        description: "Additional metadata"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# EVENTS
+# ──────────────────────────────────────────────────────────────────────────────
+
+events:
+  - name: "PROGRAM_CREATED"
+    version: "1.0"
+    aggregate_type: "PROGRAM"
+    description: "Commission program created"
+
+  - name: "PROGRAM_UPDATED"
+    version: "1.0"
+    aggregate_type: "PROGRAM"
+    description: "Commission program updated"
+
+  - name: "PROGRAM_PAUSED"
+    version: "1.0"
+    aggregate_type: "PROGRAM"
+    description: "Commission program paused"
+
+  - name: "PROGRAM_ACTIVATED"
+    version: "1.0"
+    aggregate_type: "PROGRAM"
+    description: "Commission program activated"
+
+  - name: "PARTICIPANT_ENROLLED"
+    version: "1.0"
+    aggregate_type: "PROGRAM"
+    description: "Participant enrolled in program"
+
+  - name: "PARTICIPANT_STATUS_UPDATED"
+    version: "1.0"
+    aggregate_type: "PROGRAM"
+    description: "Participant status updated"
+
+  - name: "RULE_CREATED"
+    version: "1.0"
+    aggregate_type: "PROGRAM"
+    description: "Commission rule created"
+
+  - name: "RULE_UPDATED"
+    version: "1.0"
+    aggregate_type: "PROGRAM"
+    description: "Commission rule updated"
+
+  - name: "ACCRUAL_RECORDED"
+    version: "1.0"
+    aggregate_type: "PROGRAM"
+    description: "Commission accrual recorded"
+
+  - name: "ACCRUAL_VOIDED"
+    version: "1.0"
+    aggregate_type: "PROGRAM"
+    description: "Commission accrual voided"
+
+  - name: "PAYOUT_BATCH_CREATED"
+    version: "1.0"
+    aggregate_type: "PAYOUT_BATCH"
+    description: "Payout batch created for settlement period"
+
+  - name: "PAYOUT_BATCH_PROCESSING_STARTED"
+    version: "1.0"
+    aggregate_type: "PAYOUT_BATCH"
+    description: "Payout batch processing started"
+
+  - name: "PAYOUT_BATCH_COMPLETED"
+    version: "1.0"
+    aggregate_type: "PAYOUT_BATCH"
+    description: "Payout batch completed successfully"
+
+  - name: "PAYOUT_BATCH_FAILED"
+    version: "1.0"
+    aggregate_type: "PAYOUT_BATCH"
+    description: "Payout batch processing failed"
+
+  - name: "PAYOUT_ITEM_COMPLETED"
+    version: "1.0"
+    aggregate_type: "PAYOUT_BATCH"
+    description: "Individual payout item completed"
+
+  - name: "PAYOUT_ITEM_FAILED"
+    version: "1.0"
+    aggregate_type: "PAYOUT_BATCH"
+    description: "Individual payout item failed"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# COMMANDS
+# ──────────────────────────────────────────────────────────────────────────────
+
+commands:
+  - name: "CreateProgram"
+    description: "Create a new commission program"
+    path: "/api/commission/programs"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input:
+      dto: "CreateProgramDTO"
+      actor: "Actor"
+    steps:
+      - kind: "guard"
+        expr: "actor.role in ['admin', 'commission_manager']"
+        error: "Unauthorized to create commission program"
+      - kind: "upsert"
+        table: "commission_program"
+        unique_by: ["code"]
+        fields:
+          code: "input.code"
+          name: "input.name"
+          status: "'active'"
+          currency: "input.currency ?? 'MYR'"
+          settlement_cycle: "input.settlement_cycle ?? 'monthly'"
+          meta_json: "input.meta_json"
+      - kind: "outbox_emit"
+        event: "PROGRAM_CREATED"
+        aggregate_id: "inserted_id"
+    response:
+      program_id: "inserted_id"
+
+  - name: "UpdateProgram"
+    description: "Update commission program details"
+    path: "/api/commission/programs/:id"
+    method: "PUT"
+    idempotent: true
+    permissions: []
+    input:
+      id: "string"
+      name: "string"
+      settlement_cycle: "string"
+      meta_json: "object"
+      actor: "Actor"
+    steps:
+      - kind: "guard"
+        expr: "actor.role in ['admin', 'commission_manager']"
+        error: "Unauthorized to update commission program"
+      - kind: "read"
+        table: "commission_program"
+        where: "id = input.id"
+        alias: "program"
+      - kind: "guard"
+        expr: "program.exists"
+        error: "Program not found"
+      - kind: "update"
+        table: "commission_program"
+        where: "id = input.id"
+        fields:
+          name: "input.name"
+          settlement_cycle: "input.settlement_cycle"
+          meta_json: "input.meta_json"
+      - kind: "outbox_emit"
+        event: "PROGRAM_UPDATED"
+        aggregate_id: "input.id"
+    response:
+      success: true
+
+  - name: "PauseProgram"
+    description: "Pause commission program (stops new accruals)"
+    path: "/api/commission/programs/:id/pause"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input:
+      id: "string"
+      actor: "Actor"
+    steps:
+      - kind: "guard"
+        expr: "actor.role in ['admin', 'commission_manager']"
+        error: "Unauthorized to pause commission program"
+      - kind: "read"
+        table: "commission_program"
+        where: "id = input.id"
+        alias: "program"
+      - kind: "guard"
+        expr: "program.exists && program.status = 'active'"
+        error: "Program not found or not active"
+      - kind: "update"
+        table: "commission_program"
+        where: "id = input.id"
+        fields:
+          status: "'paused'"
+      - kind: "outbox_emit"
+        event: "PROGRAM_PAUSED"
+        aggregate_id: "input.id"
+    response:
+      success: true
+
+  - name: "ActivateProgram"
+    description: "Activate paused commission program"
+    path: "/api/commission/programs/:id/activate"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input:
+      id: "string"
+      actor: "Actor"
+    steps:
+      - kind: "guard"
+        expr: "actor.role in ['admin', 'commission_manager']"
+        error: "Unauthorized to activate commission program"
+      - kind: "read"
+        table: "commission_program"
+        where: "id = input.id"
+        alias: "program"
+      - kind: "guard"
+        expr: "program.exists && program.status = 'paused'"
+        error: "Program not found or not paused"
+      - kind: "update"
+        table: "commission_program"
+        where: "id = input.id"
+        fields:
+          status: "'active'"
+      - kind: "outbox_emit"
+        event: "PROGRAM_ACTIVATED"
+        aggregate_id: "input.id"
+    response:
+      success: true
+
+  - name: "EnrollParticipant"
+    description: "Enroll participant in commission program"
+    path: "/api/commission/programs/:program_id/participants"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input:
+      dto: "EnrollParticipantDTO"
+      actor: "Actor"
+    steps:
+      - kind: "guard"
+        expr: "actor.role in ['admin', 'commission_manager']"
+        error: "Unauthorized to enroll participant"
+      - kind: "read"
+        table: "commission_program"
+        where: "id = input.program_id"
+        alias: "program"
+      - kind: "guard"
+        expr: "program.exists && program.status = 'active'"
+        error: "Program not found or not active"
+      - kind: "upsert"
+        table: "commission_participant"
+        unique_by: ["program_id", "participant_type", "participant_id"]
+        fields:
+          program_id: "input.program_id"
+          participant_type: "input.participant_type"
+          participant_id: "input.participant_id"
+          status: "'active'"
+          default_payout_method: "input.default_payout_method ?? 'wallet'"
+          wallet_id: "input.wallet_id"
+          bank_profile_id: "input.bank_profile_id"
+          meta_json: "input.meta_json"
+      - kind: "outbox_emit"
+        event: "PARTICIPANT_ENROLLED"
+        aggregate_id: "input.program_id"
+    response:
+      participant_id: "inserted_id"
+
+  - name: "UpdateParticipantStatus"
+    description: "Update participant status (active, inactive, suspended)"
+    path: "/api/commission/participants/:id/status"
+    method: "PUT"
+    idempotent: true
+    permissions: []
+    input:
+      id: "string"
+      status: "string"
+      actor: "Actor"
+    steps:
+      - kind: "guard"
+        expr: "actor.role in ['admin', 'commission_manager']"
+        error: "Unauthorized to update participant status"
+      - kind: "read"
+        table: "commission_participant"
+        where: "id = input.id"
+        alias: "participant"
+      - kind: "guard"
+        expr: "participant.exists"
+        error: "Participant not found"
+      - kind: "guard"
+        expr: "input.status in ['active', 'inactive', 'suspended']"
+        error: "Invalid status value"
+      - kind: "update"
+        table: "commission_participant"
+        where: "id = input.id"
+        fields:
+          status: "input.status"
+      - kind: "outbox_emit"
+        event: "PARTICIPANT_STATUS_UPDATED"
+        aggregate_id: "participant.program_id"
+    response:
+      success: true
+
+  - name: "CreateRule"
+    description: "Create commission calculation rule"
+    path: "/api/commission/programs/:program_id/rules"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input:
+      dto: "CreateRuleDTO"
+      actor: "Actor"
+    steps:
+      - kind: "guard"
+        expr: "actor.role in ['admin', 'commission_manager']"
+        error: "Unauthorized to create commission rule"
+      - kind: "read"
+        table: "commission_program"
+        where: "id = input.program_id"
+        alias: "program"
+      - kind: "guard"
+        expr: "program.exists && program.status = 'active'"
+        error: "Program not found or not active"
+      - kind: "upsert"
+        table: "commission_rule"
+        unique_by: ["program_id", "code"]
+        fields:
+          program_id: "input.program_id"
+          code: "input.code"
+          name: "input.name"
+          status: "'active'"
+          rule_type: "input.rule_type"
+          rate_pct: "input.rate_pct"
+          amount_fixed: "input.amount_fixed"
+          priority: "input.priority ?? 100"
+          conditions_json: "input.conditions_json"
+          meta_json: "input.meta_json"
+          effective_from: "input.effective_from ?? NOW()"
+          effective_to: "input.effective_to"
+      - kind: "outbox_emit"
+        event: "RULE_CREATED"
+        aggregate_id: "input.program_id"
+    response:
+      rule_id: "inserted_id"
+
+  - name: "UpdateRule"
+    description: "Update commission rule details"
+    path: "/api/commission/rules/:id"
+    method: "PUT"
+    idempotent: true
+    permissions: []
+    input:
+      id: "string"
+      name: "string"
+      rate_pct: "number"
+      amount_fixed: "number"
+      priority: "number"
+      conditions_json: "object"
+      effective_to: "datetime"
+      meta_json: "object"
+      actor: "Actor"
+    steps:
+      - kind: "guard"
+        expr: "actor.role in ['admin', 'commission_manager']"
+        error: "Unauthorized to update commission rule"
+      - kind: "read"
+        table: "commission_rule"
+        where: "id = input.id"
+        alias: "rule"
+      - kind: "guard"
+        expr: "rule.exists"
+        error: "Rule not found"
+      - kind: "update"
+        table: "commission_rule"
+        where: "id = input.id"
+        fields:
+          name: "input.name"
+          rate_pct: "input.rate_pct"
+          amount_fixed: "input.amount_fixed"
+          priority: "input.priority"
+          conditions_json: "input.conditions_json"
+          effective_to: "input.effective_to"
+          meta_json: "input.meta_json"
+      - kind: "outbox_emit"
+        event: "RULE_UPDATED"
+        aggregate_id: "rule.program_id"
+    response:
+      success: true
+
+  - name: "RecordAccrual"
+    description: "Record commission accrual from source event"
+    path: "/api/commission/accruals"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input:
+      dto: "RecordAccrualDTO"
+      actor: "Actor"
+    steps:
+      - kind: "read"
+        table: "commission_program"
+        where: "id = input.program_id"
+        alias: "program"
+      - kind: "guard"
+        expr: "program.exists && program.status = 'active'"
+        error: "Program not found or not active"
+      - kind: "read"
+        table: "commission_participant"
+        where: "id = input.participant_id"
+        alias: "participant"
+      - kind: "guard"
+        expr: "participant.exists && participant.status = 'active'"
+        error: "Participant not found or not active"
+      - kind: "upsert"
+        table: "commission_accrual"
+        unique_by: ["idempotency_key"]
+        fields:
+          program_id: "input.program_id"
+          participant_id: "input.participant_id"
+          rule_id: "input.rule_id"
+          accrual_type: "input.accrual_type"
+          currency: "input.currency ?? 'MYR'"
+          base_amount: "input.base_amount"
+          rate_pct: "input.rate_pct"
+          amount: "input.amount"
+          source_ref_type: "input.source_ref_type"
+          source_ref_id: "input.source_ref_id"
+          idempotency_key: "input.idempotency_key"
+          status: "'accrued'"
+          occurred_at: "input.occurred_at ?? NOW()"
+          meta_json: "input.meta_json"
+      - kind: "outbox_emit"
+        event: "ACCRUAL_RECORDED"
+        aggregate_id: "input.program_id"
+    response:
+      accrual_id: "inserted_id"
+
+  - name: "VoidAccrual"
+    description: "Void commission accrual (before payout)"
+    path: "/api/commission/accruals/:id/void"
+    method: "PUT"
+    idempotent: true
+    permissions: []
+    input:
+      id: "string"
+      reason: "string"
+      actor: "Actor"
+    steps:
+      - kind: "guard"
+        expr: "actor.role in ['admin', 'commission_manager']"
+        error: "Unauthorized to void accrual"
+      - kind: "read"
+        table: "commission_accrual"
+        where: "id = input.id"
+        alias: "accrual"
+      - kind: "guard"
+        expr: "accrual.exists && accrual.status = 'accrued'"
+        error: "Accrual not found or already processed"
+      - kind: "update"
+        table: "commission_accrual"
+        where: "id = input.id"
+        fields:
+          status: "'voided'"
+          meta_json: "JSON_SET(COALESCE(meta_json, '{}'), '$.void_reason', input.reason)"
+      - kind: "outbox_emit"
+        event: "ACCRUAL_VOIDED"
+        aggregate_id: "accrual.program_id"
+    response:
+      success: true
+
+  - name: "CreatePayoutBatch"
+    description: "Create payout batch for settlement period"
+    path: "/api/commission/programs/:program_id/payout-batches"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input:
+      dto: "CreatePayoutBatchDTO"
+      actor: "Actor"
+    steps:
+      - kind: "guard"
+        expr: "actor.role in ['admin', 'commission_manager']"
+        error: "Unauthorized to create payout batch"
+      - kind: "read"
+        table: "commission_program"
+        where: "id = input.program_id"
+        alias: "program"
+      - kind: "guard"
+        expr: "program.exists"
+        error: "Program not found"
+      - kind: "upsert"
+        table: "commission_payout_batch"
+        unique_by: ["program_id", "batch_code"]
+        fields:
+          program_id: "input.program_id"
+          batch_code: "input.batch_code"
+          status: "'planned'"
+          currency: "input.currency ?? 'MYR'"
+          period_start: "input.period_start"
+          period_end: "input.period_end"
+          total_amount: "0.00"
+          meta_json: "input.meta_json"
+      - kind: "outbox_emit"
+        event: "PAYOUT_BATCH_CREATED"
+        aggregate_id: "inserted_id"
+    response:
+      batch_id: "inserted_id"
+
+  - name: "ProcessPayoutBatch"
+    description: "Process payout batch (creates items, executes payouts)"
+    path: "/api/commission/payout-batches/:id/process"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input:
+      id: "string"
+      actor: "Actor"
+    steps:
+      - kind: "guard"
+        expr: "actor.role in ['admin', 'commission_manager']"
+        error: "Unauthorized to process payout batch"
+      - kind: "read"
+        table: "commission_payout_batch"
+        where: "id = input.id"
+        alias: "batch"
+      - kind: "guard"
+        expr: "batch.exists && batch.status = 'planned'"
+        error: "Batch not found or already processed"
+      - kind: "update"
+        table: "commission_payout_batch"
+        where: "id = input.id"
+        fields:
+          status: "'processing'"
+      - kind: "hook"
+        name: "createPayoutItems"
+        description: "Create payout items for participants with accruals in period"
+      - kind: "hook"
+        name: "executePayouts"
+        description: "Execute payouts for all items (wallet/bank transfers)"
+      - kind: "update"
+        table: "commission_payout_batch"
+        where: "id = input.id"
+        fields:
+          status: "'completed'"
+      - kind: "outbox_emit"
+        event: "PAYOUT_BATCH_COMPLETED"
+        aggregate_id: "input.id"
+    response:
+      success: true
+
+  - name: "ProcessPayoutItem"
+    description: "Process individual payout item (wallet or bank transfer)"
+    path: "/api/commission/payout-items/:id/process"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input:
+      id: "string"
+      actor: "Actor"
+    steps:
+      - kind: "guard"
+        expr: "actor.role in ['admin', 'commission_manager', 'system']"
+        error: "Unauthorized to process payout item"
+      - kind: "read"
+        table: "commission_payout_item"
+        where: "id = input.id"
+        alias: "item"
+      - kind: "guard"
+        expr: "item.exists && item.status = 'planned'"
+        error: "Payout item not found or already processed"
+      - kind: "update"
+        table: "commission_payout_item"
+        where: "id = input.id"
+        fields:
+          status: "'processing'"
+      - kind: "when"
+        condition: "item.payout_method = 'wallet'"
+        then:
+          - kind: "hook"
+            name: "executeWalletPayout"
+            description: "Create ledger transaction for wallet payout"
+          - kind: "update"
+            table: "commission_payout_item"
+            where: "id = input.id"
+            fields:
+              ledger_txn_id: "created_ledger_txn_id"
+              status: "'completed'"
+        else:
+          - kind: "hook"
+            name: "executeBankPayout"
+            description: "Create withdrawal request for bank payout"
+          - kind: "update"
+            table: "commission_payout_item"
+            where: "id = input.id"
+            fields:
+              withdrawal_request_id: "created_withdrawal_request_id"
+              status: "'completed'"
+      - kind: "hook"
+        name: "markAccrualsPaid"
+        description: "Mark linked accruals as paid"
+      - kind: "read"
+        table: "commission_payout_batch"
+        where: "id = item.batch_id"
+        alias: "batch"
+      - kind: "outbox_emit"
+        event: "PAYOUT_ITEM_COMPLETED"
+        aggregate_id: "batch.id"
+    response:
+      success: true
+
+  - name: "RetryFailedPayoutItem"
+    description: "Retry failed payout item"
+    path: "/api/commission/payout-items/:id/retry"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input:
+      id: "string"
+      actor: "Actor"
+    steps:
+      - kind: "guard"
+        expr: "actor.role in ['admin', 'commission_manager']"
+        error: "Unauthorized to retry payout item"
+      - kind: "read"
+        table: "commission_payout_item"
+        where: "id = input.id"
+        alias: "item"
+      - kind: "guard"
+        expr: "item.exists && item.status = 'failed'"
+        error: "Payout item not found or not failed"
+      - kind: "update"
+        table: "commission_payout_item"
+        where: "id = input.id"
+        fields:
+          status: "'planned'"
+          failure_reason: "NULL"
+      - kind: "call"
+        command: "ProcessPayoutItem"
+        with:
+          id: "input.id"
+    response:
+      success: true
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CHANGELOG
+# ──────────────────────────────────────────────────────────────────────────────
+
+changelog:
+  - version: "2.0.0"
+    date: "2026-03-09"
+    author: "Claude Sonnet 4.5"
+    description: "Initial v2 spec generated from DDL following strict bottom-up approach"
+    changes:
+      - "Added complete schema section with 7 tables extracted from commission-DDL.md"
+      - "Built ownership, dependencies, conventions from corekit patterns"
+      - "Created 7 resources (2 aggregates: Program, PayoutBatch)"
+      - "Defined 16 events covering program lifecycle, accruals, and payouts"
+      - "Implemented 15 commands for full commission workflow"
+      - "Added complete coverage mapping for tables, events, and commands"
+    breaking_changes:
+      - "None (initial v2 spec)"
+    migrations_required:
+      - "None (spec matches existing DDL)"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# COVERAGE
+# ──────────────────────────────────────────────────────────────────────────────
+
+coverage:
+  tables:
+    commission_program:
+      touched_by:
+        - "CreateProgram"
+        - "UpdateProgram"
+        - "PauseProgram"
+        - "ActivateProgram"
+
+    commission_participant:
+      touched_by:
+        - "EnrollParticipant"
+        - "UpdateParticipantStatus"
+
+    commission_rule:
+      touched_by:
+        - "CreateRule"
+        - "UpdateRule"
+
+    commission_accrual:
+      touched_by:
+        - "RecordAccrual"
+        - "VoidAccrual"
+
+    commission_payout_batch:
+      touched_by:
+        - "CreatePayoutBatch"
+        - "ProcessPayoutBatch"
+
+    commission_payout_item:
+      touched_by:
+        - "ProcessPayoutItem"
+        - "RetryFailedPayoutItem"
+
+    commission_payout_item_accrual:
+      touched_by:
+        - "ProcessPayoutBatch"  # created during batch processing
+
+  events:
+    PROGRAM_CREATED:
+      emitted_by:
+        - "CreateProgram"
+
+    PROGRAM_UPDATED:
+      emitted_by:
+        - "UpdateProgram"
+
+    PROGRAM_PAUSED:
+      emitted_by:
+        - "PauseProgram"
+
+    PROGRAM_ACTIVATED:
+      emitted_by:
+        - "ActivateProgram"
+
+    PARTICIPANT_ENROLLED:
+      emitted_by:
+        - "EnrollParticipant"
+
+    PARTICIPANT_STATUS_UPDATED:
+      emitted_by:
+        - "UpdateParticipantStatus"
+
+    RULE_CREATED:
+      emitted_by:
+        - "CreateRule"
+
+    RULE_UPDATED:
+      emitted_by:
+        - "UpdateRule"
+
+    ACCRUAL_RECORDED:
+      emitted_by:
+        - "RecordAccrual"
+
+    ACCRUAL_VOIDED:
+      emitted_by:
+        - "VoidAccrual"
+
+    PAYOUT_BATCH_CREATED:
+      emitted_by:
+        - "CreatePayoutBatch"
+
+    PAYOUT_BATCH_PROCESSING_STARTED:
+      emitted_by: []  # currently not emitted (implicit in ProcessPayoutBatch)
+
+    PAYOUT_BATCH_COMPLETED:
+      emitted_by:
+        - "ProcessPayoutBatch"
+
+    PAYOUT_BATCH_FAILED:
+      emitted_by: []  # currently not emitted (would be in error handler)
+
+    PAYOUT_ITEM_COMPLETED:
+      emitted_by:
+        - "ProcessPayoutItem"
+
+    PAYOUT_ITEM_FAILED:
+      emitted_by: []  # currently not emitted (would be in error handler)

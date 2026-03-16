@@ -1,0 +1,788 @@
+name: notification
+version: v2
+description: Multi-channel notification system with delivery tracking, templates, scheduling, and user preferences
+
+################################################################################
+# SCHEMA
+################################################################################
+schema:
+  notification_message:
+    columns:
+      id: { type: bigint, pk: true, ai: true }
+      message_key: { type: varchar(120), null: false }
+      template_id: { type: bigint, null: false }
+      account_id: { type: bigint, null: false }
+      person_id: { type: bigint, null: true }
+      channel: { type: varchar(20), null: false }
+      destination: { type: varchar(191), null: true }
+      status: { type: varchar(20), null: false, default: queued }
+      max_attempts: { type: int, null: false, default: 5 }
+      attempt_count: { type: int, null: false, default: 0 }
+      trigger_event_id: { type: varchar(60), null: true }
+      trigger_event_type: { type: varchar(120), null: true }
+      payload_vars: { type: json, null: true }
+      scheduled_for: { type: datetime, null: true }
+      sent_at: { type: datetime, null: true }
+      created_at: { type: datetime, null: false, default: CURRENT_TIMESTAMP }
+      updated_at: { type: datetime, null: false, default: CURRENT_TIMESTAMP, on_update: CURRENT_TIMESTAMP }
+    unique_keys:
+      - [message_key]
+    indexes:
+      - name: idx_message_status
+        columns: [status, scheduled_for]
+      - name: idx_message_account
+        columns: [account_id]
+      - name: idx_message_template
+        columns: [template_id]
+    foreign_keys:
+      - column: template_id
+        references: notification_template.id
+        on_delete: RESTRICT
+        on_update: RESTRICT
+
+  notification_delivery_attempt:
+    columns:
+      id: { type: bigint, pk: true, ai: true }
+      message_id: { type: bigint, null: false }
+      attempt_no: { type: int, null: false }
+      provider: { type: varchar(40), null: false }
+      status: { type: varchar(20), null: false, default: sending }
+      provider_ref: { type: varchar(120), null: true }
+      error_code: { type: varchar(60), null: true }
+      error_message: { type: text, null: true }
+      provider_payload: { type: json, null: true }
+      started_at: { type: datetime, null: false, default: CURRENT_TIMESTAMP }
+      finished_at: { type: datetime, null: true }
+    indexes:
+      - name: idx_attempt_message
+        columns: [message_id, attempt_no]
+      - name: idx_attempt_status
+        columns: [status]
+      - name: idx_attempt_provider_ref
+        columns: [provider_ref]
+    foreign_keys:
+      - column: message_id
+        references: notification_message.id
+        on_delete: RESTRICT
+        on_update: RESTRICT
+
+  notification_template:
+    columns:
+      id: { type: bigint, pk: true, ai: true }
+      code: { type: varchar(80), null: false }
+      name: { type: varchar(160), null: false }
+      channel: { type: varchar(20), null: false }
+      locale: { type: varchar(10), null: false, default: en }
+      subject_tpl: { type: text, null: true }
+      body_tpl: { type: mediumtext, null: false }
+      variables_schema_json: { type: json, null: true }
+      status: { type: varchar(20), null: false, default: active }
+      version: { type: varchar(40), null: false, default: v1 }
+      created_at: { type: datetime, null: false, default: CURRENT_TIMESTAMP }
+      updated_at: { type: datetime, null: false, default: CURRENT_TIMESTAMP, on_update: CURRENT_TIMESTAMP }
+    unique_keys:
+      - [code, version, locale, channel]
+    indexes:
+      - name: idx_template_code
+        columns: [code]
+      - name: idx_template_status
+        columns: [status]
+
+  notification_schedule:
+    columns:
+      id: { type: bigint, pk: true, ai: true }
+      message_id: { type: bigint, null: false }
+      schedule_type: { type: varchar(20), null: false }
+      step_no: { type: int, null: false, default: 1 }
+      delay_minutes: { type: int, null: false, default: 0 }
+      status: { type: varchar(20), null: false, default: pending }
+      fire_at: { type: datetime, null: false }
+      fired_at: { type: datetime, null: true }
+      meta: { type: json, null: true }
+    indexes:
+      - name: idx_schedule_fire
+        columns: [status, fire_at]
+      - name: idx_schedule_message
+        columns: [message_id]
+    foreign_keys:
+      - column: message_id
+        references: notification_message.id
+        on_delete: RESTRICT
+        on_update: RESTRICT
+
+  notification_preference:
+    columns:
+      id: { type: bigint, pk: true, ai: true }
+      account_id: { type: bigint, null: false }
+      person_id: { type: bigint, null: true }
+      status: { type: varchar(20), null: false, default: active }
+      quiet_hours: { type: json, null: true }
+      meta: { type: json, null: true }
+      created_at: { type: datetime, null: false, default: CURRENT_TIMESTAMP }
+      updated_at: { type: datetime, null: false, default: CURRENT_TIMESTAMP, on_update: CURRENT_TIMESTAMP }
+    unique_keys:
+      - [account_id, person_id]
+    indexes:
+      - name: idx_pref_status
+        columns: [status]
+
+  notification_channel_preference:
+    columns:
+      id: { type: bigint, pk: true, ai: true }
+      preference_id: { type: bigint, null: false }
+      channel: { type: varchar(20), null: false }
+      enabled: { type: tinyint(1), null: false, default: 1 }
+      destination: { type: varchar(191), null: true }
+      priority: { type: int, null: false, default: 1 }
+      meta: { type: json, null: true }
+      created_at: { type: datetime, null: false, default: CURRENT_TIMESTAMP }
+    unique_keys:
+      - [preference_id, channel]
+    indexes:
+      - name: idx_channel_enabled
+        columns: [channel, enabled]
+    foreign_keys:
+      - column: preference_id
+        references: notification_preference.id
+        on_delete: RESTRICT
+        on_update: RESTRICT
+
+################################################################################
+# OWNERSHIP
+################################################################################
+ownership:
+  owned_tables:
+    - notification_message
+    - notification_delivery_attempt
+    - notification_template
+    - notification_schedule
+    - notification_preference
+    - notification_channel_preference
+  readonly_tables: []
+
+################################################################################
+# DEPENDENCIES
+################################################################################
+dependencies:
+  internal: []
+  external: []
+
+################################################################################
+# RESOURCES
+################################################################################
+resources:
+  aggregates:
+    - notification_message      # Root: message lifecycle (queued → sending → sent/failed)
+    - notification_template     # Root: template management (active/inactive)
+    - notification_schedule     # Root: schedule lifecycle (pending → fired/cancelled)
+    - notification_preference   # Root: preference management (active/inactive)
+
+  resources:
+    - notification_delivery_attempt    # Resource: delivery attempts for messages
+    - notification_channel_preference  # Resource: channel preferences
+
+################################################################################
+# AGGREGATES
+################################################################################
+aggregates:
+  notification_message:
+    root_table: notification_message
+    states:
+      - queued      # Message created and waiting to be sent
+      - sending     # Currently being sent
+      - sent        # Successfully delivered
+      - failed      # All attempts exhausted
+      - cancelled   # Message cancelled before sending
+
+  notification_template:
+    root_table: notification_template
+    states:
+      - active      # Template is active and can be used
+      - inactive    # Template is disabled
+      - archived    # Template is archived (old version)
+
+  notification_schedule:
+    root_table: notification_schedule
+    states:
+      - pending     # Waiting for fire time
+      - fired       # Schedule executed
+      - cancelled   # Schedule cancelled before firing
+
+  notification_preference:
+    root_table: notification_preference
+    states:
+      - active      # Preferences are active
+      - inactive    # Preferences disabled (user opted out)
+
+################################################################################
+# DTOS
+################################################################################
+dtos:
+  NotificationMessageSendRequest:
+    fields:
+      - { name: message_key, type: string, required: true, max_length: 120 }
+      - { name: template_code, type: string, required: true, max_length: 80 }
+      - { name: account_id, type: string, required: true }
+      - { name: person_id, type: string, required: false }
+      - { name: channel, type: string, required: true, max_length: 20 }
+      - { name: destination, type: string, required: false, max_length: 191 }
+      - { name: payload_vars, type: object, required: false }
+      - { name: scheduled_for, type: datetime, required: false }
+      - { name: trigger_event_id, type: string, required: false, max_length: 60 }
+      - { name: trigger_event_type, type: string, required: false, max_length: 120 }
+
+  NotificationDeliveryRecordRequest:
+    fields:
+      - { name: provider, type: string, required: true, max_length: 40 }
+      - { name: status, type: string, required: true, max_length: 20 }
+      - { name: provider_ref, type: string, required: false, max_length: 120 }
+      - { name: error_code, type: string, required: false, max_length: 60 }
+      - { name: error_message, type: string, required: false }
+      - { name: provider_payload, type: object, required: false }
+
+  NotificationTemplateCreateRequest:
+    fields:
+      - { name: code, type: string, required: true, max_length: 80 }
+      - { name: name, type: string, required: true, max_length: 160 }
+      - { name: channel, type: string, required: true, max_length: 20 }
+      - { name: locale, type: string, required: false, max_length: 10, default: en }
+      - { name: subject_tpl, type: string, required: false }
+      - { name: body_tpl, type: string, required: true }
+      - { name: variables_schema_json, type: object, required: false }
+      - { name: version, type: string, required: false, max_length: 40, default: v1 }
+
+  NotificationScheduleCreateRequest:
+    fields:
+      - { name: schedule_type, type: string, required: true, max_length: 20 }
+      - { name: step_no, type: number, required: false, default: 1 }
+      - { name: delay_minutes, type: number, required: false, default: 0 }
+      - { name: fire_at, type: datetime, required: true }
+      - { name: meta, type: object, required: false }
+
+  NotificationPreferenceUpdateRequest:
+    fields:
+      - { name: status, type: string, required: false, max_length: 20 }
+      - { name: quiet_hours, type: object, required: false }
+      - { name: meta, type: object, required: false }
+
+  NotificationChannelPreferenceSetRequest:
+    fields:
+      - { name: channel, type: string, required: true, max_length: 20 }
+      - { name: enabled, type: boolean, required: true }
+      - { name: destination, type: string, required: false, max_length: 191 }
+      - { name: priority, type: number, required: false, default: 1 }
+      - { name: meta, type: object, required: false }
+
+################################################################################
+# EVENTS
+################################################################################
+events:
+  - name: NotificationMessage.Sent
+    description: Notification message queued for sending
+    payload:
+      - message_id
+      - message_key
+      - channel
+      - template_code
+      - account_id
+
+  - name: NotificationMessage.Delivered
+    description: Notification successfully delivered
+    payload:
+      - message_id
+      - attempt_no
+      - provider
+      - provider_ref
+
+  - name: NotificationMessage.Failed
+    description: Notification delivery failed (all attempts exhausted)
+    payload:
+      - message_id
+      - attempt_count
+      - last_error_code
+      - last_error_message
+
+  - name: NotificationMessage.Cancelled
+    description: Notification message cancelled
+    payload:
+      - message_id
+      - reason
+
+  - name: NotificationDelivery.Attempted
+    description: Delivery attempt recorded
+    payload:
+      - message_id
+      - attempt_no
+      - provider
+      - status
+
+  - name: NotificationTemplate.Created
+    description: Notification template created
+    payload:
+      - template_id
+      - code
+      - version
+      - channel
+
+  - name: NotificationTemplate.Updated
+    description: Notification template updated
+    payload:
+      - template_id
+      - code
+      - version
+
+  - name: NotificationTemplate.Deactivated
+    description: Notification template deactivated
+    payload:
+      - template_id
+      - code
+
+  - name: NotificationSchedule.Created
+    description: Scheduled notification created
+    payload:
+      - schedule_id
+      - message_id
+      - fire_at
+
+  - name: NotificationSchedule.Fired
+    description: Scheduled notification executed
+    payload:
+      - schedule_id
+      - message_id
+
+  - name: NotificationSchedule.Cancelled
+    description: Scheduled notification cancelled
+    payload:
+      - schedule_id
+      - reason
+
+  - name: NotificationPreference.Updated
+    description: User notification preference updated
+    payload:
+      - preference_id
+      - account_id
+      - status
+
+  - name: NotificationChannelPreference.Set
+    description: Channel preference configured
+    payload:
+      - preference_id
+      - channel
+      - enabled
+
+################################################################################
+# COMMANDS
+################################################################################
+commands:
+  # ============================================================================
+  # NOTIFICATION MESSAGE COMMANDS
+  # ============================================================================
+
+  - name: NotificationMessage.Send
+    description: Queue a notification message for delivery
+    http_method: POST
+    http_path: /v1/notifications/send
+    idempotency: Via UNIQUE(message_key)
+    request_dto: NotificationMessageSendRequest
+    workflow:
+      guard:
+        - Find template by code and channel
+        - Verify template is active
+        - Check user preferences (if person_id provided)
+        - Apply quiet hours rules
+      write:
+        - Look up template_id by code
+        - INSERT INTO notification_message with status='queued'
+        - Upsert by message_key for idempotency
+      emit:
+        - NotificationMessage.Sent
+      commit: true
+    response:
+      - message_id
+      - status
+      - scheduled_for
+
+  - name: NotificationMessage.ProcessNext
+    description: Pick next queued message and attempt delivery
+    http_method: POST
+    http_path: /v1/notifications/process-next
+    idempotency: Via pessimistic locking
+    workflow:
+      guard:
+        - SELECT message WHERE status='queued' AND scheduled_for <= NOW()
+        - Lock row for update
+        - Check attempt_count < max_attempts
+      write:
+        - UPDATE notification_message SET status='sending'
+        - INSERT INTO notification_delivery_attempt with status='sending'
+        - Increment attempt_count
+      emit:
+        - NotificationDelivery.Attempted
+      commit: true
+    response:
+      - message_id
+      - attempt_no
+      - template_data
+
+  - name: NotificationMessage.MarkSent
+    description: Mark message as successfully sent
+    http_method: POST
+    http_path: /v1/notifications/{message_id}/mark-sent
+    idempotency: Via message state check
+    workflow:
+      guard:
+        - Verify message exists
+        - Verify current status is 'sending'
+      write:
+        - UPDATE notification_message SET status='sent', sent_at=NOW()
+      emit:
+        - NotificationMessage.Delivered
+      commit: true
+    response:
+      - success
+
+  - name: NotificationMessage.MarkFailed
+    description: Mark message as failed after exhausting attempts
+    http_method: POST
+    http_path: /v1/notifications/{message_id}/mark-failed
+    idempotency: Via message state check
+    workflow:
+      guard:
+        - Verify message exists
+        - Verify current status is 'sending'
+        - Verify attempt_count >= max_attempts
+      write:
+        - UPDATE notification_message SET status='failed'
+      emit:
+        - NotificationMessage.Failed
+      commit: true
+    response:
+      - success
+
+  - name: NotificationMessage.Retry
+    description: Reset message to queued for retry
+    http_method: POST
+    http_path: /v1/notifications/{message_id}/retry
+    idempotency: Via message state check
+    workflow:
+      guard:
+        - Verify message exists
+        - Verify current status is 'failed' or 'sending'
+      write:
+        - UPDATE notification_message SET status='queued', attempt_count=0
+      emit:
+        - NotificationMessage.Sent (retry)
+      commit: true
+    response:
+      - success
+
+  - name: NotificationMessage.Cancel
+    description: Cancel a queued or scheduled message
+    http_method: POST
+    http_path: /v1/notifications/{message_id}/cancel
+    idempotency: Via message state check
+    workflow:
+      guard:
+        - Verify message exists
+        - Verify current status is 'queued'
+      write:
+        - UPDATE notification_message SET status='cancelled'
+        - UPDATE notification_schedule SET status='cancelled' WHERE message_id
+      emit:
+        - NotificationMessage.Cancelled
+      commit: true
+    response:
+      - success
+
+  # ============================================================================
+  # NOTIFICATION DELIVERY COMMANDS
+  # ============================================================================
+
+  - name: NotificationDelivery.Record
+    description: Record delivery attempt result
+    http_method: POST
+    http_path: /v1/notifications/{message_id}/attempts
+    idempotency: Via Idempotency-Key header
+    request_dto: NotificationDeliveryRecordRequest
+    workflow:
+      guard:
+        - Verify message exists
+        - Get current attempt_no from message
+      write:
+        - UPDATE notification_delivery_attempt SET status, finished_at, provider_ref, error_code, error_message
+        - If status='sent': UPDATE message SET status='sent', sent_at=NOW()
+        - If status='failed' AND attempt_count < max_attempts: UPDATE message SET status='queued'
+        - If status='failed' AND attempt_count >= max_attempts: UPDATE message SET status='failed'
+      emit:
+        - NotificationDelivery.Attempted
+        - NotificationMessage.Delivered (if sent)
+        - NotificationMessage.Failed (if exhausted)
+      commit: true
+    response:
+      - attempt_id
+      - message_status
+
+  # ============================================================================
+  # NOTIFICATION TEMPLATE COMMANDS
+  # ============================================================================
+
+  - name: NotificationTemplate.Create
+    description: Create a new notification template
+    http_method: POST
+    http_path: /v1/notification-templates
+    idempotency: Via UNIQUE(code, version, locale, channel)
+    request_dto: NotificationTemplateCreateRequest
+    workflow:
+      guard:
+        - Validate template syntax (Mustache/Handlebars)
+        - Validate variables_schema_json if provided
+      write:
+        - INSERT INTO notification_template with status='active'
+        - Upsert by (code, version, locale, channel)
+      emit:
+        - NotificationTemplate.Created
+      commit: true
+    response:
+      - template_id
+
+  - name: NotificationTemplate.Update
+    description: Update existing template (creates new version)
+    http_method: PUT
+    http_path: /v1/notification-templates/{template_id}
+    idempotency: Via template versioning
+    request_dto: NotificationTemplateCreateRequest
+    workflow:
+      guard:
+        - Verify template exists
+        - Auto-increment version number
+      write:
+        - UPDATE old template SET status='archived'
+        - INSERT new template with incremented version
+      emit:
+        - NotificationTemplate.Updated
+      commit: true
+    response:
+      - template_id
+      - new_version
+
+  - name: NotificationTemplate.Deactivate
+    description: Deactivate a template
+    http_method: POST
+    http_path: /v1/notification-templates/{template_id}/deactivate
+    idempotency: Via state check
+    workflow:
+      guard:
+        - Verify template exists
+        - Verify status is 'active'
+      write:
+        - UPDATE notification_template SET status='inactive'
+      emit:
+        - NotificationTemplate.Deactivated
+      commit: true
+    response:
+      - success
+
+  - name: NotificationTemplate.Activate
+    description: Activate an inactive template
+    http_method: POST
+    http_path: /v1/notification-templates/{template_id}/activate
+    idempotency: Via state check
+    workflow:
+      guard:
+        - Verify template exists
+        - Verify status is 'inactive'
+      write:
+        - UPDATE notification_template SET status='active'
+      emit:
+        - NotificationTemplate.Created (reactivated)
+      commit: true
+    response:
+      - success
+
+  # ============================================================================
+  # NOTIFICATION SCHEDULE COMMANDS
+  # ============================================================================
+
+  - name: NotificationSchedule.Create
+    description: Schedule a notification for future delivery
+    http_method: POST
+    http_path: /v1/notifications/{message_id}/schedules
+    idempotency: Via Idempotency-Key header
+    request_dto: NotificationScheduleCreateRequest
+    workflow:
+      guard:
+        - Verify message exists
+        - Verify fire_at is in the future
+      write:
+        - INSERT INTO notification_schedule with status='pending'
+      emit:
+        - NotificationSchedule.Created
+      commit: true
+    response:
+      - schedule_id
+
+  - name: NotificationSchedule.Fire
+    description: Execute a scheduled notification
+    http_method: POST
+    http_path: /v1/notification-schedules/{schedule_id}/fire
+    idempotency: Via state check
+    workflow:
+      guard:
+        - Verify schedule exists
+        - Verify status is 'pending'
+        - Verify fire_at <= NOW()
+      write:
+        - UPDATE notification_schedule SET status='fired', fired_at=NOW()
+        - UPDATE notification_message SET status='queued' (trigger sending)
+      emit:
+        - NotificationSchedule.Fired
+      commit: true
+    response:
+      - success
+
+  - name: NotificationSchedule.Cancel
+    description: Cancel a pending schedule
+    http_method: POST
+    http_path: /v1/notification-schedules/{schedule_id}/cancel
+    idempotency: Via state check
+    workflow:
+      guard:
+        - Verify schedule exists
+        - Verify status is 'pending'
+      write:
+        - UPDATE notification_schedule SET status='cancelled'
+      emit:
+        - NotificationSchedule.Cancelled
+      commit: true
+    response:
+      - success
+
+  # ============================================================================
+  # NOTIFICATION PREFERENCE COMMANDS
+  # ============================================================================
+
+  - name: NotificationPreference.Get
+    description: Get or create notification preference for account/person
+    http_method: GET
+    http_path: /v1/notification-preferences
+    idempotency: N/A (read-only)
+    query_params:
+      - account_id
+      - person_id (optional)
+    workflow:
+      guard:
+        - None
+      write:
+        - SELECT FROM notification_preference WHERE account_id AND person_id
+        - If not found: INSERT default preferences with status='active'
+      emit:
+        - None
+      commit: true
+    response:
+      - preference_id
+      - status
+      - quiet_hours
+      - channels (from notification_channel_preference)
+
+  - name: NotificationPreference.Update
+    description: Update notification preferences
+    http_method: PUT
+    http_path: /v1/notification-preferences/{preference_id}
+    idempotency: Via last-write-wins
+    request_dto: NotificationPreferenceUpdateRequest
+    workflow:
+      guard:
+        - Verify preference exists
+      write:
+        - UPDATE notification_preference SET status, quiet_hours, meta
+      emit:
+        - NotificationPreference.Updated
+      commit: true
+    response:
+      - success
+
+  - name: NotificationChannelPreference.Set
+    description: Configure channel preference (enable/disable, set destination)
+    http_method: PUT
+    http_path: /v1/notification-preferences/{preference_id}/channels/{channel}
+    idempotency: Via UNIQUE(preference_id, channel)
+    request_dto: NotificationChannelPreferenceSetRequest
+    workflow:
+      guard:
+        - Verify preference exists
+        - Validate channel type (email, sms, push, etc.)
+      write:
+        - UPSERT notification_channel_preference by (preference_id, channel)
+      emit:
+        - NotificationChannelPreference.Set
+      commit: true
+    response:
+      - success
+
+################################################################################
+# COVERAGE
+################################################################################
+coverage:
+  tables:
+    notification_message:
+      - NotificationMessage.Send (INSERT)
+      - NotificationMessage.ProcessNext (UPDATE)
+      - NotificationMessage.MarkSent (UPDATE)
+      - NotificationMessage.MarkFailed (UPDATE)
+      - NotificationMessage.Retry (UPDATE)
+      - NotificationMessage.Cancel (UPDATE)
+
+    notification_delivery_attempt:
+      - NotificationMessage.ProcessNext (INSERT)
+      - NotificationDelivery.Record (UPDATE)
+
+    notification_template:
+      - NotificationTemplate.Create (INSERT)
+      - NotificationTemplate.Update (INSERT + UPDATE)
+      - NotificationTemplate.Deactivate (UPDATE)
+      - NotificationTemplate.Activate (UPDATE)
+
+    notification_schedule:
+      - NotificationSchedule.Create (INSERT)
+      - NotificationSchedule.Fire (UPDATE)
+      - NotificationSchedule.Cancel (UPDATE)
+      - NotificationMessage.Cancel (UPDATE schedules)
+
+    notification_preference:
+      - NotificationPreference.Get (SELECT + INSERT)
+      - NotificationPreference.Update (UPDATE)
+
+    notification_channel_preference:
+      - NotificationPreference.Get (SELECT)
+      - NotificationChannelPreference.Set (UPSERT)
+
+  events:
+    NotificationMessage.Sent: [NotificationMessage.Send, NotificationMessage.Retry]
+    NotificationMessage.Delivered: [NotificationMessage.MarkSent, NotificationDelivery.Record]
+    NotificationMessage.Failed: [NotificationMessage.MarkFailed, NotificationDelivery.Record]
+    NotificationMessage.Cancelled: [NotificationMessage.Cancel]
+    NotificationDelivery.Attempted: [NotificationMessage.ProcessNext, NotificationDelivery.Record]
+    NotificationTemplate.Created: [NotificationTemplate.Create, NotificationTemplate.Activate]
+    NotificationTemplate.Updated: [NotificationTemplate.Update]
+    NotificationTemplate.Deactivated: [NotificationTemplate.Deactivate]
+    NotificationSchedule.Created: [NotificationSchedule.Create]
+    NotificationSchedule.Fired: [NotificationSchedule.Fire]
+    NotificationSchedule.Cancelled: [NotificationSchedule.Cancel]
+    NotificationPreference.Updated: [NotificationPreference.Update]
+    NotificationChannelPreference.Set: [NotificationChannelPreference.Set]
+
+################################################################################
+# CHANGELOG
+################################################################################
+changelog:
+  - version: v2.0.0
+    date: 2026-03-15
+    changes:
+      - Initial notification pillar specification
+      - 6 tables: notification_message, notification_delivery_attempt, notification_template, notification_schedule, notification_preference, notification_channel_preference
+      - 18 commands covering message lifecycle, templates, schedules, and preferences
+      - Multi-channel support (email, sms, push, etc.)
+      - Delivery retry mechanism with max_attempts
+      - Template versioning support
+      - User preference management with quiet hours
+      - Channel-specific preferences with priority

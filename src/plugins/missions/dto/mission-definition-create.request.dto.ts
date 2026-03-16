@@ -1,8 +1,9 @@
-import { IsString, IsOptional, IsInt, IsJSON, MaxLength, Min } from 'class-validator';
+import { IsString, IsOptional, IsInt, IsEnum, MaxLength, Min, IsDate } from 'class-validator';
+import { Type } from 'class-transformer';
 
 /**
  * MissionDefinition.Create Request DTO
- * Source: specs/mission/mission.pillar.yml lines 73-84 & command lines 131-176
+ * Source: specs/mission/missions.pillar.v2.yml lines 780-792
  *
  * HTTP: POST /v1/missions/definitions
  * Idempotency: Via Idempotency-Key header
@@ -13,27 +14,38 @@ export class MissionDefinitionCreateRequestDto {
   code: string;
 
   @IsString()
-  @MaxLength(200)
-  title: string;
+  @MaxLength(128)
+  name: string;
 
   @IsOptional()
   @IsString()
-  @MaxLength(5000)
+  @MaxLength(512)
   description?: string;
 
+  @IsOptional()
   @IsString()
-  cadence: string; // e.g., "one_time", "daily", "weekly"
+  @MaxLength(16)
+  scope?: string;
+
+  @IsString()
+  @MaxLength(16)
+  @IsEnum(['one_time', 'daily', 'weekly', 'monthly'])
+  cadence: string;
 
   @IsOptional()
-  starts_at?: Date;
+  @IsString()
+  @MaxLength(16)
+  trigger_type?: string;
 
   @IsOptional()
-  ends_at?: Date;
+  @Type(() => Date)
+  @IsDate()
+  start_at?: Date;
 
   @IsOptional()
-  @IsInt()
-  @Min(0)
-  max_total?: number;
+  @Type(() => Date)
+  @IsDate()
+  end_at?: Date;
 
   @IsOptional()
   @IsInt()
@@ -41,8 +53,12 @@ export class MissionDefinitionCreateRequestDto {
   max_per_user?: number;
 
   @IsOptional()
-  criteria_json?: any; // JSON object for mission criteria
+  @IsInt()
+  max_total?: number;
 
   @IsOptional()
-  reward_json?: any; // JSON object for reward configuration
+  criteria_json?: any;
+
+  @IsOptional()
+  reward_json?: any;
 }
