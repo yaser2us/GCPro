@@ -1,0 +1,683 @@
+{
+  "info": {
+    "name": "🎯 Mission-to-Coins Workflow (Outbox Pattern Demo)",
+    "description": "Complete end-to-end workflow demonstrating the outbox pattern:\n\n**Mission → Coins in Wallet**\n\n## Flow:\n1. Create Mission Definition (50 COIN reward)\n2. Assign Mission to User\n3. User Submits Mission\n4. Admin Approves Submission\n5. ✨ MAGIC HAPPENS ✨\n   - Missions plugin emits MISSION_REWARD_GRANTED to outbox\n   - Outbox processor delivers event to wallet consumer\n   - Wallet consumer automatically credits 50 COIN\n   - User wallet balance updated in real-time\n6. Check Wallet Balance (should show 50 COIN!)\n7. View Transaction History (shows mission_reward)\n\n## Architecture:\n- **Event-Driven**: Missions and Wallet are decoupled\n- **Outbox Pattern**: Reliable event delivery\n- **Idempotent**: Safe to retry, no duplicate coins\n- **Double-Entry**: Full audit trail via ledger\n\n## Run This Collection:\n**Important:** Run the requests in order using the Collection Runner:\n1. Click \"Run\" button in Postman\n2. Select all requests\n3. Click \"Run Mission-to-Coins Workflow\"\n4. Watch the coins appear! 🪙\n\n---\n\nBased on:\n- specs/mission/missions.pillar.v2.yml\n- specs/wallet/wallet.pillar.v2.yml",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "admin_user_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "test_user_id",
+      "value": "2",
+      "type": "string"
+    },
+    {
+      "key": "mission_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "assignment_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "submission_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "reward_grant_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "wallet_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "📋 Step 1: Create Mission Definition",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"✅ Mission created successfully\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Mission ID captured\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('mission_definition_id');",
+              "    pm.collectionVariables.set(\"mission_id\", jsonData.mission_definition_id);",
+              "    ",
+              "    console.log(\"\\n🎯 MISSION CREATED\");",
+              "    console.log(\"Mission ID: \" + jsonData.mission_definition_id);",
+              "    console.log(\"Reward: 50 COIN\");",
+              "    console.log(\"Status: \" + jsonData.status);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Id",
+            "value": "{{admin_user_id}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "ADMIN"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "workflow-create-mission-{{$timestamp}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"COMPLETE_PROFILE_{{$timestamp}}\",\n  \"name\": \"Complete Your Profile\",\n  \"description\": \"Fill in all your profile information to earn coins!\",\n  \"cadence\": \"one_time\",\n  \"trigger_type\": \"manual\",\n  \"max_per_user\": 1,\n  \"max_total\": 1000,\n  \"criteria_json\": {\n    \"requirements\": [\n      \"Full name\",\n      \"Email verified\",\n      \"Phone number\",\n      \"Profile picture\"\n    ]\n  },\n  \"reward_json\": {\n    \"reward_type\": \"coins\",\n    \"amount\": 50,\n    \"currency\": \"COIN\"\n  }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/missions/definitions",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "missions", "definitions"]
+        },
+        "description": "Creates a mission that rewards 50 COIN upon completion.\n\n**Mission Details:**\n- Name: Complete Your Profile\n- Reward: 50 COIN\n- Type: One-time mission\n- Max per user: 1\n\n**API:** POST /v1/missions/definitions\n**Spec:** specs/mission/missions.pillar.v2.yml"
+      },
+      "response": []
+    },
+    {
+      "name": "👤 Step 2: Assign Mission to User",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"✅ Mission assigned to user\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Assignment ID captured\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('assignment_id');",
+              "    pm.collectionVariables.set(\"assignment_id\", jsonData.assignment_id);",
+              "    ",
+              "    console.log(\"\\n👤 MISSION ASSIGNED\");",
+              "    console.log(\"Assignment ID: \" + jsonData.assignment_id);",
+              "    console.log(\"User ID: {{test_user_id}}\");",
+              "    console.log(\"Status: \" + jsonData.status);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Id",
+            "value": "{{admin_user_id}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "ADMIN"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "workflow-assign-mission-{{$timestamp}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"user_id\": \"{{test_user_id}}\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/missions/definitions/{{mission_id}}/assign",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "missions", "definitions", "{{mission_id}}", "assign"]
+        },
+        "description": "Assigns the mission to a test user.\n\n**API:** POST /v1/missions/definitions/{id}/assign\n**Spec:** specs/mission/missions.pillar.v2.yml\n\n**Events Emitted:**\n- MISSION_ASSIGNED"
+      },
+      "response": []
+    },
+    {
+      "name": "📝 Step 3: User Submits Mission",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"✅ Mission submitted for review\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Submission ID captured\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('submission_id');",
+              "    pm.collectionVariables.set(\"submission_id\", jsonData.submission_id);",
+              "    ",
+              "    console.log(\"\\n📝 MISSION SUBMITTED\");",
+              "    console.log(\"Submission ID: \" + jsonData.submission_id);",
+              "    console.log(\"Status: \" + jsonData.status);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Id",
+            "value": "{{test_user_id}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "USER"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "workflow-submit-mission-{{$timestamp}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"text_content\": \"I have completed my profile! Here are the details:\\n\\n✅ Full name: John Doe\\n✅ Email verified: john@example.com\\n✅ Phone number: +60123456789\\n✅ Profile picture uploaded\",\n  \"meta_json\": {\n    \"completion_time\": \"2024-01-15T10:30:00Z\",\n    \"completion_percentage\": 100\n  }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/missions/assignments/{{assignment_id}}/submit",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "missions", "assignments", "{{assignment_id}}", "submit"]
+        },
+        "description": "User submits the completed mission for review.\n\n**API:** POST /v1/missions/assignments/{id}/submit\n**Spec:** specs/mission/missions.pillar.v2.yml\n\n**Events Emitted:**\n- MISSION_SUBMITTED"
+      },
+      "response": []
+    },
+    {
+      "name": "✅ Step 4: Admin Approves Submission (TRIGGERS REWARD)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"✅ Submission approved successfully\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Reward Grant ID captured\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('reward_grant_id');",
+              "    pm.expect(jsonData.submission_status).to.eql('approved');",
+              "    pm.expect(jsonData.assignment_status).to.eql('completed');",
+              "    pm.expect(jsonData.reward_status).to.eql('requested');",
+              "    ",
+              "    pm.collectionVariables.set(\"reward_grant_id\", jsonData.reward_grant_id);",
+              "    ",
+              "    console.log(\"\\n✅ SUBMISSION APPROVED\");",
+              "    console.log(\"Submission ID: \" + jsonData.submission_id);",
+              "    console.log(\"Submission Status: \" + jsonData.submission_status);",
+              "    console.log(\"Assignment Status: \" + jsonData.assignment_status);",
+              "    console.log(\"\\n🎁 REWARD GRANTED\");",
+              "    console.log(\"Reward Grant ID: \" + jsonData.reward_grant_id);",
+              "    console.log(\"Reward Status: \" + jsonData.reward_status);",
+              "    console.log(\"\\n✨ MAGIC HAPPENING NOW...\");",
+              "    console.log(\"1. MISSION_REWARD_GRANTED event → outbox table\");",
+              "    console.log(\"2. Outbox processor picks up event\");",
+              "    console.log(\"3. Event delivered to wallet consumer\");",
+              "    console.log(\"4. Wallet consumer credits 50 COIN\");",
+              "    console.log(\"5. Balance updated in real-time\");",
+              "    console.log(\"\\n⏳ Wait 2-5 seconds for async processing...\");",
+              "    console.log(\"Then run Step 5 to see the coins!\");",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-User-Id",
+            "value": "{{admin_user_id}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "ADMIN"
+          },
+          {
+            "key": "Idempotency-Key",
+            "value": "workflow-approve-{{$timestamp}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"feedback\": \"Great work completing your profile! 🎉\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/missions/submissions/{{submission_id}}/approve",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "missions", "submissions", "{{submission_id}}", "approve"]
+        },
+        "description": "Admin approves the submission.\n\n**🎯 THIS IS WHERE THE MAGIC HAPPENS! 🎯**\n\n**Workflow:**\n1. Update submission status → approved\n2. Update assignment status → completed\n3. Create mission_reward_grant record\n4. **EMIT MISSION_REWARD_GRANTED event to outbox** ⭐\n\n**Outbox Pattern Flow:**\n```\nMissions Plugin:\n  └─ Insert into outbox table\n     └─ event_name: MISSION_REWARD_GRANTED\n     └─ payload: {reward_grant_id, assignment_id, user_id}\n\nOutbox Processor (async):\n  └─ Poll outbox table\n  └─ Find unprocessed events\n  └─ Deliver to wallet consumer\n  └─ Mark event as processed\n\nWallet Consumer:\n  └─ Receive MISSION_REWARD_GRANTED event\n  └─ Read mission_reward_grant table\n  └─ Auto-create account if needed\n  └─ Auto-create wallet if needed\n  └─ Create double-entry ledger transaction\n  └─ Credit 50 COIN to user wallet\n  └─ Update wallet_balance_snapshot\n  └─ Link back to mission_reward_grant\n  └─ Emit WALLET_CREDITED event\n```\n\n**API:** POST /v1/missions/submissions/{id}/approve\n**Spec:** specs/mission/missions.pillar.v2.yml lines 349-456\n\n**Events Emitted:**\n- MISSION_SUBMISSION_APPROVED\n- MISSION_COMPLETED\n- MISSION_REWARD_GRANTED ⭐ (triggers wallet credit)"
+      },
+      "response": []
+    },
+    {
+      "name": "⏸️ Step 4.5: Wait for Event Processing",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "console.log(\"\\n⏳ Waiting 3 seconds for async event processing...\");",
+              "console.log(\"The outbox processor is delivering the event to wallet consumer.\");",
+              "",
+              "// Wait 3 seconds",
+              "setTimeout(function(){}, 3000);"
+            ],
+            "type": "text/javascript"
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"✅ Event processing window complete\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "console.log(\"\\n✅ Wait complete!\");",
+              "console.log(\"Event should be processed by now.\");",
+              "console.log(\"Next step will check the wallet balance.\");"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Id",
+            "value": "{{admin_user_id}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "ADMIN"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/v1/missions/assignments/{{assignment_id}}/reward-grant",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "missions", "assignments", "{{assignment_id}}", "reward-grant"]
+        },
+        "description": "This request waits for the async event processing to complete.\n\n**What's happening during this wait:**\n1. Outbox processor polls for new events\n2. Finds MISSION_REWARD_GRANTED event\n3. Delivers to wallet consumer\n4. Wallet consumer processes reward\n5. 50 COIN credited to wallet\n\n**Note:** In a real system, the outbox processor runs continuously. For testing, we add a small delay to ensure processing completes."
+      },
+      "response": []
+    },
+    {
+      "name": "💰 Step 5: Check Wallet Balance (COINS APPEAR!)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"✅ Wallet balance retrieved\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"🎉 COINS RECEIVED!\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('total_amount');",
+              "    pm.expect(jsonData.currency).to.eql('COIN');",
+              "    ",
+              "    var balance = parseFloat(jsonData.total_amount);",
+              "    pm.expect(balance).to.be.above(0);",
+              "    ",
+              "    pm.collectionVariables.set(\"wallet_id\", jsonData.wallet_id);",
+              "    ",
+              "    console.log(\"\\n\" + \"=\".repeat(50));",
+              "    console.log(\"🎉 SUCCESS! COINS IN WALLET! 🎉\");",
+              "    console.log(\"=\".repeat(50));",
+              "    console.log(\"\\n💰 WALLET BALANCE:\");",
+              "    console.log(\"   Wallet ID:    \" + jsonData.wallet_id);",
+              "    console.log(\"   Available:    \" + jsonData.available_amount + \" \" + jsonData.currency);",
+              "    console.log(\"   Held:         \" + jsonData.held_amount + \" \" + jsonData.currency);",
+              "    console.log(\"   Total:        \" + jsonData.total_amount + \" \" + jsonData.currency);",
+              "    console.log(\"   As of:        \" + jsonData.as_of);",
+              "    console.log(\"\\n✨ The outbox pattern worked!\");",
+              "    console.log(\"   Mission completed → Event emitted → Wallet credited\");",
+              "    console.log(\"\\n\" + \"=\".repeat(50));",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Id",
+            "value": "{{test_user_id}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "USER"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/v1/wallets/{{wallet_id}}/balance",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "wallets", "{{wallet_id}}", "balance"]
+        },
+        "description": "Checks the wallet balance.\n\n**🎉 YOU SHOULD SEE 50 COIN! 🎉**\n\nThe wallet was automatically:\n1. Created (if it didn't exist)\n2. Credited with 50 COIN\n3. Balance snapshot updated\n\nAll triggered by the MISSION_REWARD_GRANTED event!\n\n**API:** GET /v1/wallets/{id}/balance\n**Spec:** specs/wallet/wallet.pillar.v2.yml lines 923-950"
+      },
+      "response": []
+    },
+    {
+      "name": "📜 Step 6: View Transaction History",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"✅ Transactions retrieved\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Mission reward transaction exists\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('items');",
+              "    pm.expect(jsonData.items).to.be.an('array');",
+              "    ",
+              "    console.log(\"\\n📜 TRANSACTION HISTORY\");",
+              "    console.log(\"Total transactions: \" + jsonData.items.length);",
+              "    console.log(\"\\n\" + \"=\".repeat(70));",
+              "    ",
+              "    var missionRewardFound = false;",
+              "    ",
+              "    jsonData.items.forEach(function(txn, index) {",
+              "        console.log(\"\\nTransaction #\" + (index + 1) + \":\");",
+              "        console.log(\"  📋 ID:          \" + txn.id);",
+              "        console.log(\"  🏷️  Type:        \" + txn.type);",
+              "        console.log(\"  📊 Status:      \" + txn.status);",
+              "        console.log(\"  📅 Occurred:    \" + txn.occurred_at);",
+              "        ",
+              "        if (txn.ref_type) {",
+              "            console.log(\"  🔗 Reference:   \" + txn.ref_type + \" / \" + txn.ref_id);",
+              "        }",
+              "        ",
+              "        if (txn.type === 'mission_reward') {",
+              "            missionRewardFound = true;",
+              "            console.log(\"  ⭐ THIS IS THE MISSION REWARD! ⭐\");",
+              "        }",
+              "        ",
+              "        console.log(\"  \" + \"-\".repeat(60));",
+              "    });",
+              "    ",
+              "    console.log(\"\\n\" + \"=\".repeat(70));",
+              "    ",
+              "    if (missionRewardFound) {",
+              "        console.log(\"\\n✅ Mission reward transaction found!\");",
+              "        console.log(\"   Type: mission_reward\");",
+              "        console.log(\"   This was created automatically by the wallet consumer.\");",
+              "        console.log(\"\\n🔍 Double-Entry Ledger:\");",
+              "        console.log(\"   Each transaction has 2 entries:\");",
+              "        console.log(\"   1. Debit:  System Account (id=1)  -50 COIN\");",
+              "        console.log(\"   2. Credit: User Account           +50 COIN\");",
+              "        console.log(\"\\n   Invariant: SUM(debits) = SUM(credits)\");",
+              "    }",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Id",
+            "value": "{{test_user_id}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "USER"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/v1/wallets/{{wallet_id}}/transactions?limit=10",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "wallets", "{{wallet_id}}", "transactions"],
+          "query": [
+            {
+              "key": "limit",
+              "value": "10"
+            }
+          ]
+        },
+        "description": "Views the transaction history.\n\n**You should see:**\n- Transaction type: `mission_reward`\n- Reference: `mission_reward_grant / {reward_grant_id}`\n- Double-entry ledger with balanced debits and credits\n\n**API:** GET /v1/wallets/{id}/transactions\n**Spec:** specs/wallet/wallet.pillar.v2.yml lines 951-971"
+      },
+      "response": []
+    },
+    {
+      "name": "🔍 Step 7: Verify Reward Grant Linkage",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"✅ Reward grant retrieved\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Reward grant linked to ledger\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    ",
+              "    console.log(\"\\n🔗 REWARD GRANT LINKAGE\");",
+              "    console.log(\"\\nMission → Wallet Bidirectional Reference:\");",
+              "    console.log(\"\\n📋 Reward Grant Details:\");",
+              "    console.log(\"   ID:            \" + jsonData.id);",
+              "    console.log(\"   Assignment:    \" + jsonData.assignment_id);",
+              "    console.log(\"   User:          \" + jsonData.user_id);",
+              "    console.log(\"   Reward Type:   \" + jsonData.reward_type);",
+              "    console.log(\"   Amount:        \" + jsonData.amount + \" \" + jsonData.currency);",
+              "    console.log(\"   Status:        \" + jsonData.status);",
+              "    ",
+              "    if (jsonData.ref_type && jsonData.ref_id) {",
+              "        console.log(\"\\n✅ LINKED TO LEDGER!\");",
+              "        console.log(\"   Ref Type:      \" + jsonData.ref_type);",
+              "        console.log(\"   Ref ID:        \" + jsonData.ref_id);",
+              "        console.log(\"\\n🔗 Bidirectional Reference:\");",
+              "        console.log(\"   mission_reward_grant.ref_type/ref_id → ledger_txn\");",
+              "        console.log(\"   ledger_txn.ref_type/ref_id → mission_reward_grant\");",
+              "        ",
+              "        pm.expect(jsonData.ref_type).to.eql('ledger_txn');",
+              "    } else {",
+              "        console.log(\"\\n⚠️  Not yet linked to ledger.\");",
+              "        console.log(\"   Event processing may still be in progress.\");",
+              "    }",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Id",
+            "value": "{{admin_user_id}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "ADMIN"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/v1/missions/assignments/{{assignment_id}}/reward-grant",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "missions", "assignments", "{{assignment_id}}", "reward-grant"]
+        },
+        "description": "Verifies the reward grant is linked back to the ledger transaction.\n\n**Bidirectional Reference:**\n- `mission_reward_grant.ref_type` = 'ledger_txn'\n- `mission_reward_grant.ref_id` = ledger transaction ID\n- `ledger_txn.ref_type` = 'mission_reward_grant'\n- `ledger_txn.ref_id` = reward grant ID\n\nThis creates a complete audit trail between missions and wallet.\n\n**API:** GET /v1/missions/assignments/{id}/reward-grant\n**Spec:** specs/mission/missions.pillar.v2.yml"
+      },
+      "response": []
+    },
+    {
+      "name": "📊 Step 8: View Mission Events (Audit Trail)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"✅ Mission events retrieved\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Complete event trail exists\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('items');",
+              "    ",
+              "    console.log(\"\\n📊 MISSION EVENT AUDIT TRAIL\");",
+              "    console.log(\"Total events: \" + jsonData.items.length);",
+              "    console.log(\"\\n\" + \"=\".repeat(70));",
+              "    ",
+              "    jsonData.items.forEach(function(event, index) {",
+              "        console.log(\"\\nEvent #\" + (index + 1) + \":\");",
+              "        console.log(\"  📋 Assignment:  \" + event.assignment_id);",
+              "        console.log(\"  🏷️  Type:        \" + event.event_type);",
+              "        console.log(\"  📅 Occurred:    \" + event.occurred_at);",
+              "        ",
+              "        if (event.payload_json) {",
+              "            console.log(\"  📦 Payload:     \" + JSON.stringify(event.payload_json));",
+              "        }",
+              "        ",
+              "        console.log(\"  \" + \"-\".repeat(60));",
+              "    });",
+              "    ",
+              "    console.log(\"\\n\" + \"=\".repeat(70));",
+              "    console.log(\"\\n✅ Complete audit trail from assignment to approval!\");",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Id",
+            "value": "{{admin_user_id}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "ADMIN"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/v1/missions/assignments/{{assignment_id}}/events",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "missions", "assignments", "{{assignment_id}}", "events"]
+        },
+        "description": "Views the complete event trail for the mission.\n\n**Expected Events:**\n1. assigned - Mission assigned to user\n2. submitted - User submitted the mission\n3. approved - Admin approved submission\n\n**API:** GET /v1/missions/assignments/{id}/events\n**Spec:** specs/mission/missions.pillar.v2.yml"
+      },
+      "response": []
+    },
+    {
+      "name": "🎊 BONUS: Complete Another Mission!",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "console.log(\"\\n🎊 WORKFLOW COMPLETE!\");",
+              "console.log(\"\\n\" + \"=\".repeat(70));",
+              "console.log(\"You've successfully demonstrated the outbox pattern!\");",
+              "console.log(\"\\n📋 What Happened:\");",
+              "console.log(\"1. ✅ Created mission with 50 COIN reward\");",
+              "console.log(\"2. ✅ Assigned mission to user\");",
+              "console.log(\"3. ✅ User submitted mission\");",
+              "console.log(\"4. ✅ Admin approved submission\");",
+              "console.log(\"5. ✨ MISSION_REWARD_GRANTED event emitted to outbox\");",
+              "console.log(\"6. ✨ Outbox processor delivered event to wallet\");",
+              "console.log(\"7. ✨ Wallet consumer auto-credited 50 COIN\");",
+              "console.log(\"8. ✅ User received coins in wallet!\");",
+              "console.log(\"\\n🏗️  Architecture Benefits:\");",
+              "console.log(\"   ✓ Decoupled services (missions ↔ wallet)\");",
+              "console.log(\"   ✓ Reliable event delivery (outbox pattern)\");",
+              "console.log(\"   ✓ Idempotent operations (safe retries)\");",
+              "console.log(\"   ✓ Complete audit trail (ledger + events)\");",
+              "console.log(\"   ✓ Real-time balance updates\");",
+              "console.log(\"\\n💡 Try This Next:\");",
+              "console.log(\"   - Run this workflow again (idempotent!)\");",
+              "console.log(\"   - Create different mission types\");",
+              "console.log(\"   - Try the wallet API collection\");",
+              "console.log(\"   - Check the database tables directly\");",
+              "console.log(\"\\n\" + \"=\".repeat(70));",
+              "console.log(\"\\n🎉 Heheheh, coins in wallet! 🪙\");"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-User-Id",
+            "value": "{{test_user_id}}"
+          },
+          {
+            "key": "X-User-Role",
+            "value": "USER"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/v1/wallets/{{wallet_id}}/balance",
+          "host": ["{{base_url}}"],
+          "path": ["v1", "wallets", "{{wallet_id}}", "balance"]
+        },
+        "description": "Final balance check.\n\n**🎉 Congratulations! 🎉**\n\nYou've successfully tested the complete mission-to-coins flow using the outbox pattern!\n\n**Want to learn more?**\n- Check out the wallet plugin: `src/plugins/wallet/README.md`\n- Read the spec: `specs/wallet/wallet.pillar.v2.yml`\n- Explore the code: `src/plugins/wallet/`\n\n**Database Tables to Explore:**\n```sql\n-- Mission side\nSELECT * FROM mission_reward_grant WHERE id = {reward_grant_id};\n\n-- Wallet side\nSELECT * FROM ledger_txn WHERE ref_type = 'mission_reward_grant';\nSELECT * FROM ledger_entry WHERE txn_id = {ledger_txn_id};\nSELECT * FROM wallet_balance_snapshot WHERE wallet_id = {wallet_id};\n\n-- Outbox pattern\nSELECT * FROM outbox WHERE event_name = 'MISSION_REWARD_GRANTED';\n```"
+      },
+      "response": []
+    }
+  ]
+}

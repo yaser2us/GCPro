@@ -4,6 +4,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { CoreKitModule } from './corekit/corekit.module';
 import { MissionsModule } from './plugins/missions/missions.module';
+import { WalletModule } from './plugins/wallet/wallet.module';
 import { SurveyModule } from './plugins/survey/survey.module';
 import { PermissionModule } from './plugins/permission/permission.module';
 import { PersonModule } from './plugins/person/person.module';
@@ -29,6 +30,7 @@ import { NotificationModule } from './plugins/notification/notification.module';
     CoreKitModule,
     // Business plugins
     MissionsModule,
+    WalletModule,
     SurveyModule,
     PermissionModule,
     PersonModule,

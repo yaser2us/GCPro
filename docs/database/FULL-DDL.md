@@ -1452,6 +1452,7 @@ CREATE TABLE `mission_reward_grant` (
   `meta_json` json DEFAULT NULL,
   `granted_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_mgrant_assignment_once` (`assignment_id`),
   UNIQUE KEY `uk_mgrant_idempotency` (`idempotency_key`),

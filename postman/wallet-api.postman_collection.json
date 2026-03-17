@@ -1,0 +1,1138 @@
+{
+  "info": {
+    "name": "Wallet API",
+    "description": "Complete wallet management API with double-entry accounting\n\nBased on: specs/wallet/wallet.pillar.v2.yml\n\nFeatures:\n- Account creation\n- Wallet management\n- Deposit/Withdraw operations\n- Balance tracking\n- Transaction history\n- Double-entry ledger\n\nEvent Integration:\n- Automatically credits wallet on mission completion\n- Listens to MISSION_REWARD_GRANTED events",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "admin_user_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "test_user_id",
+      "value": "2",
+      "type": "string"
+    },
+    {
+      "key": "account_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "wallet_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "ledger_txn_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Account Management",
+      "item": [
+        {
+          "name": "Create Account (User)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has account_id\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('account_id');",
+                  "    pm.collectionVariables.set(\"account_id\", jsonData.account_id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "create-account-user-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"user\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/accounts",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "accounts"]
+            },
+            "description": "Creates a new user account.\n\n**Spec:** specs/wallet/wallet.pillar.v2.yml lines 668-703\n\n**Permissions:** wallet:admin\n\n**Idempotency:** Via Idempotency-Key header"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Account (Merchant)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "create-account-merchant-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"merchant\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/accounts",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "accounts"]
+            },
+            "description": "Creates a merchant account for business operations."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Account (System)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "create-account-system-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"system\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/accounts",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "accounts"]
+            },
+            "description": "Creates the system account (ID=1) for double-entry accounting.\n\nThe system account is debited when users receive coins and credited when users spend coins."
+          },
+          "response": []
+        }
+      ],
+      "description": "Account creation endpoints.\n\nAccounts are polymorphic containers that own wallets."
+    },
+    {
+      "name": "2. Wallet Management",
+      "item": [
+        {
+          "name": "Create Wallet (COIN)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has wallet_id\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('wallet_id');",
+                  "    pm.collectionVariables.set(\"wallet_id\", jsonData.wallet_id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "create-wallet-coin-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"account_id\": \"{{account_id}}\",\n  \"wallet_type\": \"MAIN\",\n  \"currency\": \"COIN\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/wallets",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "wallets"]
+            },
+            "description": "Creates a COIN wallet for the account.\n\n**Spec:** specs/wallet/wallet.pillar.v2.yml lines 704-755\n\n**Permissions:** wallet:admin, wallet:manage\n\n**Idempotency:** UNIQUE(account_id, currency, wallet_type)\n\n**Note:** Wallet creation is idempotent. Calling this multiple times with the same account_id, currency, and wallet_type will return the same wallet_id."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Wallet (MYR)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "create-wallet-myr-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"account_id\": \"{{account_id}}\",\n  \"wallet_type\": \"MAIN\",\n  \"currency\": \"MYR\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/wallets",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "wallets"]
+            },
+            "description": "Creates a MYR (Malaysian Ringgit) wallet for the account."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Wallet (Bonus)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "create-wallet-bonus-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"account_id\": \"{{account_id}}\",\n  \"wallet_type\": \"BONUS\",\n  \"currency\": \"COIN\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/wallets",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "wallets"]
+            },
+            "description": "Creates a BONUS wallet for promotional coins.\n\nWallet Types:\n- MAIN: Primary wallet for regular operations\n- BONUS: Promotional wallet with special rules\n- SAVINGS: Long-term storage wallet"
+          },
+          "response": []
+        }
+      ],
+      "description": "Wallet creation and management.\n\nEach account can have multiple wallets (one per currency and wallet type)."
+    },
+    {
+      "name": "3. Deposit Operations",
+      "item": [
+        {
+          "name": "Manual Deposit (100 COIN)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has ledger_txn_id\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('ledger_txn_id');",
+                  "    pm.expect(jsonData).to.have.property('new_balance');",
+                  "    pm.collectionVariables.set(\"ledger_txn_id\", jsonData.ledger_txn_id);",
+                  "    console.log(\"New balance: \" + jsonData.new_balance);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "deposit-manual-100-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wallet_id\": \"{{wallet_id}}\",\n  \"amount\": 100,\n  \"currency\": \"COIN\",\n  \"type\": \"manual_deposit\",\n  \"ref_type\": \"admin_adjustment\",\n  \"ref_id\": \"adj-{{$timestamp}}\",\n  \"meta_json\": {\n    \"reason\": \"Testing wallet deposit\",\n    \"admin_id\": \"{{admin_user_id}}\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/wallets/{{wallet_id}}/deposit",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "wallets", "{{wallet_id}}", "deposit"]
+            },
+            "description": "Deposits 100 COIN into the wallet.\n\n**Spec:** specs/wallet/wallet.pillar.v2.yml lines 756-839\n\n**Permissions:** wallet:admin, wallet:manage\n\n**Idempotency:** Via Idempotency-Key header\n\n**Double-Entry Flow:**\n1. Debit system account (id=1) -100 COIN\n2. Credit user account +100 COIN\n3. Update wallet_balance_snapshot\n\n**Events Emitted:**\n- WALLET_CREDITED\n- LEDGER_TRANSACTION_CREATED"
+          },
+          "response": []
+        },
+        {
+          "name": "Deposit (50 COIN)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "deposit-50-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wallet_id\": \"{{wallet_id}}\",\n  \"amount\": 50,\n  \"currency\": \"COIN\",\n  \"type\": \"manual_deposit\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/wallets/{{wallet_id}}/deposit",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "wallets", "{{wallet_id}}", "deposit"]
+            },
+            "description": "Deposits 50 COIN into the wallet."
+          },
+          "response": []
+        },
+        {
+          "name": "Deposit (1000 COIN - Large)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "deposit-large-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wallet_id\": \"{{wallet_id}}\",\n  \"amount\": 1000,\n  \"currency\": \"COIN\",\n  \"type\": \"promotional_bonus\",\n  \"meta_json\": {\n    \"campaign\": \"new_user_bonus\",\n    \"promotion_id\": \"PROMO2024\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/wallets/{{wallet_id}}/deposit",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "wallets", "{{wallet_id}}", "deposit"]
+            },
+            "description": "Large deposit for testing balance calculations."
+          },
+          "response": []
+        }
+      ],
+      "description": "Deposit operations to add funds to wallets.\n\nDeposit Types:\n- manual_deposit: Admin-initiated deposits\n- mission_reward: Automatic mission completion rewards\n- promotional_bonus: Marketing campaigns\n- referral_bonus: User referral rewards"
+    },
+    {
+      "name": "4. Withdraw Operations",
+      "item": [
+        {
+          "name": "Withdraw (30 COIN)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has ledger_txn_id\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('ledger_txn_id');",
+                  "    pm.expect(jsonData).to.have.property('new_balance');",
+                  "    console.log(\"New balance: \" + jsonData.new_balance);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "withdraw-30-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wallet_id\": \"{{wallet_id}}\",\n  \"amount\": 30,\n  \"currency\": \"COIN\",\n  \"type\": \"manual_withdrawal\",\n  \"meta_json\": {\n    \"reason\": \"Testing wallet withdrawal\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/wallets/{{wallet_id}}/withdraw",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "wallets", "{{wallet_id}}", "withdraw"]
+            },
+            "description": "Withdraws 30 COIN from the wallet.\n\n**Spec:** specs/wallet/wallet.pillar.v2.yml lines 840-922\n\n**Permissions:** wallet:admin, wallet:manage\n\n**Idempotency:** Via Idempotency-Key header\n\n**Guards:**\n- Wallet exists and status='active'\n- Amount > 0\n- Available balance >= amount\n\n**Double-Entry Flow:**\n1. Debit user account -30 COIN\n2. Credit system account (id=1) +30 COIN\n3. Update wallet_balance_snapshot\n\n**Events Emitted:**\n- WALLET_DEBITED\n- LEDGER_TRANSACTION_CREATED"
+          },
+          "response": []
+        },
+        {
+          "name": "Withdraw (Insufficient Balance - Should Fail)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 409 (Conflict)\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "pm.test(\"Error code is INSUFFICIENT_BALANCE\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.error.code).to.eql('INSUFFICIENT_BALANCE');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "withdraw-insufficient-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wallet_id\": \"{{wallet_id}}\",\n  \"amount\": 999999,\n  \"currency\": \"COIN\",\n  \"type\": \"manual_withdrawal\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/wallets/{{wallet_id}}/withdraw",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "wallets", "{{wallet_id}}", "withdraw"]
+            },
+            "description": "Attempts to withdraw more than available balance.\n\nThis should fail with INSUFFICIENT_BALANCE error."
+          },
+          "response": []
+        },
+        {
+          "name": "Withdraw (50 COIN)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "withdraw-50-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wallet_id\": \"{{wallet_id}}\",\n  \"amount\": 50,\n  \"currency\": \"COIN\",\n  \"type\": \"redemption\",\n  \"meta_json\": {\n    \"item\": \"Premium Feature Access\",\n    \"item_id\": \"PREM-001\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/wallets/{{wallet_id}}/withdraw",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "wallets", "{{wallet_id}}", "withdraw"]
+            },
+            "description": "Withdraws 50 COIN for feature redemption."
+          },
+          "response": []
+        }
+      ],
+      "description": "Withdraw operations to deduct funds from wallets.\n\nWithdraw Types:\n- manual_withdrawal: Admin-initiated withdrawals\n- redemption: User spending coins on features\n- transfer_out: Transfer to another account\n- refund_reversal: Reversing a previous refund"
+    },
+    {
+      "name": "5. Balance & Transactions",
+      "item": [
+        {
+          "name": "Get Balance",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has balance fields\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('wallet_id');",
+                  "    pm.expect(jsonData).to.have.property('available_amount');",
+                  "    pm.expect(jsonData).to.have.property('held_amount');",
+                  "    pm.expect(jsonData).to.have.property('total_amount');",
+                  "    pm.expect(jsonData).to.have.property('currency');",
+                  "    pm.expect(jsonData).to.have.property('as_of');",
+                  "    ",
+                  "    console.log(\"============ WALLET BALANCE ============\");",
+                  "    console.log(\"Available: \" + jsonData.available_amount + \" \" + jsonData.currency);",
+                  "    console.log(\"Held:      \" + jsonData.held_amount + \" \" + jsonData.currency);",
+                  "    console.log(\"Total:     \" + jsonData.total_amount + \" \" + jsonData.currency);",
+                  "    console.log(\"As of:     \" + jsonData.as_of);",
+                  "    console.log(\"=======================================\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{test_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "USER"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/wallets/{{wallet_id}}/balance",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "wallets", "{{wallet_id}}", "balance"]
+            },
+            "description": "Retrieves the current wallet balance.\n\n**Spec:** specs/wallet/wallet.pillar.v2.yml lines 923-950\n\n**Permissions:** wallet:read\n\n**Response:**\n- available_amount: Can be spent immediately\n- held_amount: Locked/pending transactions\n- total_amount: available + held\n- as_of: Timestamp of balance snapshot\n\n**Performance:**\nBalance is retrieved from wallet_balance_snapshot (single row), not calculated from ledger entries. This ensures fast reads."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Transactions (All)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has items array\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('items');",
+                  "    pm.expect(jsonData.items).to.be.an('array');",
+                  "    ",
+                  "    console.log(\"============ TRANSACTIONS ============\");",
+                  "    console.log(\"Total transactions: \" + jsonData.items.length);",
+                  "    ",
+                  "    jsonData.items.forEach(function(txn, index) {",
+                  "        console.log(\"\\nTransaction #\" + (index + 1));",
+                  "        console.log(\"  ID: \" + txn.id);",
+                  "        console.log(\"  Type: \" + txn.type);",
+                  "        console.log(\"  Status: \" + txn.status);",
+                  "        console.log(\"  Occurred: \" + txn.occurred_at);",
+                  "        if (txn.ref_type) {",
+                  "            console.log(\"  Ref: \" + txn.ref_type + \" / \" + txn.ref_id);",
+                  "        }",
+                  "    });",
+                  "    console.log(\"=====================================\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{test_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "USER"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/wallets/{{wallet_id}}/transactions?limit=50&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "wallets", "{{wallet_id}}", "transactions"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Lists all ledger transactions for the wallet.\n\n**Spec:** specs/wallet/wallet.pillar.v2.yml lines 951-971\n\n**Permissions:** wallet:read\n\n**Query Parameters:**\n- limit: Number of transactions to return (default: 50)\n- offset: Pagination offset (default: 0)\n\n**Transaction Types:**\n- manual_deposit\n- manual_withdrawal\n- mission_reward (automatic from missions)\n- promotional_bonus\n- redemption\n- refund\n- transfer_in/transfer_out\n\n**Double-Entry Ledger:**\nEach transaction has multiple ledger_entry records showing debits and credits."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Transactions (Recent 10)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{test_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "USER"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/wallets/{{wallet_id}}/transactions?limit=10&offset=0",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "wallets", "{{wallet_id}}", "transactions"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Lists the 10 most recent transactions."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Transactions (Paginated - Page 2)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{test_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "USER"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/wallets/{{wallet_id}}/transactions?limit=10&offset=10",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "wallets", "{{wallet_id}}", "transactions"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "offset",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Lists transactions for page 2 (skipping first 10)."
+          },
+          "response": []
+        }
+      ],
+      "description": "Query endpoints for balance and transaction history."
+    },
+    {
+      "name": "6. Error Cases",
+      "item": [
+        {
+          "name": "Create Account (Missing Type)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 400 (Bad Request)\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "error-test-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/accounts",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "accounts"]
+            },
+            "description": "Tests validation: type field is required."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Wallet (Invalid Account)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 404 (Not Found)\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "pm.test(\"Error code is ACCOUNT_NOT_FOUND\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.error.code).to.eql('ACCOUNT_NOT_FOUND');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "error-wallet-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"account_id\": \"999999\",\n  \"wallet_type\": \"MAIN\",\n  \"currency\": \"COIN\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/wallets",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "wallets"]
+            },
+            "description": "Tests guard: account must exist before creating wallet."
+          },
+          "response": []
+        },
+        {
+          "name": "Deposit (Invalid Wallet)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 404 (Not Found)\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "pm.test(\"Error code is WALLET_NOT_FOUND\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.error.code).to.eql('WALLET_NOT_FOUND');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "error-deposit-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wallet_id\": \"999999\",\n  \"amount\": 100,\n  \"currency\": \"COIN\",\n  \"type\": \"manual_deposit\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/wallets/999999/deposit",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "wallets", "999999", "deposit"]
+            },
+            "description": "Tests guard: wallet must exist for deposit."
+          },
+          "response": []
+        },
+        {
+          "name": "Deposit (Negative Amount)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 400 (Bad Request)\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test(\"Error code is INVALID_AMOUNT\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.error.code).to.eql('INVALID_AMOUNT');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "error-negative-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wallet_id\": \"{{wallet_id}}\",\n  \"amount\": -50,\n  \"currency\": \"COIN\",\n  \"type\": \"manual_deposit\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/wallets/{{wallet_id}}/deposit",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "wallets", "{{wallet_id}}", "deposit"]
+            },
+            "description": "Tests guard: amount must be positive."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Balance (Invalid Wallet)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 404 (Not Found)\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{test_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "USER"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/wallets/999999/balance",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "wallets", "999999", "balance"]
+            },
+            "description": "Tests guard: wallet must exist to query balance."
+          },
+          "response": []
+        }
+      ],
+      "description": "Error cases to test validation and guards.\n\nCommon Error Codes:\n- ACCOUNT_TYPE_REQUIRED (400)\n- ACCOUNT_NOT_FOUND (404)\n- WALLET_NOT_FOUND (404)\n- WALLET_NOT_ACTIVE (409)\n- INVALID_AMOUNT (400)\n- INSUFFICIENT_BALANCE (409)"
+    },
+    {
+      "name": "7. Idempotency Tests",
+      "item": [
+        {
+          "name": "Create Same Wallet Twice (Idempotent)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test(\"Returns same wallet_id on duplicate\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    console.log(\"Wallet ID: \" + jsonData.wallet_id);",
+                  "    console.log(\"Note: Call this request multiple times. The wallet_id should remain the same.\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "idempotent-wallet-test"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"account_id\": \"{{account_id}}\",\n  \"wallet_type\": \"MAIN\",\n  \"currency\": \"COIN\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/wallets",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "wallets"]
+            },
+            "description": "Tests idempotency: Creating the same wallet multiple times should return the same wallet_id.\n\n**Mechanism:** UNIQUE(account_id, currency, wallet_type) + ON DUPLICATE KEY UPDATE\n\n**Try this:**\n1. Run this request\n2. Note the wallet_id\n3. Run it again\n4. The wallet_id should be the same"
+          },
+          "response": []
+        },
+        {
+          "name": "Same Deposit Twice (Idempotent)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Same idempotency key returns same result\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    console.log(\"Ledger Transaction ID: \" + jsonData.ledger_txn_id);",
+                  "    console.log(\"Note: Call this request multiple times with same Idempotency-Key.\");",
+                  "    console.log(\"The balance should only increase once, not on every retry.\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "idempotent-deposit-fixed-key"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wallet_id\": \"{{wallet_id}}\",\n  \"amount\": 25,\n  \"currency\": \"COIN\",\n  \"type\": \"manual_deposit\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/wallets/{{wallet_id}}/deposit",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "wallets", "{{wallet_id}}", "deposit"]
+            },
+            "description": "Tests idempotency: Same deposit with same Idempotency-Key should not double-credit.\n\n**Mechanism:** UNIQUE(idempotency_key) in ledger_txn table\n\n**Try this:**\n1. Note your current balance\n2. Run this request multiple times\n3. Balance should only increase by 25 once (on first call)\n4. Subsequent calls should return the same ledger_txn_id"
+          },
+          "response": []
+        }
+      ],
+      "description": "Tests to verify idempotency mechanisms.\n\nIdempotency ensures:\n- Safe retries on network failures\n- No duplicate charges/credits\n- Consistent system state\n\nMechanisms:\n1. Wallet: UNIQUE(account_id, currency, wallet_type)\n2. Transactions: UNIQUE(idempotency_key)\n3. Mission Rewards: mission_reward_{reward_grant_id}"
+    }
+  ]
+}

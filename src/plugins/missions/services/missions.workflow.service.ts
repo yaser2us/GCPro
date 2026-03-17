@@ -522,8 +522,9 @@ export class MissionsWorkflowService {
         queryRunner,
       );
 
+      console.log('Loaded assignment:', asg.user_id, 'Actor:',  Number(actor.actor_user_id));
       // GUARD: assignment belongs to user (lines 285-287)
-      if (asg.user_id !== Number(actor.actor_user_id)) {
+      if (Number(asg.user_id) !== Number(actor.actor_user_id)) {
         throw new ConflictException({
           code: 'NOT_OWNER',
           message: `Assignment does not belong to user ${actor.actor_user_id}`,

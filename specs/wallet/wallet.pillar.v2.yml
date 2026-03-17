@@ -1,0 +1,1210 @@
+version: "2.0.0"
+spec_id: "wallet.pillar.v2"
+domain: "wallet"
+plugin: "wallet"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# OWNERSHIP
+# ──────────────────────────────────────────────────────────────────────────────
+
+ownership:
+  owner_plugin: "wallet"
+  owns_tables:
+    - "account"
+    - "account_person"
+    - "wallet"
+    - "wallet_balance_snapshot"
+    - "ledger_txn"
+    - "ledger_entry"
+  cross_plugin_writes: false
+  cross_plugin_integration:
+    allowed_via:
+      - "command_api"
+      - "outbox_events"      # Listens to MISSION_REWARD_GRANTED from missions plugin
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DEPENDENCIES
+# ──────────────────────────────────────────────────────────────────────────────
+
+dependencies:
+  corekit:
+    transaction_wrapper: "withTxn"
+    outbox_service: "OutboxService.emit"
+    guard_helper: "guard"
+    domain_error: "DomainError"
+
+  core_tables_readonly:
+    - table_name: "user"
+      usage: "Referenced by person.primary_user_id"
+      access: "readonly_fk"
+    - table_name: "person"
+      usage: "Linked to account via account_person table"
+      access: "readonly_fk"
+
+  cross_plugin_tables:
+    - table_name: "mission_reward_grant"
+      plugin: "missions"
+      usage: "Read reward details and update ref_type/ref_id after crediting wallet"
+      access: "read_and_write_ref_fields"
+
+  event_subscriptions:
+    - event_name: "MISSION_REWARD_GRANTED"
+      source_plugin: "missions"
+      handler: "processMissionReward"
+      description: "Listens to mission reward grants and credits user wallet"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CONVENTIONS
+# ──────────────────────────────────────────────────────────────────────────────
+
+conventions:
+  workflow_discipline:
+    - "guard"
+    - "write"
+    - "emit"
+    - "commit"
+
+  status_mutation_policy: "Status fields may only be mutated through commands."
+
+  outbox:
+    required_envelope_fields:
+      - "event_name"
+      - "event_version"
+      - "aggregate_type"
+      - "aggregate_id"
+      - "actor_user_id"
+      - "occurred_at"
+      - "correlation_id"
+      - "causation_id"
+
+  idempotency:
+    required_header: "Idempotency-Key"
+    default_scope: "actor_user_id + command_name"
+    db_strategy:
+      - "UNIQUE(idempotency_key) for ledger_txn"
+      - "MySQL ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)"
+      - "wallet: UNIQUE(account_id, currency, wallet_type) prevents duplicate wallets"
+      - "wallet_balance_snapshot: Single row per wallet (PRIMARY KEY wallet_id)"
+
+  double_entry_accounting:
+    principle: "Every transaction must have balanced debits and credits"
+    validation: "SUM(ledger_entry.amount WHERE direction='debit') = SUM(ledger_entry.amount WHERE direction='credit')"
+    entry_types:
+      - "principal"  # Main amount
+      - "fee"        # Transaction fees
+      - "tax"        # Tax amounts
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SCHEMA
+# ──────────────────────────────────────────────────────────────────────────────
+
+schema:
+  tables:
+    account:
+      description: "Account entity - polymorphic container for ledger and wallets"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        type:
+          type: "varchar"
+          length: 16
+          nullable: false
+          description: "Account type (user, merchant, system, etc.)"
+        status:
+          type: "varchar"
+          length: 32
+          nullable: false
+          default: "active"
+          description: "Account status (active, suspended, closed)"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+      constraints:
+        primary_key: ["id"]
+        indexes:
+          - name: "idx_account_type"
+            columns: ["type"]
+          - name: "idx_account_status"
+            columns: ["status"]
+
+    account_person:
+      description: "Links accounts to persons (many-to-many relationship)"
+      columns:
+        account_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to account"
+        person_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to person"
+        role:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "owner"
+          description: "Person's role in account (owner, authorized, etc.)"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+      constraints:
+        primary_key: ["account_id", "person_id"]
+        indexes:
+          - name: "idx_account_person_person"
+            columns: ["person_id"]
+        foreign_keys:
+          - name: "fk_account_person_account"
+            columns: ["account_id"]
+            references:
+              table: "account"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+          - name: "fk_account_person_person"
+            columns: ["person_id"]
+            references:
+              table: "person"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+
+    wallet:
+      description: "Wallet for holding currency balances (coins, fiat, etc.)"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        account_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to account"
+        wallet_type:
+          type: "varchar"
+          length: 32
+          nullable: false
+          default: "MAIN"
+          description: "Wallet type (MAIN, BONUS, SAVINGS, etc.)"
+        currency:
+          type: "varchar"
+          length: 8
+          nullable: false
+          default: "MYR"
+          description: "Currency code (MYR, USD, COIN, etc.)"
+        status:
+          type: "varchar"
+          length: 32
+          nullable: false
+          default: "active"
+          description: "Wallet status (active, frozen, closed)"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          - name: "uk_wallet_account_currency_type"
+            columns: ["account_id", "currency", "wallet_type"]
+        indexes:
+          - name: "idx_wallet_status"
+            columns: ["status"]
+          - name: "idx_wallet_type_status"
+            columns: ["wallet_type", "status"]
+        foreign_keys:
+          - name: "fk_wallet_account"
+            columns: ["account_id"]
+            references:
+              table: "account"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+
+    wallet_balance_snapshot:
+      description: "Real-time wallet balance snapshot (single row per wallet)"
+      columns:
+        wallet_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Primary key and foreign key to wallet"
+        available_amount:
+          type: "decimal"
+          precision: [18, 2]
+          nullable: false
+          default: "0.00"
+          description: "Available balance (can be spent)"
+        held_amount:
+          type: "decimal"
+          precision: [18, 2]
+          nullable: false
+          default: "0.00"
+          description: "Held balance (pending/locked)"
+        total_amount:
+          type: "decimal"
+          precision: [18, 2]
+          nullable: false
+          default: "0.00"
+          description: "Total balance (available + held)"
+        currency:
+          type: "varchar"
+          length: 8
+          nullable: false
+          default: "MYR"
+          description: "Currency code"
+        as_of:
+          type: "datetime"
+          nullable: false
+          description: "Snapshot timestamp"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+      constraints:
+        primary_key: ["wallet_id"]
+        foreign_keys:
+          - name: "fk_wbs_wallet"
+            columns: ["wallet_id"]
+            references:
+              table: "wallet"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+
+    ledger_txn:
+      description: "Ledger transaction header (double-entry accounting)"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        account_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Primary account for this transaction"
+        type:
+          type: "varchar"
+          length: 32
+          nullable: false
+          description: "Transaction type (mission_reward, deposit, withdrawal, etc.)"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "posted"
+          description: "Transaction status (posted, voided, reversed)"
+        ref_type:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "Reference entity type (mission_reward_grant, etc.)"
+        ref_id:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Reference entity ID"
+        external_ref:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "External reference ID"
+        idempotency_key:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Idempotency key for transaction"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional metadata"
+        txn_group_key:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "Groups related transactions"
+        reversal_of_txn_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "References original transaction if this is a reversal"
+        occurred_at:
+          type: "datetime"
+          nullable: false
+          description: "When transaction occurred"
+        posted_at:
+          type: "datetime"
+          nullable: true
+          description: "When transaction was posted to ledger"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          - name: "uk_ledger_external_ref"
+            columns: ["external_ref"]
+          - name: "uk_ledger_idempotency"
+            columns: ["idempotency_key"]
+        indexes:
+          - name: "idx_ledger_account_time"
+            columns: ["account_id", "occurred_at"]
+          - name: "idx_ledger_type_time"
+            columns: ["type", "occurred_at"]
+          - name: "idx_ledger_status_time"
+            columns: ["status", "occurred_at"]
+          - name: "idx_ledger_ref"
+            columns: ["ref_type", "ref_id"]
+          - name: "idx_ledger_group_time"
+            columns: ["txn_group_key", "occurred_at"]
+          - name: "idx_ledger_reversal_of"
+            columns: ["reversal_of_txn_id"]
+        foreign_keys:
+          - name: "fk_ledger_txn_account"
+            columns: ["account_id"]
+            references:
+              table: "account"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+          - name: "fk_ledger_reversal_of"
+            columns: ["reversal_of_txn_id"]
+            references:
+              table: "ledger_txn"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+
+    ledger_entry:
+      description: "Ledger entry lines (debits and credits)"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        txn_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to ledger_txn"
+        account_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Account for this entry"
+        entry_type:
+          type: "varchar"
+          length: 32
+          nullable: false
+          default: "principal"
+          description: "Entry type (principal, fee, tax)"
+        direction:
+          type: "varchar"
+          length: 8
+          nullable: false
+          description: "Entry direction (debit, credit)"
+        amount:
+          type: "decimal"
+          precision: [18, 2]
+          nullable: false
+          description: "Entry amount"
+        currency:
+          type: "varchar"
+          length: 8
+          nullable: false
+          default: "MYR"
+          description: "Currency code"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+      constraints:
+        primary_key: ["id"]
+        indexes:
+          - name: "idx_ledger_entry_txn"
+            columns: ["txn_id"]
+          - name: "idx_ledger_entry_currency"
+            columns: ["currency"]
+          - name: "idx_ledger_entry_account_time"
+            columns: ["account_id", "created_at"]
+          - name: "idx_ledger_entry_type"
+            columns: ["entry_type"]
+        foreign_keys:
+          - name: "fk_ledger_entry_txn"
+            columns: ["txn_id"]
+            references:
+              table: "ledger_txn"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+          - name: "fk_ledger_entry_account"
+            columns: ["account_id"]
+            references:
+              table: "account"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# RESOURCES
+# ──────────────────────────────────────────────────────────────────────────────
+
+resources:
+  aggregates:
+    ACCOUNT:
+      root_table: "account"
+      status_field: "status"
+      allowed_statuses:
+        - "active"
+        - "suspended"
+        - "closed"
+      description: "Account aggregate - container for ledger and wallets"
+
+    WALLET:
+      root_table: "wallet"
+      status_field: "status"
+      allowed_statuses:
+        - "active"
+        - "frozen"
+        - "closed"
+      description: "Wallet aggregate - holds currency balances"
+
+  non_aggregate_resources:
+    - table_name: "wallet_balance_snapshot"
+      description: "Real-time balance snapshot for wallet"
+      parent_aggregate: "WALLET"
+
+    - table_name: "ledger_txn"
+      description: "Ledger transaction header"
+      parent_aggregate: "ACCOUNT"
+
+    - table_name: "ledger_entry"
+      description: "Ledger entry lines (debits/credits)"
+      parent_aggregate: "ACCOUNT"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DTOS
+# ──────────────────────────────────────────────────────────────────────────────
+
+dtos:
+  AccountCreateRequestDto:
+    fields:
+      - name: "type"
+        type: "string"
+        required: true
+        max_length: 16
+        description: "Account type (user, merchant, system)"
+
+  WalletCreateRequestDto:
+    fields:
+      - name: "account_id"
+        type: "string"
+        required: true
+        description: "Account ID"
+      - name: "wallet_type"
+        type: "string"
+        required: false
+        default: "MAIN"
+        max_length: 32
+        description: "Wallet type"
+      - name: "currency"
+        type: "string"
+        required: false
+        default: "COIN"
+        max_length: 8
+        description: "Currency code"
+
+  DepositRequestDto:
+    fields:
+      - name: "wallet_id"
+        type: "string"
+        required: true
+        description: "Wallet ID to credit"
+      - name: "amount"
+        type: "number"
+        required: true
+        description: "Amount to deposit"
+      - name: "currency"
+        type: "string"
+        required: true
+        max_length: 8
+        description: "Currency code"
+      - name: "type"
+        type: "string"
+        required: true
+        max_length: 32
+        description: "Transaction type (manual_deposit, mission_reward, etc.)"
+      - name: "ref_type"
+        type: "string"
+        required: false
+        max_length: 64
+        description: "Reference entity type"
+      - name: "ref_id"
+        type: "string"
+        required: false
+        max_length: 128
+        description: "Reference entity ID"
+      - name: "meta_json"
+        type: "object"
+        required: false
+        description: "Additional metadata"
+
+  WithdrawRequestDto:
+    fields:
+      - name: "wallet_id"
+        type: "string"
+        required: true
+        description: "Wallet ID to debit"
+      - name: "amount"
+        type: "number"
+        required: true
+        description: "Amount to withdraw"
+      - name: "currency"
+        type: "string"
+        required: true
+        max_length: 8
+        description: "Currency code"
+      - name: "type"
+        type: "string"
+        required: true
+        max_length: 32
+        description: "Transaction type"
+      - name: "meta_json"
+        type: "object"
+        required: false
+        description: "Additional metadata"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# EVENTS
+# ──────────────────────────────────────────────────────────────────────────────
+
+events:
+  ACCOUNT_CREATED:
+    version: 1
+    aggregate_type: "ACCOUNT"
+    description: "Account was created"
+    payload:
+      - "account_id"
+      - "type"
+      - "status"
+
+  WALLET_CREATED:
+    version: 1
+    aggregate_type: "WALLET"
+    description: "Wallet was created for account"
+    payload:
+      - "wallet_id"
+      - "account_id"
+      - "wallet_type"
+      - "currency"
+
+  WALLET_CREDITED:
+    version: 1
+    aggregate_type: "WALLET"
+    description: "Wallet balance was credited"
+    payload:
+      - "wallet_id"
+      - "ledger_txn_id"
+      - "amount"
+      - "currency"
+      - "new_balance"
+      - "ref_type"
+      - "ref_id"
+
+  WALLET_DEBITED:
+    version: 1
+    aggregate_type: "WALLET"
+    description: "Wallet balance was debited"
+    payload:
+      - "wallet_id"
+      - "ledger_txn_id"
+      - "amount"
+      - "currency"
+      - "new_balance"
+
+  LEDGER_TRANSACTION_CREATED:
+    version: 1
+    aggregate_type: "ACCOUNT"
+    description: "Ledger transaction was created"
+    payload:
+      - "ledger_txn_id"
+      - "account_id"
+      - "type"
+      - "total_debits"
+      - "total_credits"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# COMMANDS
+# ──────────────────────────────────────────────────────────────────────────────
+
+commands:
+  ACCOUNT.CREATE:
+    http:
+      method: "POST"
+      path: "/v1/accounts"
+
+    request:
+      dto: "AccountCreateRequestDto"
+
+    idempotency:
+      strategy: "via_header"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "type is required"
+
+      - step: "WRITE"
+        operations:
+          - table: "account"
+            action: "INSERT"
+            fields:
+              - "type"
+              - "status = 'active'"
+
+      - step: "EMIT"
+        events:
+          - "ACCOUNT_CREATED"
+
+      - step: "COMMIT"
+        returns:
+          - "account_id"
+
+    permissions:
+      - "wallet:admin"
+
+  WALLET.CREATE:
+    http:
+      method: "POST"
+      path: "/v1/wallets"
+
+    request:
+      dto: "WalletCreateRequestDto"
+
+    idempotency:
+      strategy: "UNIQUE(account_id, currency, wallet_type)"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "account_id is required"
+          - "account exists"
+
+      - step: "WRITE"
+        operations:
+          - table: "wallet"
+            action: "INSERT ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)"
+            fields:
+              - "account_id"
+              - "wallet_type"
+              - "currency"
+              - "status = 'active'"
+
+      - step: "WRITE"
+        operations:
+          - table: "wallet_balance_snapshot"
+            action: "INSERT ON DUPLICATE KEY UPDATE wallet_id = wallet_id"
+            fields:
+              - "wallet_id = LAST_INSERT_ID()"
+              - "available_amount = 0.00"
+              - "held_amount = 0.00"
+              - "total_amount = 0.00"
+              - "currency"
+              - "as_of = NOW()"
+
+      - step: "EMIT"
+        events:
+          - "WALLET_CREATED"
+
+      - step: "COMMIT"
+        returns:
+          - "wallet_id"
+
+    permissions:
+      - "wallet:admin"
+      - "wallet:manage"
+
+  WALLET.DEPOSIT:
+    http:
+      method: "POST"
+      path: "/v1/wallets/{wallet_id}/deposit"
+
+    request:
+      dto: "DepositRequestDto"
+
+    idempotency:
+      strategy: "via_header"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "wallet exists"
+          - "wallet.status = 'active'"
+          - "amount > 0"
+
+      - step: "WRITE"
+        operations:
+          - table: "ledger_txn"
+            action: "INSERT"
+            fields:
+              - "account_id = wallet.account_id"
+              - "type"
+              - "status = 'posted'"
+              - "ref_type"
+              - "ref_id"
+              - "idempotency_key"
+              - "meta_json"
+              - "occurred_at = NOW()"
+              - "posted_at = NOW()"
+
+      - step: "WRITE"
+        operations:
+          - table: "ledger_entry"
+            action: "INSERT"
+            note: "Debit system account (money coming from system)"
+            fields:
+              - "txn_id = LAST_INSERT_ID()"
+              - "account_id = 1"  # System account
+              - "entry_type = 'principal'"
+              - "direction = 'debit'"
+              - "amount"
+              - "currency"
+
+      - step: "WRITE"
+        operations:
+          - table: "ledger_entry"
+            action: "INSERT"
+            note: "Credit user account (money going to user)"
+            fields:
+              - "txn_id = ledger_txn.id"
+              - "account_id = wallet.account_id"
+              - "entry_type = 'principal'"
+              - "direction = 'credit'"
+              - "amount"
+              - "currency"
+
+      - step: "WRITE"
+        operations:
+          - table: "wallet_balance_snapshot"
+            action: "UPDATE"
+            where: "wallet_id = :wallet_id"
+            fields:
+              - "available_amount = available_amount + :amount"
+              - "total_amount = total_amount + :amount"
+              - "as_of = NOW()"
+
+      - step: "EMIT"
+        events:
+          - "WALLET_CREDITED"
+          - "LEDGER_TRANSACTION_CREATED"
+
+      - step: "COMMIT"
+        returns:
+          - "ledger_txn_id"
+          - "new_balance"
+
+    permissions:
+      - "wallet:admin"
+      - "wallet:manage"
+
+  WALLET.WITHDRAW:
+    http:
+      method: "POST"
+      path: "/v1/wallets/{wallet_id}/withdraw"
+
+    request:
+      dto: "WithdrawRequestDto"
+
+    idempotency:
+      strategy: "via_header"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "wallet exists"
+          - "wallet.status = 'active'"
+          - "amount > 0"
+          - "wallet balance >= amount"
+
+      - step: "WRITE"
+        operations:
+          - table: "ledger_txn"
+            action: "INSERT"
+            fields:
+              - "account_id = wallet.account_id"
+              - "type"
+              - "status = 'posted'"
+              - "idempotency_key"
+              - "meta_json"
+              - "occurred_at = NOW()"
+              - "posted_at = NOW()"
+
+      - step: "WRITE"
+        operations:
+          - table: "ledger_entry"
+            action: "INSERT"
+            note: "Debit user account (money leaving user)"
+            fields:
+              - "txn_id = LAST_INSERT_ID()"
+              - "account_id = wallet.account_id"
+              - "entry_type = 'principal'"
+              - "direction = 'debit'"
+              - "amount"
+              - "currency"
+
+      - step: "WRITE"
+        operations:
+          - table: "ledger_entry"
+            action: "INSERT"
+            note: "Credit system account (money returning to system)"
+            fields:
+              - "txn_id = ledger_txn.id"
+              - "account_id = 1"  # System account
+              - "entry_type = 'principal'"
+              - "direction = 'credit'"
+              - "amount"
+              - "currency"
+
+      - step: "WRITE"
+        operations:
+          - table: "wallet_balance_snapshot"
+            action: "UPDATE"
+            where: "wallet_id = :wallet_id"
+            fields:
+              - "available_amount = available_amount - :amount"
+              - "total_amount = total_amount - :amount"
+              - "as_of = NOW()"
+
+      - step: "EMIT"
+        events:
+          - "WALLET_DEBITED"
+          - "LEDGER_TRANSACTION_CREATED"
+
+      - step: "COMMIT"
+        returns:
+          - "ledger_txn_id"
+          - "new_balance"
+
+    permissions:
+      - "wallet:admin"
+      - "wallet:manage"
+
+  WALLET.GET_BALANCE:
+    http:
+      method: "GET"
+      path: "/v1/wallets/{wallet_id}/balance"
+
+    workflow:
+      - step: "READ"
+        operations:
+          - table: "wallet"
+            join: "wallet_balance_snapshot ON wallet.id = wallet_balance_snapshot.wallet_id"
+            where: "wallet.id = :wallet_id"
+
+      - step: "GUARD"
+        checks:
+          - "wallet exists"
+
+      - step: "RETURN"
+        returns:
+          - "wallet_id"
+          - "available_amount"
+          - "held_amount"
+          - "total_amount"
+          - "currency"
+          - "as_of"
+
+    permissions:
+      - "wallet:read"
+
+  WALLET.GET_TRANSACTIONS:
+    http:
+      method: "GET"
+      path: "/v1/wallets/{wallet_id}/transactions"
+
+    workflow:
+      - step: "READ"
+        operations:
+          - table: "ledger_txn"
+            join: "ledger_entry ON ledger_txn.id = ledger_entry.txn_id"
+            join: "wallet ON ledger_entry.account_id = wallet.account_id"
+            where: "wallet.id = :wallet_id"
+            order_by: "ledger_txn.occurred_at DESC"
+
+      - step: "RETURN"
+        returns:
+          - "items: [transaction records]"
+
+    permissions:
+      - "wallet:read"
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # EVENT CONSUMER: Process Mission Rewards
+  # ────────────────────────────────────────────────────────────────────────────
+
+  WALLET.PROCESS_MISSION_REWARD:
+    description: "Event consumer that listens to MISSION_REWARD_GRANTED and credits wallet"
+
+    trigger:
+      event: "MISSION_REWARD_GRANTED"
+      source_plugin: "missions"
+
+    input:
+      event_payload:
+        - "reward_grant_id"
+        - "assignment_id"
+        - "user_id"
+
+    workflow:
+      - step: "READ"
+        note: "Fetch reward grant details from mission plugin"
+        operations:
+          - table: "mission_reward_grant"
+            where: "id = :reward_grant_id"
+            alias: "reward_grant"
+
+      - step: "GUARD"
+        checks:
+          - "reward_grant exists"
+          - "reward_grant.user_id = :user_id"
+          - "reward_grant.amount > 0"
+          - "reward_grant.reward_type = 'coins'"
+          - "reward_grant.currency = 'COIN'"
+          - "reward_grant.status = 'granted'"
+
+      - step: "READ"
+        note: "Find account via person linkage: user → person → account_person → account"
+        operations:
+          - table: "account"
+            join: "account_person ON account.id = account_person.account_id"
+            join: "person ON account_person.person_id = person.id"
+            where: "person.primary_user_id = :user_id AND account.type = 'user'"
+            alias: "account"
+
+      - step: "GUARD"
+        note: "If no account found, auto-create one"
+        checks:
+          - "account exists OR auto_create_account"
+
+      - step: "AUTO_CREATE_ACCOUNT_IF_NOT_EXISTS"
+        note: "Create account and link to person if doesn't exist"
+        when: "account is null"
+        operations:
+          - call: "ACCOUNT.CREATE"
+            params:
+              type: "user"
+          - table: "person"
+            action: "SELECT"
+            where: "primary_user_id = :user_id"
+            alias: "person"
+          - table: "account_person"
+            action: "INSERT"
+            fields:
+              - "account_id = LAST_INSERT_ID()"
+              - "person_id = person.id"
+              - "role = 'owner'"
+
+      - step: "READ"
+        operations:
+          - table: "wallet"
+            where: "account_id = account.id AND currency = 'COIN' AND wallet_type = 'MAIN'"
+            alias: "wallet"
+
+      - step: "AUTO_CREATE_WALLET_IF_NOT_EXISTS"
+        note: "If wallet doesn't exist, create it automatically"
+        when: "wallet is null"
+        operations:
+          - call: "WALLET.CREATE"
+            params:
+              account_id: "account.id"
+              wallet_type: "MAIN"
+              currency: "COIN"
+
+      - step: "WRITE"
+        operations:
+          - table: "ledger_txn"
+            action: "INSERT"
+            fields:
+              - "account_id = account.id"
+              - "type = 'mission_reward'"
+              - "status = 'posted'"
+              - "ref_type = 'mission_reward_grant'"
+              - "ref_id = :reward_grant_id"
+              - "idempotency_key = CONCAT('mission_reward_', :reward_grant_id)"
+              - "meta_json = JSON_OBJECT('assignment_id', :assignment_id, 'user_id', :user_id)"
+              - "occurred_at = NOW()"
+              - "posted_at = NOW()"
+
+      - step: "WRITE"
+        operations:
+          - table: "ledger_entry"
+            action: "INSERT"
+            note: "Debit system account"
+            fields:
+              - "txn_id = LAST_INSERT_ID()"
+              - "account_id = 1"  # System account
+              - "entry_type = 'principal'"
+              - "direction = 'debit'"
+              - "amount = reward_grant.amount"
+              - "currency = 'COIN'"
+
+      - step: "WRITE"
+        operations:
+          - table: "ledger_entry"
+            action: "INSERT"
+            note: "Credit user account"
+            fields:
+              - "txn_id = ledger_txn.id"
+              - "account_id = account.id"
+              - "entry_type = 'principal'"
+              - "direction = 'credit'"
+              - "amount = reward_grant.amount"
+              - "currency = 'COIN'"
+
+      - step: "WRITE"
+        operations:
+          - table: "wallet_balance_snapshot"
+            action: "UPDATE"
+            where: "wallet_id = wallet.id"
+            fields:
+              - "available_amount = available_amount + reward_grant.amount"
+              - "total_amount = total_amount + reward_grant.amount"
+              - "as_of = NOW()"
+
+      - step: "WRITE"
+        note: "Update mission_reward_grant with ledger reference"
+        operations:
+          - table: "mission_reward_grant"
+            action: "UPDATE"
+            where: "id = :reward_grant_id"
+            fields:
+              - "ref_type = 'ledger_txn'"
+              - "ref_id = ledger_txn.id"
+
+      - step: "EMIT"
+        events:
+          - "WALLET_CREDITED"
+
+      - step: "COMMIT"
+        returns:
+          - "ledger_txn_id"
+          - "new_balance"
+
+    error_handling:
+      - on_duplicate_key: "ignore (already processed via idempotency_key)"
+      - on_user_not_found: "log_error and skip"
+      - on_wallet_creation_failure: "rollback and retry"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# COVERAGE
+# ──────────────────────────────────────────────────────────────────────────────
+
+coverage:
+  tables_touched_by_commands:
+    account:
+      - "ACCOUNT.CREATE"
+      - "WALLET.PROCESS_MISSION_REWARD"
+
+    account_person:
+      - "WALLET.PROCESS_MISSION_REWARD"
+
+    wallet:
+      - "WALLET.CREATE"
+      - "WALLET.DEPOSIT"
+      - "WALLET.WITHDRAW"
+      - "WALLET.GET_BALANCE"
+      - "WALLET.PROCESS_MISSION_REWARD"
+
+    wallet_balance_snapshot:
+      - "WALLET.CREATE"
+      - "WALLET.DEPOSIT"
+      - "WALLET.WITHDRAW"
+      - "WALLET.PROCESS_MISSION_REWARD"
+
+    ledger_txn:
+      - "WALLET.DEPOSIT"
+      - "WALLET.WITHDRAW"
+      - "WALLET.GET_TRANSACTIONS"
+      - "WALLET.PROCESS_MISSION_REWARD"
+
+    ledger_entry:
+      - "WALLET.DEPOSIT"
+      - "WALLET.WITHDRAW"
+      - "WALLET.GET_TRANSACTIONS"
+      - "WALLET.PROCESS_MISSION_REWARD"
+
+    mission_reward_grant:
+      note: "Cross-plugin write: updates ref_type and ref_id fields"
+      - "WALLET.PROCESS_MISSION_REWARD"
+
+  events_emitted_by_commands:
+    ACCOUNT_CREATED:
+      - "ACCOUNT.CREATE"
+
+    WALLET_CREATED:
+      - "WALLET.CREATE"
+
+    WALLET_CREDITED:
+      - "WALLET.DEPOSIT"
+      - "WALLET.PROCESS_MISSION_REWARD"
+
+    WALLET_DEBITED:
+      - "WALLET.WITHDRAW"
+
+    LEDGER_TRANSACTION_CREATED:
+      - "WALLET.DEPOSIT"
+      - "WALLET.WITHDRAW"
+      - "WALLET.PROCESS_MISSION_REWARD"
+
+  events_consumed:
+    MISSION_REWARD_GRANTED:
+      consumed_by:
+        - "WALLET.PROCESS_MISSION_REWARD"
+      source_plugin: "missions"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CHANGELOG
+# ──────────────────────────────────────────────────────────────────────────────
+
+changelog:
+  - version: "2.0.0"
+    date: "2026-03-16"
+    changes:
+      - "Initial wallet pillar specification"
+      - "Double-entry ledger accounting system"
+      - "Wallet balance management with snapshots"
+      - "Mission reward integration via event consumer"
+      - "WALLET.PROCESS_MISSION_REWARD consumes MISSION_REWARD_GRANTED event"
+      - "Auto-creates wallet if not exists when processing mission rewards"
+      - "Supports COIN currency for mission rewards"

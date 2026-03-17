@@ -1,154 +1,255 @@
-# Bootstrap Scripts
+# GCPro Setup Scripts
 
-## Problem: Chicken-Egg Issue
+Scripts for setting up test environment and seeding data.
 
-When setting up GCPro for the first time, you face a chicken-egg problem:
-- You need `permission:admin` permission to create permissions
-- But you can't create that permission without already having it
-- All API requests require a valid `X-User-Id` with appropriate permissions
+---
 
-## Solution: Bootstrap Script
+## Quick Setup
 
-The bootstrap script creates the initial admin user with full system permissions, breaking the chicken-egg cycle.
-
-## What It Creates
-
-1. **System Account** (id=1)
-2. **Admin Person** (id=1)
-3. **Admin User** (id=1)
-   - Username: `admin`
-   - Password: `Admin@123`
-   - Email: `admin@gcpro.local`
-4. **22 Core Permissions**
-   - Permission management (admin, read, write)
-   - Role management (admin, read, write)
-   - User management (admin, read, write)
-   - Person management (admin, read, write)
-   - File management (admin, read, write)
-   - Notification management (admin, read, write)
-   - Mission management (admin, approve, read, write)
-5. **Super Admin Role**
-   - Has ALL permissions assigned
-6. **User-Role Assignment**
-   - Admin user assigned Super Admin role
-
-## How to Run
-
-### Option 1: TypeScript Script (Recommended)
+### macOS/Linux
 
 ```bash
-# Make sure dependencies are installed
-npm install
-
-# Run the bootstrap script
-npx ts-node scripts/bootstrap-admin.ts
+cd scripts
+./setup-test-env.sh
 ```
 
-### Option 2: Direct SQL
+### Windows
+
+```batch
+cd scripts
+setup-test-env.bat
+```
+
+---
+
+## What Gets Created
+
+### Test Users
+
+**Admin User (ID: 1)**
+- Email: `admin@gcpro.local`
+- Username: `admin`
+- Permissions:
+  - `missions:admin` - Full mission management
+  - `missions:manage` - Manage missions
+  - `missions:review` - Review submissions
+  - `missions:read` - Read mission data
+  - `wallet:admin` - Full wallet management
+  - `wallet:manage` - Manage wallets
+  - `wallet:read` - Read wallet data
+
+**Test User (ID: 2)**
+- Email: `testuser@gcpro.local`
+- Username: `testuser`
+- Permissions:
+  - `missions:read` - Read mission data
+  - `wallet:read` - Read wallet data
+
+### System Accounts
+
+**System Account (ID: 1)**
+- Type: `system`
+- Used for double-entry accounting
+- Debited when users receive coins
+- Credited when users spend coins
+
+### Person Records
+
+Links users to the person table:
+- Person ID 1 → User ID 1 (Admin)
+- Person ID 2 → User ID 2 (Test User)
+
+---
+
+## Database Connection
+
+### Default Settings
+
+The scripts use these defaults:
+```
+DB_HOST=localhost
+DB_PORT=3306
+DB_USERNAME=root
+DB_PASSWORD=Odenza@2026
+DB_DATABASE=GCPRO
+```
+
+### Custom Settings
+
+**macOS/Linux:**
+```bash
+export DB_HOST=your-host
+export DB_PORT=3307
+export DB_USERNAME=your-user
+export DB_PASSWORD=your-password
+export DB_DATABASE=your-database
+
+./setup-test-env.sh
+```
+
+**Windows:**
+```batch
+set DB_HOST=your-host
+set DB_PORT=3307
+set DB_USERNAME=your-user
+set DB_PASSWORD=your-password
+set DB_DATABASE=your-database
+
+setup-test-env.bat
+```
+
+---
+
+## Manual Setup
+
+If you prefer to run the SQL manually:
 
 ```bash
-# Run the SQL script directly
-mysql -u root -p gc_pro < scripts/bootstrap-admin.sql
-
-# Note: You'll need to manually generate the password hash
-# The SQL script has a placeholder that needs replacing
+mysql -u root -p GCPRO < seed-test-data.sql
 ```
 
-### Option 3: Add npm Script
+Or import via MySQL Workbench:
+1. Open MySQL Workbench
+2. Connect to your database
+3. File → Run SQL Script
+4. Select `seed-test-data.sql`
+5. Click "Run"
 
-Add to `package.json`:
+---
 
-```json
-{
-  "scripts": {
-    "bootstrap:admin": "ts-node scripts/bootstrap-admin.ts"
-  }
-}
+## Verification
+
+After running the setup, verify in database:
+
+```sql
+-- Check users
+SELECT id, username, email FROM user WHERE id IN (1, 2);
+
+-- Check admin permissions
+SELECT u.username, p.code
+FROM user u
+JOIN user_permission up ON u.id = up.user_id
+JOIN permission p ON up.permission_id = p.id
+WHERE u.id = 1;
+
+-- Check system account
+SELECT id, type, status FROM account WHERE id = 1;
 ```
 
-Then run:
-
-```bash
-npm run bootstrap:admin
-```
-
-## After Running Bootstrap
-
-1. **Update Postman Collection**
-   - Set `user_id` variable to `1`
-   - The X-User-Id header is automatically added via pre-request script
-
-2. **Test Permission API**
-   - Run the "Complete Workflow" in Permission API collection
-   - Should now work without 403 errors
-
-3. **Test Other APIs**
-   - Person API
-   - User API
-   - File API
-   - Notification API
-   - All should work with X-User-Id: 1
-
-## Default Credentials
-
-⚠️ **IMPORTANT: Change these in production!**
-
-```
-Username: admin
-Password: Admin@123
-User ID: 1
-```
-
-## Idempotency
-
-The script is **idempotent** - you can run it multiple times safely:
-- Uses `ON DUPLICATE KEY UPDATE` for all inserts
-- Won't create duplicates
-- Will update existing records to ensure they're active
+---
 
 ## Troubleshooting
 
-### Database Connection Error
+### mysql command not found
 
-Make sure your database credentials are correct:
-
+**macOS:**
 ```bash
-# Check .env file or set environment variables
-DB_HOST=localhost
-DB_PORT=3306
-DB_USER=root
-DB_PASSWORD=your_password
-DB_NAME=gc_pro
+brew install mysql-client
+echo 'export PATH="/opt/homebrew/opt/mysql-client/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
 ```
 
-### Permission Denied
+**Ubuntu/Debian:**
+```bash
+sudo apt-get install mysql-client
+```
 
-The script needs CREATE, INSERT, UPDATE permissions on the database.
+**Windows:**
+- Install MySQL from https://dev.mysql.com/downloads/installer/
+- Add MySQL bin directory to PATH
 
-### Already Exists Error
+### Access denied
 
-If you get unique constraint errors, the bootstrap has already run successfully. You can safely ignore these or re-run (it's idempotent).
+Check your database credentials:
+```bash
+mysql -u root -p
+# Enter password when prompted
+```
 
-## What's Next?
+If successful, update the script variables with your credentials.
 
-After bootstrapping:
+### Table doesn't exist
 
-1. **Create Additional Roles**
-   - Manager role with limited permissions
-   - Agent role for customer-facing operations
-   - Viewer role for read-only access
+Run the main DDL first:
+```bash
+mysql -u root -p GCPRO < docs/database/FULL-DDL.md
+```
 
-2. **Create Additional Users**
-   - Use the User API with your admin credentials
-   - Assign appropriate roles to users
+---
 
-3. **Test All P0 Pillars**
-   - Permission ✅ (should work now)
-   - Person
-   - User
-   - File
-   - Notification
+## After Setup
 
-4. **Change Default Password**
-   - Update the admin user password via User API
-   - Or create a new admin user and deactivate the default one
+### Test the API
+
+1. **Start the server:**
+   ```bash
+   npm start
+   ```
+
+2. **Import Postman collections:**
+   - `postman/wallet-api.postman_collection.json`
+   - `postman/mission-to-coins-workflow.postman_collection.json`
+
+3. **Run the Mission-to-Coins Workflow:**
+   - Open Postman
+   - Select "Mission-to-Coins Workflow" collection
+   - Click "Run"
+   - Watch the coins appear! 🪙
+
+### Test Users in Postman
+
+The Postman collections already use these user IDs:
+- `admin_user_id = 1` (Admin with full permissions)
+- `test_user_id = 2` (Regular user with read permissions)
+
+No changes needed!
+
+---
+
+## Files
+
+- `seed-test-data.sql` - SQL script with all test data
+- `setup-test-env.sh` - Setup script for macOS/Linux
+- `setup-test-env.bat` - Setup script for Windows
+- `README.md` - This file
+
+---
+
+## What If I Already Have Data?
+
+The scripts use `ON DUPLICATE KEY UPDATE`, so:
+- Existing users will be updated
+- Existing permissions will be preserved
+- New permissions will be added
+- Safe to run multiple times
+
+---
+
+## Cleanup
+
+To remove test data:
+
+```sql
+-- Remove test users
+DELETE FROM user WHERE id IN (1, 2);
+
+-- Remove test persons (cascades via foreign keys)
+DELETE FROM person WHERE id IN (1, 2);
+
+-- Remove system account (be careful!)
+DELETE FROM account WHERE id = 1 AND type = 'system';
+```
+
+**Warning:** This will delete all data associated with these users (missions, wallets, etc.)!
+
+---
+
+## Next Steps
+
+After setup:
+1. ✅ Test users created
+2. ✅ Permissions assigned
+3. ✅ System account ready
+4. 🚀 Run `npm start`
+5. 📮 Test with Postman collections
+6. 🎉 See coins in wallet!
