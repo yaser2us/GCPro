@@ -1,0 +1,555 @@
+{
+  "info": {
+    "name": "Referral API",
+    "description": "GCPro Referral Plugin API - Based on specs/referral/referral.pillar.yml",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "actor_user_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "program_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "code_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "invite_token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Program Management",
+      "item": [
+        {
+          "name": "Create Referral Program",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$randomUUID}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{actor_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"WELCOME2024\",\n  \"name\": \"Welcome Referral Program\",\n  \"start_at\": \"2024-01-01T00:00:00Z\",\n  \"end_at\": \"2024-12-31T23:59:59Z\",\n  \"eligibility_json\": {\n    \"min_age\": 18,\n    \"countries\": [\"MY\", \"SG\"]\n  },\n  \"meta_json\": {\n    \"reward_referrer\": 100,\n    \"reward_referee\": 50\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/referral/programs",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "referral", "programs"]
+            },
+            "description": "Create a new referral program\n\nSpec: specs/referral/referral.pillar.yml lines 913-953\nPermissions: referral:admin"
+          },
+          "response": [
+            {
+              "name": "Success Response",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"code\": \"WELCOME2024\",\n  \"name\": \"Welcome Referral Program\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/v1/referral/programs",
+                  "host": ["{{base_url}}"],
+                  "path": ["v1", "referral", "programs"]
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [],
+              "body": "{\n  \"program_id\": 1,\n  \"status\": \"active\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Pause Referral Program",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$randomUUID}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{actor_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Program needs maintenance\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/referral/programs/{{program_id}}/pause",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "referral", "programs", "{{program_id}}", "pause"]
+            },
+            "description": "Pause an active referral program\n\nSpec: specs/referral/referral.pillar.yml lines 955-989\nPermissions: referral:admin"
+          },
+          "response": [
+            {
+              "name": "Success Response",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"reason\": \"Program needs maintenance\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/v1/referral/programs/1/pause",
+                  "host": ["{{base_url}}"],
+                  "path": ["v1", "referral", "programs", "1", "pause"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [],
+              "body": "{\n  \"program_id\": 1,\n  \"status\": \"paused\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Activate Referral Program",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$randomUUID}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{actor_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ADMIN"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/referral/programs/{{program_id}}/activate",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "referral", "programs", "{{program_id}}", "activate"]
+            },
+            "description": "Activate a paused referral program\n\nSpec: specs/referral/referral.pillar.yml lines 991-1024\nPermissions: referral:admin"
+          },
+          "response": [
+            {
+              "name": "Success Response",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/v1/referral/programs/1/activate",
+                  "host": ["{{base_url}}"],
+                  "path": ["v1", "referral", "programs", "1", "activate"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [],
+              "body": "{\n  \"program_id\": 1,\n  \"status\": \"active\"\n}"
+            }
+          ]
+        }
+      ],
+      "description": "Referral program lifecycle management"
+    },
+    {
+      "name": "Referral Code",
+      "item": [
+        {
+          "name": "Create Referral Code",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$randomUUID}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{actor_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "USER"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"program_id\": {{program_id}},\n  \"code\": \"JOHNDOE2024\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/referral/codes",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "referral", "codes"]
+            },
+            "description": "Create a referral code for a user\n\nSpec: specs/referral/referral.pillar.yml lines 1026-1066\n\nNote: If 'code' is not provided, a random code will be generated"
+          },
+          "response": [
+            {
+              "name": "Success Response",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"program_id\": 1,\n  \"code\": \"JOHNDOE2024\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/v1/referral/codes",
+                  "host": ["{{base_url}}"],
+                  "path": ["v1", "referral", "codes"]
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [],
+              "body": "{\n  \"code_id\": 1,\n  \"status\": \"active\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Create Referral Code (Auto-generate)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$randomUUID}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{actor_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "USER"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"program_id\": {{program_id}}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/referral/codes",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "referral", "codes"]
+            },
+            "description": "Create a referral code with auto-generated code\n\nThe system will generate a unique random code"
+          },
+          "response": []
+        }
+      ],
+      "description": "Referral code creation and management"
+    },
+    {
+      "name": "Invites & Conversions",
+      "item": [
+        {
+          "name": "Create Referral Invite",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$randomUUID}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{actor_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "USER"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"program_id\": {{program_id}},\n  \"referral_code_id\": {{code_id}},\n  \"channel_type\": \"email\",\n  \"channel_value\": \"friend@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/referral/invites",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "referral", "invites"]
+            },
+            "description": "Create a referral invite\n\nSpec: specs/referral/referral.pillar.yml lines 1068-1123\n\nChannel types: link, email, sms, whatsapp"
+          },
+          "response": [
+            {
+              "name": "Success Response",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"program_id\": 1,\n  \"referral_code_id\": 1,\n  \"channel_type\": \"email\",\n  \"channel_value\": \"friend@example.com\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/v1/referral/invites",
+                  "host": ["{{base_url}}"],
+                  "path": ["v1", "referral", "invites"]
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [],
+              "body": "{\n  \"invite_id\": 1,\n  \"invite_token\": \"a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6\",\n  \"status\": \"created\"\n}"
+            }
+          ],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Save invite_token to collection variable",
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.invite_token) {",
+                  "    pm.collectionVariables.set(\"invite_token\", jsonData.invite_token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Referral Invite (Link)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$randomUUID}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{actor_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "USER"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"program_id\": {{program_id}},\n  \"referral_code_id\": {{code_id}},\n  \"channel_type\": \"link\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/referral/invites",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "referral", "invites"]
+            },
+            "description": "Create a referral invite for a shareable link\n\nNo channel_value needed for link type"
+          },
+          "response": []
+        },
+        {
+          "name": "Click Referral Invite",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$randomUUID}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "visitor-anonymous"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "ANONYMOUS"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"invite_token\": \"{{invite_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/referral/invites/click",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "referral", "invites", "click"]
+            },
+            "description": "Record a click on a referral invite link\n\nSpec: specs/referral/referral.pillar.yml lines 1125-1168\n\nThis is typically called when a user clicks on a referral link"
+          },
+          "response": [
+            {
+              "name": "Success Response",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"invite_token\": \"a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/v1/referral/invites/click",
+                  "host": ["{{base_url}}"],
+                  "path": ["v1", "referral", "invites", "click"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [],
+              "body": "{\n  \"invite_id\": 1,\n  \"status\": \"clicked\"\n}"
+            }
+          ]
+        },
+        {
+          "name": "Create Referral Conversion",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$randomUUID}}"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "system"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "SYSTEM"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"invite_token\": \"{{invite_token}}\",\n  \"referred_user_id\": 100,\n  \"conversion_ref_type\": \"user_registration\",\n  \"conversion_ref_id\": \"reg-12345\",\n  \"meta_json\": {\n    \"registration_date\": \"2024-03-17T10:00:00Z\",\n    \"source\": \"mobile_app\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/referral/conversions",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "referral", "conversions"]
+            },
+            "description": "Record a referral conversion when a referred user completes a qualifying action\n\nSpec: specs/referral/referral.pillar.yml lines 1170-1243\n\nTypically called when:\n- A referred user completes registration\n- A referred user makes their first purchase\n- A referred user completes a qualifying action"
+          },
+          "response": [
+            {
+              "name": "Success Response",
+              "originalRequest": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"invite_token\": \"a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6\",\n  \"referred_user_id\": 100,\n  \"conversion_ref_type\": \"user_registration\",\n  \"conversion_ref_id\": \"reg-12345\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/v1/referral/conversions",
+                  "host": ["{{base_url}}"],
+                  "path": ["v1", "referral", "conversions"]
+                }
+              },
+              "status": "Created",
+              "code": 201,
+              "_postman_previewlanguage": "json",
+              "header": [],
+              "body": "{\n  \"conversion_id\": 1,\n  \"status\": \"converted\"\n}"
+            }
+          ]
+        }
+      ],
+      "description": "Referral invite creation, click tracking, and conversion recording"
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Generate random Idempotency-Key if not set",
+          "if (!pm.request.headers.has('Idempotency-Key')) {",
+          "    pm.request.headers.add({",
+          "        key: 'Idempotency-Key',",
+          "        value: pm.variables.replaceIn('{{$randomUUID}}')",
+          "    });",
+          "}"
+        ]
+      }
+    }
+  ]
+}

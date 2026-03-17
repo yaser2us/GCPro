@@ -1,0 +1,1391 @@
+# referral.pillar.v1.yml
+version: "1.0"
+spec_id: "referral.pillar.v1"
+domain: "referral"
+plugin: "referral"
+
+ownership:
+  owner_plugin: "referral"
+  owns_tables:
+    - "referral_program"
+    - "referral_code"
+    - "referral_invite"
+    - "referral_rule"
+    - "referral_conversion"
+    - "referral_event"
+    - "referral_reward_grant"
+    - "referral_chain"
+  cross_plugin_writes: false
+  cross_plugin_integration:
+    allowed_via:
+      - "command_api"
+      - "outbox_events"
+
+dependencies:
+  corekit:
+    transaction_wrapper: "withTxn"
+    outbox_service: "OutboxService.emit"
+    guard_helper: "guard"
+    domain_error: "DomainError"
+  core_tables_readonly:
+    - "user"
+
+conventions:
+  workflow_discipline:
+    - "guard"
+    - "write"
+    - "emit"
+    - "commit"
+  status_mutation_policy: "Status fields may only be mutated through commands."
+  outbox:
+    required_envelope_fields:
+      - "event_name"
+      - "event_version"
+      - "aggregate_type"
+      - "aggregate_id"
+      - "actor_user_id"
+      - "occurred_at"
+      - "correlation_id"
+      - "causation_id"
+  idempotency:
+    required_header: "Idempotency-Key"
+    default_scope: "actor_user_id + command_name"
+    db_strategy:
+      - "UNIQUE(idempotency_key) where applicable"
+      - "MySQL ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)"
+      - "UNIQUE(program_id, code) for referral_code"
+      - "UNIQUE(invite_token) for referral_invite"
+      - "UNIQUE(program_id, referred_user_id) for referral_conversion"
+      - "UNIQUE(conversion_id, beneficiary_role) for referral_reward_grant"
+
+schema:
+  tables:
+    referral_program:
+      description: "Referral program configuration and settings"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        code:
+          type: "varchar"
+          length: 64
+          nullable: false
+          description: "Unique program code"
+        name:
+          type: "varchar"
+          length: 128
+          nullable: false
+          description: "Program display name"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "active"
+          description: "Program status: active, paused, retired"
+        start_at:
+          type: "datetime"
+          nullable: true
+          description: "Program start time"
+        end_at:
+          type: "datetime"
+          nullable: true
+          description: "Program end time"
+        eligibility_json:
+          type: "json"
+          nullable: true
+          description: "Eligibility criteria for program participation"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional metadata"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Record last update timestamp"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          - name: "uk_rp_code"
+            columns: ["code"]
+        indexes:
+          - name: "idx_rp_status_time"
+            columns: ["status", "start_at", "end_at"]
+
+    referral_code:
+      description: "User-owned referral codes for a program"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        program_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to referral_program"
+        owner_user_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "User who owns this referral code"
+        code:
+          type: "varchar"
+          length: 32
+          nullable: false
+          description: "The referral code string"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "active"
+          description: "Code status: active, inactive, suspended"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Record last update timestamp"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          - name: "uk_rc_program_code"
+            columns: ["program_id", "code"]
+        indexes:
+          - name: "idx_rc_owner"
+            columns: ["owner_user_id", "status"]
+        foreign_keys:
+          - name: "fk_rc_owner_user"
+            columns: ["owner_user_id"]
+            references:
+              table: "user"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+          - name: "fk_rc_program"
+            columns: ["program_id"]
+            references:
+              table: "referral_program"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+
+    referral_invite:
+      description: "Individual referral invitations sent to potential users"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        program_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to referral_program"
+        referral_code_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to referral_code used"
+        referrer_user_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "User who created the invite"
+        channel_type:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "link"
+          description: "Invite channel: link, email, sms, etc."
+        channel_value:
+          type: "varchar"
+          length: 255
+          nullable: true
+          description: "Channel-specific value (email address, phone, etc.)"
+        invite_token:
+          type: "varchar"
+          length: 128
+          nullable: false
+          description: "Unique invite token"
+        status:
+          type: "varchar"
+          length: 24
+          nullable: false
+          default: "created"
+          description: "Invite status: created, sent, clicked, converted, expired"
+        sent_at:
+          type: "datetime"
+          nullable: true
+          description: "When the invite was sent"
+        clicked_at:
+          type: "datetime"
+          nullable: true
+          description: "When the invite link was clicked"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Record last update timestamp"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          - name: "uk_ri_invite_token"
+            columns: ["invite_token"]
+        indexes:
+          - name: "idx_ri_referrer_status"
+            columns: ["referrer_user_id", "status"]
+          - name: "idx_ri_program_time"
+            columns: ["program_id", "created_at"]
+          - name: "fk_ri_code"
+            columns: ["referral_code_id"]
+        foreign_keys:
+          - name: "fk_ri_code"
+            columns: ["referral_code_id"]
+            references:
+              table: "referral_code"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+          - name: "fk_ri_program"
+            columns: ["program_id"]
+            references:
+              table: "referral_program"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+          - name: "fk_ri_referrer_user"
+            columns: ["referrer_user_id"]
+            references:
+              table: "user"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+
+    referral_rule:
+      description: "Rules and conditions for referral program eligibility and rewards"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        program_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to referral_program"
+        rule_code:
+          type: "varchar"
+          length: 64
+          nullable: false
+          description: "Rule identifier code"
+        operator:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "eq"
+          description: "Comparison operator: eq, neq, gt, gte, lt, lte, in, between"
+        value_str:
+          type: "varchar"
+          length: 255
+          nullable: true
+          description: "String value for rule evaluation"
+        value_num:
+          type: "decimal"
+          precision: [18, 6]
+          nullable: true
+          description: "Numeric value for rule evaluation"
+        value_json:
+          type: "json"
+          nullable: true
+          description: "Complex value for rule evaluation"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "active"
+          description: "Rule status: active, inactive"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          - name: "uk_rr_program_rulecode"
+            columns: ["program_id", "rule_code"]
+        indexes:
+          - name: "idx_rr_rule_code"
+            columns: ["rule_code"]
+        foreign_keys:
+          - name: "fk_rr_program"
+            columns: ["program_id"]
+            references:
+              table: "referral_program"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+
+    referral_conversion:
+      description: "Successful conversions from referral invites"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        program_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to referral_program"
+        invite_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to referral_invite"
+        referred_user_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "User who was referred and converted"
+        status:
+          type: "varchar"
+          length: 24
+          nullable: false
+          default: "converted"
+          description: "Conversion status: converted, verified, qualified, invalidated"
+        converted_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "When the conversion occurred"
+        conversion_ref_type:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "Reference type for conversion trigger"
+        conversion_ref_id:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Reference ID for conversion trigger"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional conversion metadata"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          - name: "uk_rcv_program_referred_user"
+            columns: ["program_id", "referred_user_id"]
+          - name: "uk_rcv_invite_once"
+            columns: ["invite_id"]
+        indexes:
+          - name: "idx_rcv_program_time"
+            columns: ["program_id", "converted_at"]
+          - name: "idx_rcv_ref"
+            columns: ["conversion_ref_type", "conversion_ref_id"]
+          - name: "fk_rcv_referred_user"
+            columns: ["referred_user_id"]
+        foreign_keys:
+          - name: "fk_rcv_invite"
+            columns: ["invite_id"]
+            references:
+              table: "referral_invite"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+          - name: "fk_rcv_program"
+            columns: ["program_id"]
+            references:
+              table: "referral_program"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+          - name: "fk_rcv_referred_user"
+            columns: ["referred_user_id"]
+            references:
+              table: "user"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+
+    referral_event:
+      description: "Audit log of all referral-related events"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        program_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to referral_program"
+        invite_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Reference to referral_invite if applicable"
+        conversion_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Reference to referral_conversion if applicable"
+        event_type:
+          type: "varchar"
+          length: 64
+          nullable: false
+          description: "Event type identifier"
+        actor_user_id:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "User who triggered the event"
+        ref_type:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "Additional reference type"
+        ref_id:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Additional reference ID"
+        payload_json:
+          type: "json"
+          nullable: true
+          description: "Event payload data"
+        idempotency_key:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Idempotency key for event deduplication"
+        occurred_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "When the event occurred"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          - name: "uk_revent_idempotency"
+            columns: ["idempotency_key"]
+        indexes:
+          - name: "idx_revent_program_time"
+            columns: ["program_id", "occurred_at"]
+          - name: "idx_revent_invite"
+            columns: ["invite_id", "occurred_at"]
+          - name: "idx_revent_conversion"
+            columns: ["conversion_id", "occurred_at"]
+          - name: "idx_revent_ref"
+            columns: ["ref_type", "ref_id"]
+        foreign_keys:
+          - name: "fk_revent_conversion"
+            columns: ["conversion_id"]
+            references:
+              table: "referral_conversion"
+              columns: ["id"]
+            on_delete: "SET NULL"
+            on_update: "CASCADE"
+          - name: "fk_revent_invite"
+            columns: ["invite_id"]
+            references:
+              table: "referral_invite"
+              columns: ["id"]
+            on_delete: "SET NULL"
+            on_update: "CASCADE"
+          - name: "fk_revent_program"
+            columns: ["program_id"]
+            references:
+              table: "referral_program"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+
+    referral_reward_grant:
+      description: "Rewards granted for successful referrals"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        program_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to referral_program"
+        conversion_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to referral_conversion"
+        beneficiary_user_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "User receiving the reward"
+        beneficiary_role:
+          type: "varchar"
+          length: 32
+          nullable: false
+          description: "Role of beneficiary: referrer, referee, both"
+        reward_type:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "coins"
+          description: "Type of reward: coins, points, cashback"
+        amount:
+          type: "decimal"
+          precision: [18, 2]
+          nullable: false
+          description: "Reward amount"
+        currency:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "COIN"
+          description: "Reward currency"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "granted"
+          description: "Grant status: granted, requested, fulfilled, revoked"
+        ref_type:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "Reference type for grant tracking"
+        ref_id:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Reference ID for grant tracking"
+        idempotency_key:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Idempotency key for grant deduplication"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional grant metadata"
+        granted_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "When the reward was granted"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          - name: "uk_rrg_conversion_role"
+            columns: ["conversion_id", "beneficiary_role"]
+          - name: "uk_rrg_idempotency"
+            columns: ["idempotency_key"]
+        indexes:
+          - name: "idx_rrg_user_time"
+            columns: ["beneficiary_user_id", "granted_at"]
+          - name: "idx_rrg_ref"
+            columns: ["ref_type", "ref_id"]
+          - name: "fk_rrg_program"
+            columns: ["program_id"]
+        foreign_keys:
+          - name: "fk_rrg_beneficiary_user"
+            columns: ["beneficiary_user_id"]
+            references:
+              table: "user"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+          - name: "fk_rrg_conversion"
+            columns: ["conversion_id"]
+            references:
+              table: "referral_conversion"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+          - name: "fk_rrg_program"
+            columns: ["program_id"]
+            references:
+              table: "referral_program"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+
+    referral_chain:
+      description: "Multi-level referral chain tracking for ancestor-descendant relationships"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        program_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Reference to referral_program"
+        ancestor_user_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "User higher in the referral chain"
+        descendant_user_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "User lower in the referral chain"
+        depth:
+          type: "int"
+          unsigned: true
+          nullable: false
+          description: "Levels between ancestor and descendant"
+        root_invite_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Original invite that started the chain"
+        root_conversion_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Original conversion that started the chain"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          - name: "uk_chain_unique"
+            columns: ["program_id", "ancestor_user_id", "descendant_user_id"]
+        indexes:
+          - name: "idx_chain_ancestor"
+            columns: ["program_id", "ancestor_user_id", "depth"]
+          - name: "idx_chain_descendant"
+            columns: ["program_id", "descendant_user_id"]
+          - name: "idx_chain_root_conversion"
+            columns: ["root_conversion_id"]
+          - name: "idx_chain_root_invite"
+            columns: ["root_invite_id"]
+        foreign_keys:
+          - name: "fk_chain_program"
+            columns: ["program_id"]
+            references:
+              table: "referral_program"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+          - name: "fk_chain_root_conversion"
+            columns: ["root_conversion_id"]
+            references:
+              table: "referral_conversion"
+              columns: ["id"]
+            on_delete: "SET NULL"
+            on_update: "CASCADE"
+          - name: "fk_chain_root_invite"
+            columns: ["root_invite_id"]
+            references:
+              table: "referral_invite"
+              columns: ["id"]
+            on_delete: "SET NULL"
+            on_update: "CASCADE"
+
+resources:
+  - name: "referral_program"
+    kind: "aggregate"
+    table: "referral_program"
+    primary_key: "id"
+    statuses: ["active", "paused", "retired"]
+    api_surface:
+      - "POST /v1/referral/programs"
+      - "POST /v1/referral/programs/{id}/pause"
+      - "POST /v1/referral/programs/{id}/activate"
+      - "POST /v1/referral/programs/{id}/retire"
+
+  - name: "referral_code"
+    kind: "resource"
+    table: "referral_code"
+    primary_key: "id"
+    api_surface:
+      - "POST /v1/referral/codes"
+      - "GET /v1/referral/codes/my"
+
+  - name: "referral_invite"
+    kind: "aggregate"
+    table: "referral_invite"
+    primary_key: "id"
+    statuses: ["created", "sent", "clicked", "converted", "expired"]
+    api_surface:
+      - "POST /v1/referral/invites"
+      - "POST /v1/referral/invites/{token}/click"
+
+  - name: "referral_rule"
+    kind: "resource"
+    table: "referral_rule"
+    primary_key: "id"
+    api_surface:
+      - "POST /v1/referral/programs/{program_id}/rules"
+
+  - name: "referral_conversion"
+    kind: "aggregate"
+    table: "referral_conversion"
+    primary_key: "id"
+    statuses: ["converted", "verified", "qualified", "invalidated"]
+    api_surface:
+      - "POST /v1/referral/conversions"
+
+  - name: "referral_event"
+    kind: "resource"
+    table: "referral_event"
+    primary_key: "id"
+    api_surface: []
+
+  - name: "referral_reward_grant"
+    kind: "aggregate"
+    table: "referral_reward_grant"
+    primary_key: "id"
+    statuses: ["granted", "requested", "fulfilled", "revoked"]
+    api_surface:
+      - "POST /v1/referral/rewards/request"
+
+  - name: "referral_chain"
+    kind: "resource"
+    table: "referral_chain"
+    primary_key: "id"
+    api_surface:
+      - "GET /v1/referral/chains/my"
+
+aggregates:
+  REFERRAL_PROGRAM:
+    root_table: "referral_program"
+    primary_key: "id"
+    statuses: ["active", "paused", "retired"]
+
+  REFERRAL_INVITE:
+    root_table: "referral_invite"
+    primary_key: "id"
+    statuses: ["created", "sent", "clicked", "converted", "expired"]
+
+  REFERRAL_CONVERSION:
+    root_table: "referral_conversion"
+    primary_key: "id"
+    statuses: ["converted", "verified", "qualified", "invalidated"]
+
+  REFERRAL_REWARD_GRANT:
+    root_table: "referral_reward_grant"
+    primary_key: "id"
+    statuses: ["granted", "requested", "fulfilled", "revoked"]
+
+types:
+  Actor:
+    fields:
+      - { name: "user_id", type: "int64", required: true }
+      - { name: "session_id", type: "string", required: false }
+
+  ReferralProgramSummary:
+    fields:
+      - { name: "id", type: "int64", required: true }
+      - { name: "code", type: "string", required: true }
+      - { name: "name", type: "string", required: true }
+      - { name: "status", type: "string", required: true }
+
+  ReferralCodeSummary:
+    fields:
+      - { name: "id", type: "int64", required: true }
+      - { name: "code", type: "string", required: true }
+      - { name: "status", type: "string", required: true }
+
+dtos:
+  ReferralProgramCreateRequest:
+    fields:
+      - { name: "code", type: "string", required: true, max_len: 64 }
+      - { name: "name", type: "string", required: true, max_len: 128 }
+      - { name: "start_at", type: "datetime", required: false }
+      - { name: "end_at", type: "datetime", required: false }
+      - { name: "eligibility_json", type: "json", required: false }
+      - { name: "meta_json", type: "json", required: false }
+
+  ReferralProgramPauseRequest:
+    fields:
+      - { name: "reason", type: "string", required: true, max_len: 300 }
+
+  ReferralCodeCreateRequest:
+    fields:
+      - { name: "program_id", type: "int64", required: true }
+      - { name: "code", type: "string", required: false, max_len: 32 }
+
+  ReferralInviteCreateRequest:
+    fields:
+      - { name: "program_id", type: "int64", required: true }
+      - { name: "referral_code_id", type: "int64", required: true }
+      - { name: "channel_type", type: "string", required: true, max_len: 16 }
+      - { name: "channel_value", type: "string", required: false, max_len: 255 }
+
+  ReferralInviteClickRequest:
+    fields:
+      - { name: "invite_token", type: "string", required: true, max_len: 128 }
+
+  ReferralConversionCreateRequest:
+    fields:
+      - { name: "invite_token", type: "string", required: true, max_len: 128 }
+      - { name: "referred_user_id", type: "int64", required: true }
+      - { name: "conversion_ref_type", type: "string", required: false, max_len: 64 }
+      - { name: "conversion_ref_id", type: "string", required: false, max_len: 128 }
+      - { name: "meta_json", type: "json", required: false }
+
+  ReferralRuleCreateRequest:
+    fields:
+      - { name: "rule_code", type: "string", required: true, max_len: 64 }
+      - { name: "operator", type: "string", required: true, max_len: 16 }
+      - { name: "value_str", type: "string", required: false, max_len: 255 }
+      - { name: "value_num", type: "decimal", required: false }
+      - { name: "value_json", type: "json", required: false }
+
+events:
+  - { name: "REFERRAL_PROGRAM_CREATED", version: 1, aggregate_type: "REFERRAL_PROGRAM", description: "A new referral program was created" }
+  - { name: "REFERRAL_PROGRAM_PAUSED", version: 1, aggregate_type: "REFERRAL_PROGRAM", description: "A referral program was paused" }
+  - { name: "REFERRAL_PROGRAM_ACTIVATED", version: 1, aggregate_type: "REFERRAL_PROGRAM", description: "A referral program was activated" }
+  - { name: "REFERRAL_INVITE_CREATED", version: 1, aggregate_type: "REFERRAL_INVITE", description: "A new referral invite was created" }
+  - { name: "REFERRAL_INVITE_CLICKED", version: 1, aggregate_type: "REFERRAL_INVITE", description: "A referral invite link was clicked" }
+  - { name: "REFERRAL_CONVERSION_CREATED", version: 1, aggregate_type: "REFERRAL_CONVERSION", description: "A referral conversion was recorded" }
+  - { name: "REFERRAL_REWARD_REQUESTED", version: 1, aggregate_type: "REFERRAL_REWARD_GRANT", description: "Referral rewards were requested for processing" }
+
+commands:
+  - name: "ReferralProgram.Create"
+    description: "Create a new referral program"
+    path: "/v1/referral/programs"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "ReferralProgramCreateRequest"
+    steps:
+      - kind: "guard"
+        description: "Validate program code uniqueness and time range"
+        expressions:
+          - expr: "len(request.code) > 0"
+            error: { code: "INVALID_PROGRAM_CODE" }
+          - expr: "request.end_at == null || request.start_at == null || request.end_at > request.start_at"
+            error: { code: "INVALID_TIME_RANGE" }
+      - kind: "insert"
+        table: "referral_program"
+        fields:
+          code: "request.code"
+          name: "request.name"
+          status: "active"
+          start_at: "request.start_at"
+          end_at: "request.end_at"
+          eligibility_json: "request.eligibility_json"
+          meta_json: "request.meta_json"
+          created_at: "now()"
+          updated_at: "now()"
+        returns: "program_id"
+      - kind: "outbox_emit"
+        event: "REFERRAL_PROGRAM_CREATED"
+        aggregate_type: "REFERRAL_PROGRAM"
+        aggregate_id: "program_id"
+        payload:
+          program_id: "program_id"
+          code: "request.code"
+          name: "request.name"
+    response:
+      status: 201
+      body:
+        program_id: "program_id"
+        status: "active"
+
+  - name: "ReferralProgram.Pause"
+    description: "Pause an active referral program"
+    path: "/v1/referral/programs/{id}/pause"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "ReferralProgramPauseRequest"
+    steps:
+      - kind: "read"
+        table: "referral_program"
+        where: { id: "path.id" }
+        returns: "program"
+      - kind: "guard"
+        description: "Ensure program is active"
+        expressions:
+          - expr: "program.status == 'active'"
+            error: { code: "PROGRAM_NOT_ACTIVE" }
+      - kind: "update"
+        table: "referral_program"
+        where: { id: "path.id" }
+        fields:
+          status: "paused"
+          updated_at: "now()"
+      - kind: "outbox_emit"
+        event: "REFERRAL_PROGRAM_PAUSED"
+        aggregate_type: "REFERRAL_PROGRAM"
+        aggregate_id: "path.id"
+        payload:
+          program_id: "path.id"
+          reason: "request.reason"
+    response:
+      status: 200
+      body:
+        program_id: "path.id"
+        status: "paused"
+
+  - name: "ReferralProgram.Activate"
+    description: "Activate a paused referral program"
+    path: "/v1/referral/programs/{id}/activate"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: null
+    steps:
+      - kind: "read"
+        table: "referral_program"
+        where: { id: "path.id" }
+        returns: "program"
+      - kind: "guard"
+        description: "Ensure program is paused"
+        expressions:
+          - expr: "program.status == 'paused'"
+            error: { code: "PROGRAM_NOT_PAUSED" }
+      - kind: "update"
+        table: "referral_program"
+        where: { id: "path.id" }
+        fields:
+          status: "active"
+          updated_at: "now()"
+      - kind: "outbox_emit"
+        event: "REFERRAL_PROGRAM_ACTIVATED"
+        aggregate_type: "REFERRAL_PROGRAM"
+        aggregate_id: "path.id"
+        payload:
+          program_id: "path.id"
+    response:
+      status: 200
+      body:
+        program_id: "path.id"
+        status: "active"
+
+  - name: "ReferralCode.Create"
+    description: "Create a referral code for a user"
+    path: "/v1/referral/codes"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "ReferralCodeCreateRequest"
+    steps:
+      - kind: "read"
+        table: "referral_program"
+        where: { id: "request.program_id" }
+        returns: "program"
+      - kind: "guard"
+        description: "Ensure program is active"
+        expressions:
+          - expr: "program.status == 'active'"
+            error: { code: "PROGRAM_NOT_ACTIVE" }
+      - kind: "upsert"
+        table: "referral_code"
+        unique_by: ["program_id", "code"]
+        fields:
+          program_id: "request.program_id"
+          owner_user_id: "actor.user_id"
+          code: "coalesce(request.code, generate_code())"
+          status: "active"
+          created_at: "now()"
+          updated_at: "now()"
+        returns: "code_id"
+    response:
+      status: 201
+      body:
+        code_id: "code_id"
+        status: "active"
+
+  - name: "ReferralInvite.Create"
+    description: "Create a referral invite"
+    path: "/v1/referral/invites"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "ReferralInviteCreateRequest"
+    steps:
+      - kind: "read"
+        table: "referral_code"
+        where: { id: "request.referral_code_id" }
+        returns: "code"
+      - kind: "guard"
+        description: "Ensure user owns the code"
+        expressions:
+          - expr: "code.owner_user_id == actor.user_id"
+            error: { code: "NOT_CODE_OWNER" }
+          - expr: "code.status == 'active'"
+            error: { code: "CODE_NOT_ACTIVE" }
+      - kind: "insert"
+        table: "referral_invite"
+        fields:
+          program_id: "request.program_id"
+          referral_code_id: "request.referral_code_id"
+          referrer_user_id: "actor.user_id"
+          channel_type: "request.channel_type"
+          channel_value: "request.channel_value"
+          invite_token: "generate_invite_token()"
+          status: "created"
+          created_at: "now()"
+          updated_at: "now()"
+        returns: "invite_id"
+      - kind: "insert"
+        table: "referral_event"
+        fields:
+          program_id: "request.program_id"
+          invite_id: "invite_id"
+          event_type: "invite_created"
+          actor_user_id: "actor.user_id"
+          occurred_at: "now()"
+          created_at: "now()"
+      - kind: "outbox_emit"
+        event: "REFERRAL_INVITE_CREATED"
+        aggregate_type: "REFERRAL_INVITE"
+        aggregate_id: "invite_id"
+        payload:
+          invite_id: "invite_id"
+          program_id: "request.program_id"
+          referrer_user_id: "actor.user_id"
+          invite_token: "invite_token"
+    response:
+      status: 201
+      body:
+        invite_id: "invite_id"
+        invite_token: "invite_token"
+        status: "created"
+
+  - name: "ReferralInvite.Click"
+    description: "Record a click on a referral invite link"
+    path: "/v1/referral/invites/click"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "ReferralInviteClickRequest"
+    steps:
+      - kind: "read"
+        table: "referral_invite"
+        where: { invite_token: "request.invite_token" }
+        returns: "invite"
+      - kind: "guard"
+        description: "Ensure invite is valid"
+        expressions:
+          - expr: "invite.status in ['created', 'sent']"
+            error: { code: "INVITE_NOT_VALID" }
+      - kind: "update"
+        table: "referral_invite"
+        where: { id: "invite.id" }
+        fields:
+          status: "clicked"
+          clicked_at: "now()"
+          updated_at: "now()"
+      - kind: "insert"
+        table: "referral_event"
+        fields:
+          program_id: "invite.program_id"
+          invite_id: "invite.id"
+          event_type: "invite_clicked"
+          occurred_at: "now()"
+          created_at: "now()"
+      - kind: "outbox_emit"
+        event: "REFERRAL_INVITE_CLICKED"
+        aggregate_type: "REFERRAL_INVITE"
+        aggregate_id: "invite.id"
+        payload:
+          invite_id: "invite.id"
+          program_id: "invite.program_id"
+    response:
+      status: 200
+      body:
+        invite_id: "invite.id"
+        status: "clicked"
+
+  - name: "ReferralConversion.Create"
+    description: "Record a referral conversion when a referred user completes qualifying action"
+    path: "/v1/referral/conversions"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "ReferralConversionCreateRequest"
+    steps:
+      - kind: "read"
+        table: "referral_invite"
+        where: { invite_token: "request.invite_token" }
+        returns: "invite"
+      - kind: "guard"
+        description: "Ensure invite is clicked"
+        expressions:
+          - expr: "invite.status in ['clicked', 'sent', 'created']"
+            error: { code: "INVITE_NOT_VALID" }
+      - kind: "upsert"
+        table: "referral_conversion"
+        unique_by: ["program_id", "referred_user_id"]
+        fields:
+          program_id: "invite.program_id"
+          invite_id: "invite.id"
+          referred_user_id: "request.referred_user_id"
+          status: "converted"
+          converted_at: "now()"
+          conversion_ref_type: "request.conversion_ref_type"
+          conversion_ref_id: "request.conversion_ref_id"
+          meta_json: "request.meta_json"
+          created_at: "now()"
+        returns: "conversion_id"
+      - kind: "when"
+        condition: "is_new_record"
+        steps:
+          - kind: "update"
+            table: "referral_invite"
+            where: { id: "invite.id" }
+            fields:
+              status: "converted"
+              updated_at: "now()"
+          - kind: "insert"
+            table: "referral_event"
+            fields:
+              program_id: "invite.program_id"
+              invite_id: "invite.id"
+              conversion_id: "conversion_id"
+              event_type: "conversion_created"
+              actor_user_id: "request.referred_user_id"
+              occurred_at: "now()"
+              created_at: "now()"
+          - kind: "call"
+            description: "Create referral chain entries"
+            service: "ReferralChainService.buildChain"
+            params:
+              program_id: "invite.program_id"
+              referrer_user_id: "invite.referrer_user_id"
+              referred_user_id: "request.referred_user_id"
+              invite_id: "invite.id"
+              conversion_id: "conversion_id"
+      - kind: "outbox_emit"
+        event: "REFERRAL_CONVERSION_CREATED"
+        aggregate_type: "REFERRAL_CONVERSION"
+        aggregate_id: "conversion_id"
+        payload:
+          conversion_id: "conversion_id"
+          program_id: "invite.program_id"
+          invite_id: "invite.id"
+          referrer_user_id: "invite.referrer_user_id"
+          referred_user_id: "request.referred_user_id"
+    response:
+      status: 201
+      body:
+        conversion_id: "conversion_id"
+        status: "converted"
+
+  - name: "ReferralReward.Request"
+    description: "Request referral rewards to be granted for a conversion"
+    path: "/v1/referral/rewards/request"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: null
+    steps:
+      - kind: "read"
+        table: "referral_conversion"
+        where: { id: "request.conversion_id" }
+        returns: "conversion"
+      - kind: "read"
+        table: "referral_invite"
+        where: { id: "conversion.invite_id" }
+        returns: "invite"
+      - kind: "read"
+        table: "referral_program"
+        where: { id: "conversion.program_id" }
+        returns: "program"
+      - kind: "guard"
+        description: "Ensure conversion is valid for rewards"
+        expressions:
+          - expr: "conversion.status == 'converted'"
+            error: { code: "CONVERSION_NOT_VALID" }
+      - kind: "hook"
+        description: "Calculate reward amounts based on program rules"
+        service: "ReferralRewardCalculator.calculate"
+        params:
+          program_id: "program.id"
+          conversion_id: "conversion.id"
+        returns: "reward_specs"
+      - kind: "when"
+        condition: "len(reward_specs) > 0"
+        steps:
+          - kind: "upsert"
+            table: "referral_reward_grant"
+            unique_by: ["conversion_id", "beneficiary_role"]
+            fields:
+              program_id: "program.id"
+              conversion_id: "conversion.id"
+              beneficiary_user_id: "spec.beneficiary_user_id"
+              beneficiary_role: "spec.beneficiary_role"
+              reward_type: "spec.reward_type"
+              amount: "spec.amount"
+              currency: "spec.currency"
+              status: "requested"
+              idempotency_key: "concat('ref_reward:', conversion.id, ':', spec.beneficiary_role)"
+              granted_at: "now()"
+              created_at: "now()"
+            returns: "grant_id"
+          - kind: "outbox_emit"
+            event: "REFERRAL_REWARD_REQUESTED"
+            aggregate_type: "REFERRAL_REWARD_GRANT"
+            aggregate_id: "grant_id"
+            payload:
+              grant_id: "grant_id"
+              conversion_id: "conversion.id"
+              program_id: "program.id"
+              beneficiary_user_id: "spec.beneficiary_user_id"
+              beneficiary_role: "spec.beneficiary_role"
+              reward_type: "spec.reward_type"
+              amount: "spec.amount"
+              currency: "spec.currency"
+    response:
+      status: 200
+      body:
+        grants_requested: "count(reward_specs)"
+
+coverage:
+  tables:
+    referral_program:
+      touched_by:
+        - "ReferralProgram.Create"
+        - "ReferralProgram.Pause"
+        - "ReferralProgram.Activate"
+    referral_code:
+      touched_by:
+        - "ReferralCode.Create"
+    referral_invite:
+      touched_by:
+        - "ReferralInvite.Create"
+        - "ReferralInvite.Click"
+        - "ReferralConversion.Create"
+    referral_conversion:
+      touched_by:
+        - "ReferralConversion.Create"
+    referral_event:
+      touched_by:
+        - "ReferralInvite.Create"
+        - "ReferralInvite.Click"
+        - "ReferralConversion.Create"
+    referral_reward_grant:
+      touched_by:
+        - "ReferralReward.Request"
+    referral_rule:
+      touched_by: []
+    referral_chain:
+      touched_by:
+        - "ReferralConversion.Create"
+
+  events:
+    REFERRAL_PROGRAM_CREATED:
+      emitted_by:
+        - "ReferralProgram.Create"
+    REFERRAL_PROGRAM_PAUSED:
+      emitted_by:
+        - "ReferralProgram.Pause"
+    REFERRAL_PROGRAM_ACTIVATED:
+      emitted_by:
+        - "ReferralProgram.Activate"
+    REFERRAL_INVITE_CREATED:
+      emitted_by:
+        - "ReferralInvite.Create"
+    REFERRAL_INVITE_CLICKED:
+      emitted_by:
+        - "ReferralInvite.Click"
+    REFERRAL_CONVERSION_CREATED:
+      emitted_by:
+        - "ReferralConversion.Create"
+    REFERRAL_REWARD_REQUESTED:
+      emitted_by:
+        - "ReferralReward.Request"
+
+changelog:
+  - version: "1.0"
+    date: "2026-03-17"
+    author: "Claude Code"
+    description: "Initial referral pillar specification"
+    changes:
+      - "Added complete schema for all 8 referral tables"
+      - "Defined aggregates for program, invite, conversion, and reward workflows"
+      - "Created commands for program lifecycle, code generation, invite creation, conversion tracking, and reward requests"
+      - "Established event-driven integration patterns for reward fulfillment"
+      - "Implemented multi-level referral chain tracking support"
+    breaking_changes: []
+    migrations_required:
+      - "Create all referral tables as per DDL"
+      - "Set up indexes and foreign key constraints"
+
+codegen:
+  language: "typescript"
+  framework: "nestjs"
+  example_generated_outputs:
+    dtos:
+      - "src/plugins/referral/dto/referral-program-create.request.generated.ts"
+      - "src/plugins/referral/dto/referral-code-create.request.generated.ts"
+      - "src/plugins/referral/dto/referral-invite-create.request.generated.ts"
+      - "src/plugins/referral/dto/referral-conversion-create.request.generated.ts"
+    controllers:
+      - "src/plugins/referral/controllers/referral.commands.controller.generated.ts"
+    services:
+      - "src/plugins/referral/services/referral.workflow.service.generated.ts"
+      - "src/plugins/referral/services/referral-chain.service.ts"
+      - "src/plugins/referral/services/referral-reward-calculator.service.ts"
+    tests:
+      - "test/referral/referral-program.create.e2e.generated.spec.ts"
+      - "test/referral/referral-invite.create.e2e.generated.spec.ts"
+      - "test/referral/referral-conversion.create.e2e.generated.spec.ts"
+    openapi:
+      - "openapi/referral.v1.generated.yaml"

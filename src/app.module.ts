@@ -11,6 +11,7 @@ import { PersonModule } from './plugins/person/person.module';
 import { UserModule } from './plugins/user/user.module';
 import { FileModule } from './plugins/file/file.module';
 import { NotificationModule } from './plugins/notification/notification.module';
+import { ReferralModule } from './plugins/referral/referral.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { NotificationModule } from './plugins/notification/notification.module';
     UserModule,
     FileModule,
     NotificationModule,
+    ReferralModule,
   ],
   controllers: [AppController],
   providers: [AppService],
