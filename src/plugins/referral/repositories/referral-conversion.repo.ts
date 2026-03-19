@@ -37,11 +37,13 @@ export class ReferralConversionRepository {
     const manager = queryRunner ? queryRunner.manager : this.repo.manager;
 
     // Use MySQL ON DUPLICATE KEY UPDATE pattern
-    const fields = Object.keys(data).filter((k) => k !== 'id');
+    // Filter out undefined values and the 'id' field
+    const fields = Object.keys(data).filter((k) => k !== 'id' && data[k] !== undefined);
     const values = fields.map((k) => {
       const value = data[k];
       if (typeof value === 'string') return `'${value.replace(/'/g, "''")}'`;
-      if (value === null || value === undefined) return 'NULL';
+      if (value === null) return 'NULL';
+      if (value instanceof Date) return `'${value.toISOString().slice(0, 19).replace('T', ' ')}'`;
       if (typeof value === 'object') return `'${JSON.stringify(value).replace(/'/g, "''")}'`;
       return String(value);
     });

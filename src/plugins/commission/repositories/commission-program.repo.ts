@@ -1,42 +1,60 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, QueryRunner } from 'typeorm';
-import { ReferralCode } from '../entities/referral-code.entity';
+import { CommissionProgram } from '../entities/commission-program.entity';
 
 /**
- * ReferralCodeRepository
- * Handles database operations for referral_code table
- * Source: specs/referral/referral.pillar.yml resources.referral_code
+ * CommissionProgramRepository
+ * Handles database operations for commission_program table
+ * Source: specs/commission/commission.pillar.v2.yml aggregates.PROGRAM
  */
 @Injectable()
-export class ReferralCodeRepository {
+export class CommissionProgramRepository {
   constructor(
-    @InjectRepository(ReferralCode)
-    private readonly repo: Repository<ReferralCode>,
+    @InjectRepository(CommissionProgram)
+    private readonly repo: Repository<CommissionProgram>,
   ) {}
 
-  /**
-   * Find referral code by ID
-   */
   async findById(
     id: number,
     queryRunner?: QueryRunner,
-  ): Promise<ReferralCode | null> {
+  ): Promise<CommissionProgram | null> {
     const manager = queryRunner ? queryRunner.manager : this.repo.manager;
-    return manager.findOne(ReferralCode, { where: { id } });
+    return manager.findOne(CommissionProgram, { where: { id } });
   }
 
-  /**
-   * Upsert referral code by program_id + code (idempotent create)
-   * Based on referral.pillar.yml lines 1043-1053 (upsert by program_id, code)
-   */
+  async findByCode(
+    code: string,
+    queryRunner?: QueryRunner,
+  ): Promise<CommissionProgram | null> {
+    const manager = queryRunner ? queryRunner.manager : this.repo.manager;
+    return manager.findOne(CommissionProgram, { where: { code } });
+  }
+
+  async create(
+    data: Partial<CommissionProgram>,
+    queryRunner?: QueryRunner,
+  ): Promise<number> {
+    const manager = queryRunner ? queryRunner.manager : this.repo.manager;
+    const result = await manager.insert(CommissionProgram, data);
+    return result.identifiers[0].id;
+  }
+
+  async update(
+    id: number,
+    data: Partial<CommissionProgram>,
+    queryRunner?: QueryRunner,
+  ): Promise<void> {
+    const manager = queryRunner ? queryRunner.manager : this.repo.manager;
+    await manager.update(CommissionProgram, { id }, data);
+  }
+
   async upsert(
-    data: Partial<ReferralCode>,
+    data: Partial<CommissionProgram>,
     queryRunner?: QueryRunner,
   ): Promise<number> {
     const manager = queryRunner ? queryRunner.manager : this.repo.manager;
 
-    // Use MySQL ON DUPLICATE KEY UPDATE pattern
     // Filter out undefined values and the 'id' field
     const fields = Object.keys(data).filter((k) => k !== 'id' && data[k] !== undefined);
     const values = fields.map((k) => {
@@ -51,12 +69,12 @@ export class ReferralCodeRepository {
     const fieldList = fields.join(', ');
     const valueList = values.join(', ');
     const updateList = fields
-      .filter((k) => !['program_id', 'code'].includes(k))
+      .filter((k) => k !== 'code')
       .map((k) => `${k}=VALUES(${k})`)
       .join(', ');
 
     const sql = `
-      INSERT INTO referral_code (${fieldList})
+      INSERT INTO commission_program (${fieldList})
       VALUES (${valueList})
       ON DUPLICATE KEY UPDATE
         id = LAST_INSERT_ID(id)${updateList ? ', ' + updateList : ''}

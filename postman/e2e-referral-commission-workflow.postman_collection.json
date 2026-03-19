@@ -1,0 +1,1215 @@
+{
+  "info": {
+    "name": "E2E Referral Commission Workflow",
+    "description": "Complete end-to-end workflow: User Registration → Referral → Commission → Wallet Rewards\n\nThis collection demonstrates how all pillars work together:\n1. Setup referral program and enroll User A (referrer)\n2. User B registers using User A's referral\n3. User B completes qualifying action\n4. System records commission for User A\n5. System deposits reward coins into User A's wallet",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "admin_user_id",
+      "value": "admin-123",
+      "type": "string"
+    },
+    {
+      "key": "admin_role",
+      "value": "ADMIN",
+      "type": "string"
+    },
+    {
+      "key": "user_a_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "user_b_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "user_a_account_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "user_b_account_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "user_a_wallet_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "user_b_wallet_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "referral_program_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "referral_code_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "referral_invite_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "invite_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "conversion_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "commission_program_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "commission_participant_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "accrual_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "PHASE 1: Setup Referral Program",
+      "item": [
+        {
+          "name": "1.1 Create Referral Program",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.program_id) {",
+                  "        pm.collectionVariables.set('referral_program_id', response.program_id);",
+                  "        console.log('✅ Referral Program Created:', response.program_id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{admin_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"FRIEND_REFERRAL_2024\",\n  \"name\": \"Friend Referral Program 2024\",\n  \"reward_config\": {\n    \"referrer_reward\": {\n      \"type\": \"coins\",\n      \"amount\": 100\n    },\n    \"referee_reward\": {\n      \"type\": \"coins\",\n      \"amount\": 50\n    },\n    \"qualifying_action\": \"first_purchase\"\n  },\n  \"meta_json\": {\n    \"description\": \"Refer friends and earn coins!\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/referral/programs",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "referral", "programs"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "1.2 Create Commission Program",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.program_id) {",
+                  "        pm.collectionVariables.set('commission_program_id', response.program_id);",
+                  "        console.log('✅ Commission Program Created:', response.program_id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{admin_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"REFERRAL_COMMISSION_2024\",\n  \"name\": \"Referral Commission Program 2024\",\n  \"currency\": \"COIN\",\n  \"settlement_cycle\": \"instant\",\n  \"meta_json\": {\n    \"description\": \"Commission for successful referrals\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/commission/programs",
+              "host": ["{{base_url}}"],
+              "path": ["api", "commission", "programs"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "PHASE 2: Setup User A (Referrer)",
+      "item": [
+        {
+          "name": "2.1 Create User A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.user_id) {",
+                  "        pm.collectionVariables.set('user_a_id', response.user_id);",
+                  "        console.log('✅ User A Created:', response.user_id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{admin_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"userA@example.com\",\n  \"username\": \"user_a_referrer\",\n  \"display_name\": \"User A (Referrer)\",\n  \"profile_data\": {\n    \"first_name\": \"Alice\",\n    \"last_name\": \"Referrer\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/users",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "users"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2.2 Create Account for User A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.account_id) {",
+                  "        pm.collectionVariables.set('user_a_account_id', response.account_id);",
+                  "        console.log('✅ User A Account Created:', response.account_id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{admin_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"user\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/accounts",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "accounts"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2.3 Create Wallet for User A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.wallet_id) {",
+                  "        pm.collectionVariables.set('user_a_wallet_id', response.wallet_id);",
+                  "        console.log('✅ User A Wallet Created:', response.wallet_id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{admin_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"account_id\": \"{{user_a_account_id}}\",\n  \"wallet_type\": \"MAIN\",\n  \"currency\": \"COIN\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/wallets",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "wallets"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2.4 Enroll User A in Commission Program",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.participant_id) {",
+                  "        pm.collectionVariables.set('commission_participant_id', response.participant_id);",
+                  "        console.log('✅ User A Enrolled in Commission Program:', response.participant_id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{admin_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"participant_type\": \"user\",\n  \"participant_id\": {{user_a_id}},\n  \"default_payout_method\": \"wallet\",\n  \"wallet_id\": {{user_a_wallet_id}},\n  \"meta_json\": {\n    \"referral_source\": \"organic\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/commission/programs/{{commission_program_id}}/participants",
+              "host": ["{{base_url}}"],
+              "path": ["api", "commission", "programs", "{{commission_program_id}}", "participants"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2.5 Create Referral Code for User A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.code_id) {",
+                  "        pm.collectionVariables.set('referral_code_id', response.code_id);",
+                  "        console.log('✅ Referral Code Created:', response.code_id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_a_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "USER",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"program_id\": {{referral_program_id}}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/referral/codes",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "referral", "codes"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2.6 Create Referral Invite for User A",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.invite_id) {",
+                  "        pm.collectionVariables.set('referral_invite_id', response.invite_id);",
+                  "        console.log('✅ Referral Invite Created:', response.invite_id);",
+                  "    }",
+                  "    if (response.invite_token) {",
+                  "        pm.collectionVariables.set('invite_token', response.invite_token);",
+                  "        console.log('✅ Invite Token:', response.invite_token);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_a_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "USER",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"program_id\": {{referral_program_id}},\n  \"referral_code_id\": {{referral_code_id}},\n  \"channel_type\": \"email\",\n  \"channel_value\": \"userB@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/referral/invites",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "referral", "invites"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "PHASE 3: User B Registration (Referred User)",
+      "item": [
+        {
+          "name": "3.1 User B Clicks Referral Invite",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    console.log('✅ Referral Invite Clicked');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{admin_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"invite_token\": \"{{invite_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/referral/invites/click",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "referral", "invites", "click"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3.2 Create User B (Referred User)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.user_id) {",
+                  "        pm.collectionVariables.set('user_b_id', response.user_id);",
+                  "        console.log('✅ User B Created:', response.user_id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{admin_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"userB@example.com\",\n  \"username\": \"user_b_referred\",\n  \"display_name\": \"User B (Referred)\",\n  \"profile_data\": {\n    \"first_name\": \"Bob\",\n    \"last_name\": \"Referred\",\n    \"referral_code\": \"ALICE2024\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/users",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "users"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3.3 Create Account for User B",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.account_id) {",
+                  "        pm.collectionVariables.set('user_b_account_id', response.account_id);",
+                  "        console.log('✅ User B Account Created:', response.account_id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{admin_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"user\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/accounts",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "accounts"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3.4 Create Wallet for User B",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.wallet_id) {",
+                  "        pm.collectionVariables.set('user_b_wallet_id', response.wallet_id);",
+                  "        console.log('✅ User B Wallet Created:', response.wallet_id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{admin_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"account_id\": \"{{user_b_account_id}}\",\n  \"wallet_type\": \"MAIN\",\n  \"currency\": \"COIN\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/wallets",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "wallets"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "PHASE 4: Conversion & Rewards",
+      "item": [
+        {
+          "name": "4.1 Record Referral Conversion (User B qualifies)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.conversion_id) {",
+                  "        pm.collectionVariables.set('conversion_id', response.conversion_id);",
+                  "        console.log('✅ Referral Conversion Recorded:', response.conversion_id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{admin_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"invite_token\": \"{{invite_token}}\",\n  \"referred_user_id\": {{user_b_id}},\n  \"conversion_ref_type\": \"order\",\n  \"conversion_ref_id\": \"ORDER-2024-001\",\n  \"meta_json\": {\n    \"order_id\": \"ORDER-2024-001\",\n    \"product\": \"Premium Subscription\",\n    \"amount\": 99.99\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/referral/conversions",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "referral", "conversions"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "4.2 Record Commission Accrual (Reward User A)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.accrual_id) {",
+                  "        pm.collectionVariables.set('accrual_id', response.accrual_id);",
+                  "        console.log('✅ Commission Accrual Recorded:', response.accrual_id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const idempotencyKey = pm.variables.replaceIn('accrual-{{$timestamp}}-{{$randomInt}}');",
+                  "pm.collectionVariables.set('current_idempotency_key', idempotencyKey);",
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: idempotencyKey,",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{admin_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"program_id\": {{commission_program_id}},\n  \"participant_id\": {{commission_participant_id}},\n  \"accrual_type\": \"one_time\",\n  \"currency\": \"COIN\",\n  \"base_amount\": 99.99,\n  \"amount\": 100.00,\n  \"source_ref_type\": \"referral_conversion\",\n  \"source_ref_id\": \"{{conversion_id}}\",\n  \"idempotency_key\": \"{{current_idempotency_key}}\",\n  \"meta_json\": {\n    \"referral_code\": \"ALICE2024\",\n    \"referred_user_id\": {{user_b_id}},\n    \"conversion_id\": {{conversion_id}}\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/commission/accruals",
+              "host": ["{{base_url}}"],
+              "path": ["api", "commission", "accruals"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "4.3 Deposit Reward Coins to User A Wallet",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('✅ Reward Coins Deposited to User A Wallet');",
+                  "    console.log('   New Balance:', response.new_balance, 'COIN');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{admin_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wallet_id\": \"{{user_a_wallet_id}}\",\n  \"amount\": 100,\n  \"currency\": \"COIN\",\n  \"type\": \"referral_reward\",\n  \"ref_type\": \"commission_accrual\",\n  \"ref_id\": \"{{accrual_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/wallets/{{user_a_wallet_id}}/deposit",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "wallets", "{{user_a_wallet_id}}", "deposit"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "4.4 Deposit Welcome Coins to User B Wallet",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('✅ Welcome Coins Deposited to User B Wallet');",
+                  "    console.log('   New Balance:', response.new_balance, 'COIN');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{admin_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"wallet_id\": \"{{user_b_wallet_id}}\",\n  \"amount\": 50,\n  \"currency\": \"COIN\",\n  \"type\": \"referral_reward\",\n  \"ref_type\": \"referral_conversion\",\n  \"ref_id\": \"{{conversion_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/wallets/{{user_b_wallet_id}}/deposit",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "wallets", "{{user_b_wallet_id}}", "deposit"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "PHASE 5: Verify Results",
+      "item": [
+        {
+          "name": "5.1 Get User A Wallet Balance",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('💰 User A Balance:', response.available_amount, 'COIN');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{admin_role}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/wallets/{{user_a_wallet_id}}/balance",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "wallets", "{{user_a_wallet_id}}", "balance"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5.2 Get User B Wallet Balance",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('💰 User B Balance:', response.available_amount, 'COIN');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{admin_role}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/wallets/{{user_b_wallet_id}}/balance",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "wallets", "{{user_b_wallet_id}}", "balance"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5.3 Get User A Wallet Transactions",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    console.log('📊 User A has', response.items.length, 'transactions');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{admin_role}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/wallets/{{user_a_wallet_id}}/transactions?limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "wallets", "{{user_a_wallet_id}}", "transactions"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

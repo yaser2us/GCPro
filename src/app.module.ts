@@ -12,6 +12,8 @@ import { UserModule } from './plugins/user/user.module';
 import { FileModule } from './plugins/file/file.module';
 import { NotificationModule } from './plugins/notification/notification.module';
 import { ReferralModule } from './plugins/referral/referral.module';
+import { ReferralV2Module } from './plugins/referral/referral-v2.module';
+import { CommissionModule } from './plugins/commission/commission.module';
 
 @Module({
   imports: [
@@ -38,7 +40,9 @@ import { ReferralModule } from './plugins/referral/referral.module';
     UserModule,
     FileModule,
     NotificationModule,
-    ReferralModule,
+    ReferralModule, // V1: Single-level referrals (/v1/referral/*)
+    ReferralV2Module, // V2: Multi-level referrals (/v2/referral/*)
+    CommissionModule,
   ],
   controllers: [AppController],
   providers: [AppService],

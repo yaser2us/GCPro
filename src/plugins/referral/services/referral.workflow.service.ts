@@ -323,7 +323,7 @@ export class ReferralWorkflowService {
       }
 
       // GUARD: Ensure user owns the code and code is active (lines 1080-1086)
-      if (code.owner_user_id !== Number(actor.actor_user_id)) {
+      if (Number(code.owner_user_id) !== Number(actor.actor_user_id)) {
         throw new ConflictException({
           code: 'NOT_CODE_OWNER',
           message: 'You do not own this referral code',

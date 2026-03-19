@@ -1,42 +1,43 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, QueryRunner } from 'typeorm';
-import { ReferralCode } from '../entities/referral-code.entity';
+import { CommissionPayoutBatch } from '../entities/commission-payout-batch.entity';
 
 /**
- * ReferralCodeRepository
- * Handles database operations for referral_code table
- * Source: specs/referral/referral.pillar.yml resources.referral_code
+ * CommissionPayoutBatchRepository
+ * Handles database operations for commission_payout_batch table
+ * Source: specs/commission/commission.pillar.v2.yml aggregates.PAYOUT_BATCH
  */
 @Injectable()
-export class ReferralCodeRepository {
+export class CommissionPayoutBatchRepository {
   constructor(
-    @InjectRepository(ReferralCode)
-    private readonly repo: Repository<ReferralCode>,
+    @InjectRepository(CommissionPayoutBatch)
+    private readonly repo: Repository<CommissionPayoutBatch>,
   ) {}
 
-  /**
-   * Find referral code by ID
-   */
   async findById(
     id: number,
     queryRunner?: QueryRunner,
-  ): Promise<ReferralCode | null> {
+  ): Promise<CommissionPayoutBatch | null> {
     const manager = queryRunner ? queryRunner.manager : this.repo.manager;
-    return manager.findOne(ReferralCode, { where: { id } });
+    return manager.findOne(CommissionPayoutBatch, { where: { id } });
   }
 
-  /**
-   * Upsert referral code by program_id + code (idempotent create)
-   * Based on referral.pillar.yml lines 1043-1053 (upsert by program_id, code)
-   */
+  async update(
+    id: number,
+    data: Partial<CommissionPayoutBatch>,
+    queryRunner?: QueryRunner,
+  ): Promise<void> {
+    const manager = queryRunner ? queryRunner.manager : this.repo.manager;
+    await manager.update(CommissionPayoutBatch, { id }, data);
+  }
+
   async upsert(
-    data: Partial<ReferralCode>,
+    data: Partial<CommissionPayoutBatch>,
     queryRunner?: QueryRunner,
   ): Promise<number> {
     const manager = queryRunner ? queryRunner.manager : this.repo.manager;
 
-    // Use MySQL ON DUPLICATE KEY UPDATE pattern
     // Filter out undefined values and the 'id' field
     const fields = Object.keys(data).filter((k) => k !== 'id' && data[k] !== undefined);
     const values = fields.map((k) => {
@@ -51,12 +52,12 @@ export class ReferralCodeRepository {
     const fieldList = fields.join(', ');
     const valueList = values.join(', ');
     const updateList = fields
-      .filter((k) => !['program_id', 'code'].includes(k))
+      .filter((k) => !['program_id', 'batch_code'].includes(k))
       .map((k) => `${k}=VALUES(${k})`)
       .join(', ');
 
     const sql = `
-      INSERT INTO referral_code (${fieldList})
+      INSERT INTO commission_payout_batch (${fieldList})
       VALUES (${valueList})
       ON DUPLICATE KEY UPDATE
         id = LAST_INSERT_ID(id)${updateList ? ', ' + updateList : ''}
