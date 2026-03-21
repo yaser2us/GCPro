@@ -1110,6 +1110,294 @@ events:
     description: "Individual payout item failed"
 
 # ──────────────────────────────────────────────────────────────────────────────
+# CROSS-PILLAR INTEGRATION
+# ──────────────────────────────────────────────────────────────────────────────
+
+integration:
+  description: |
+    Commission pillar uses event-driven architecture (Transactional Outbox pattern)
+    to communicate with other pillars. Events are stored in the same transaction as
+    business operations, then published asynchronously.
+
+  outbox_pattern:
+    how_it_works:
+      - "Commission operations write to outbox_event table in same transaction"
+      - "OutboxPublisher polls outbox_event table for unpublished events"
+      - "Events are published to EventBus for consumers"
+      - "Consumers process events and update outbox_event_consumer status"
+      - "Idempotency enforced by unique constraints on consumer + event"
+
+    benefits:
+      - "Atomicity: Events guaranteed to be published if operation succeeds"
+      - "Reliability: Events stored durably, can be retried on failure"
+      - "Decoupling: Commission pillar doesn't know about wallet implementation"
+      - "Idempotency: Consumers can safely retry without duplicates"
+
+  wallet_pillar:
+    description: "Wallet pillar consumes commission events to credit participant wallets"
+    pattern: "event_driven_via_outbox"
+
+    consumers:
+      - event: "ACCRUAL_RECORDED"
+        consumer_name: "CommissionAccrualConsumer"
+        location: "src/plugins/wallet/consumers/commission-accrual.consumer.ts"
+        responsibility: "Credit participant wallet when commission accrues"
+
+        expected_behavior:
+          - "Listen to ACCRUAL_RECORDED event from EventBus"
+          - "Lookup commission_participant to get wallet_id"
+          - "Create ledger_txn with type='credit', ref_type='commission_accrual', ref_id=accrual_id"
+          - "Update wallet_balance.available_amount += accrual.amount"
+          - "Use accrual.id as idempotency key to prevent duplicate credits"
+          - "Record consumer status in outbox_event_consumer table"
+
+        event_payload_example:
+          event_type: "ACCRUAL_RECORDED"
+          aggregate_type: "PROGRAM"
+          aggregate_id: 1  # program_id
+          payload:
+            accrual_id: 42
+            program_id: 1
+            participant_id: 100
+            amount: 25.50
+            currency: "COIN"
+            accrued_at: "2026-03-19T10:00:00.000Z"
+            meta_json:
+              referral_conversion_id: 500
+              level: 1
+
+        wallet_transaction_created:
+          ledger_txn:
+            wallet_id: 200
+            txn_type: "credit"
+            amount: 25.50
+            currency: "COIN"
+            ref_type: "commission_accrual"
+            ref_id: 42
+            description: "Commission earned - Level 1 referral"
+
+          wallet_balance_update:
+            available_amount: "previous_balance + 25.50"
+
+        idempotency_strategy:
+          - "Use accrual_id + consumer_name as unique key in outbox_event_consumer"
+          - "ON DUPLICATE KEY UPDATE status='success' prevents double-processing"
+          - "If wallet credit fails, mark consumer status='failed' for retry"
+
+        error_handling:
+          - "If participant has no wallet_id, log error and mark consumer 'failed'"
+          - "If ledger transaction fails, mark consumer 'failed' for retry"
+          - "If wallet balance update fails, rollback transaction, mark 'failed'"
+          - "Failed events will be retried by OutboxPublisher on next poll"
+
+      - event: "ACCRUAL_VOIDED"
+        consumer_name: "CommissionAccrualConsumer"
+        location: "src/plugins/wallet/consumers/commission-accrual.consumer.ts"
+        responsibility: "Reverse wallet credit when accrual is voided"
+
+        expected_behavior:
+          - "Listen to ACCRUAL_VOIDED event from EventBus"
+          - "Lookup original ledger_txn where ref_type='commission_accrual' AND ref_id=accrual_id"
+          - "Create reversal ledger_txn with type='debit', amount=original_amount"
+          - "Update wallet_balance.available_amount -= accrual.amount"
+          - "Check wallet has sufficient balance before reversal"
+
+        event_payload_example:
+          event_type: "ACCRUAL_VOIDED"
+          aggregate_type: "PROGRAM"
+          aggregate_id: 1
+          payload:
+            accrual_id: 42
+            program_id: 1
+            participant_id: 100
+            original_amount: 25.50
+            void_reason: "Conversion refunded"
+            voided_at: "2026-03-20T15:00:00.000Z"
+
+        wallet_transaction_created:
+          ledger_txn:
+            wallet_id: 200
+            txn_type: "debit"
+            amount: 25.50
+            currency: "COIN"
+            ref_type: "commission_accrual_void"
+            ref_id: 42
+            description: "Commission reversed - Conversion refunded"
+
+        error_handling:
+          - "If original transaction not found, log warning and mark 'success' (idempotent)"
+          - "If wallet has insufficient balance, mark 'failed' for manual review"
+          - "DO NOT allow negative balance - requires manual intervention"
+
+      - event: "PAYOUT_BATCH_COMPLETED"
+        consumer_name: "CommissionPayoutConsumer"
+        location: "src/plugins/wallet/consumers/commission-payout.consumer.ts"
+        responsibility: "Debit participant wallet when payout is settled"
+
+        expected_behavior:
+          - "Listen to PAYOUT_BATCH_COMPLETED event"
+          - "For each payout_item in the batch, create debit transaction"
+          - "Update wallet_balance.available_amount -= payout_item.amount"
+          - "Mark accruals as 'paid' by updating commission_payout_item_accrual"
+
+        event_payload_example:
+          event_type: "PAYOUT_BATCH_COMPLETED"
+          aggregate_type: "PAYOUT_BATCH"
+          aggregate_id: 10
+          payload:
+            batch_id: 10
+            program_id: 1
+            settlement_period_start: "2026-03-01"
+            settlement_period_end: "2026-03-31"
+            total_amount: 500.00
+            item_count: 15
+            completed_at: "2026-04-01T10:00:00.000Z"
+
+        wallet_operations:
+          - "Query commission_payout_item WHERE batch_id = 10"
+          - "For each item:"
+          - "  Create ledger_txn (type='debit', ref_type='commission_payout', ref_id=item_id)"
+          - "  Update wallet_balance.available_amount -= item.amount"
+          - "Use batch_id + item_id as idempotency key"
+
+  referral_pillar:
+    description: "Commission pillar consumes referral events to trigger accruals"
+    pattern: "event_driven_via_outbox"
+
+    consumers:
+      - event: "REFERRAL_CONVERSION_CREATED"
+        consumer_name: "ReferralConversionCommissionConsumer"
+        location: "src/plugins/commission/consumers/referral-conversion.consumer.ts"
+        responsibility: "Record commission accrual when referral conversion occurs"
+
+        expected_behavior:
+          - "Listen to REFERRAL_CONVERSION_CREATED from referral pillar"
+          - "Query referral_chain to get all ancestors (multi-level)"
+          - "For each ancestor at depth 1, 2, 3:"
+          - "  Get commission_rule for that level"
+          - "  Calculate accrual amount = conversion_value * rule.rate"
+          - "  Call RecordAccrual command"
+          - "This triggers ACCRUAL_RECORDED event (consumed by wallet)"
+
+  architecture_diagram: |
+
+    ┌─────────────────────────────────────────────────────────────────────────┐
+    │ CROSS-PILLAR EVENT FLOW                                                 │
+    └─────────────────────────────────────────────────────────────────────────┘
+
+    1. REFERRAL → COMMISSION → WALLET
+
+       User B refers User C (via Referral V2 API)
+              │
+              ├─→ REFERRAL_CONVERSION_CREATED (outbox_event)
+              │
+              └─→ [Commission] ReferralConversionCommissionConsumer
+                     │
+                     ├─→ Query referral_chain (User A → User B, depth=1)
+                     │
+                     ├─→ RecordAccrual(participant=User A, amount=25.50)
+                     │
+                     └─→ ACCRUAL_RECORDED (outbox_event)
+                            │
+                            └─→ [Wallet] CommissionAccrualConsumer
+                                   │
+                                   ├─→ Create ledger_txn (credit)
+                                   │
+                                   └─→ Update wallet_balance +25.50
+
+
+    2. COMMISSION PAYOUT → WALLET
+
+       Admin runs ProcessPayoutBatch
+              │
+              ├─→ Aggregate accruals for settlement period
+              │
+              ├─→ Create commission_payout_batch
+              │
+              ├─→ Create commission_payout_item (per participant)
+              │
+              └─→ PAYOUT_BATCH_COMPLETED (outbox_event)
+                     │
+                     └─→ [Wallet] CommissionPayoutConsumer
+                            │
+                            ├─→ Create ledger_txn (debit)
+                            │
+                            └─→ Update wallet_balance -500.00
+
+
+    3. COMMISSION VOID → WALLET
+
+       Admin voids fraudulent accrual
+              │
+              ├─→ VoidAccrual command
+              │
+              ├─→ Update commission_accrual.status = 'voided'
+              │
+              └─→ ACCRUAL_VOIDED (outbox_event)
+                     │
+                     └─→ [Wallet] CommissionAccrualConsumer
+                            │
+                            ├─→ Create ledger_txn (debit, reversal)
+                            │
+                            └─→ Update wallet_balance -25.50
+
+  implementation_checklist:
+    wallet_pillar:
+      - "[ ] Create CommissionAccrualConsumer class"
+      - "[ ] Subscribe to ACCRUAL_RECORDED event"
+      - "[ ] Implement wallet credit logic with idempotency"
+      - "[ ] Subscribe to ACCRUAL_VOIDED event"
+      - "[ ] Implement wallet debit logic with balance checks"
+      - "[ ] Create CommissionPayoutConsumer class"
+      - "[ ] Subscribe to PAYOUT_BATCH_COMPLETED event"
+      - "[ ] Implement batch payout debit logic"
+      - "[ ] Add error handling for insufficient balance"
+      - "[ ] Add logging for audit trail"
+      - "[ ] Write integration tests (commission → wallet)"
+
+    commission_pillar:
+      - "[✓] Commission events stored in outbox_event"
+      - "[✓] ACCRUAL_RECORDED event emitted on RecordAccrual"
+      - "[✓] ACCRUAL_VOIDED event emitted on VoidAccrual"
+      - "[✓] PAYOUT_BATCH_COMPLETED event emitted on ProcessPayoutBatch"
+      - "[ ] Create ReferralConversionCommissionConsumer"
+      - "[ ] Subscribe to REFERRAL_CONVERSION_CREATED"
+      - "[ ] Implement multi-level accrual calculation"
+      - "[ ] Write integration tests (referral → commission)"
+
+  testing_strategy:
+    end_to_end_test: |
+      1. Create commission program with 3-level rules (25%, 10%, 5%)
+      2. User A refers User B (creates conversion)
+      3. User B refers User C (creates conversion)
+      4. User C makes $100 purchase
+      5. Verify commission accruals:
+         - User B: $25 (level 1 from User C)
+         - User A: $10 (level 2 from User C)
+      6. Verify wallet credits:
+         - User B wallet: +$25
+         - User A wallet: +$10
+      7. Verify ledger transactions created with ref_type='commission_accrual'
+      8. Run payout batch for settlement period
+      9. Verify wallet debits:
+         - User B wallet: -$25
+         - User A wallet: -$10
+      10. Verify accruals marked as 'paid'
+
+    idempotency_test: |
+      1. Record accrual (accrual_id=42)
+      2. Publish ACCRUAL_RECORDED event twice
+      3. Verify wallet only credited once
+      4. Verify outbox_event_consumer has single success record
+
+    void_test: |
+      1. Record accrual (accrual_id=42, amount=$25)
+      2. Verify wallet credited +$25
+      3. Void accrual (fraudulent conversion)
+      4. Verify wallet debited -$25
+      5. Verify wallet balance returned to original amount
+
+# ──────────────────────────────────────────────────────────────────────────────
 # COMMANDS
 # ──────────────────────────────────────────────────────────────────────────────
 

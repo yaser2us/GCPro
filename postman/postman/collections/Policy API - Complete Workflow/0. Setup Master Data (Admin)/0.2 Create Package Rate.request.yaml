@@ -1,0 +1,35 @@
+$kind: http-request
+description: Creates a rate for policy package ID 1
+url: "{{base_url}}/api/v1/policy/admin/packages/1/rates"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "age_band_id": 2,
+      "smoker_profile_id": 1,
+      "annual_fee_amount": "9600.00",
+      "monthly_max_cap": "5000.00",
+      "weightage_factor": "1.0000",
+      "rate_version": "v2024",
+      "effective_from": "2024-01-01T00:00:00Z"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      if (pm.response.code === 201 || pm.response.code === 200) {
+          const response = pm.response.json();
+          if (response.rate_id) {
+              console.log('✅ Rate Created:', response.rate_id);
+          }
+      }
+
+      pm.test('Status code is 201 or 200', function () {
+          pm.expect(pm.response.code).to.be.oneOf([200, 201]);
+      });
+    language: text/javascript
+order: 2000

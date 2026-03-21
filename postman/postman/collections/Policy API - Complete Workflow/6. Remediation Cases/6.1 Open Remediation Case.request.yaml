@@ -1,0 +1,41 @@
+$kind: http-request
+description: Opens a remediation case for policy issues
+url: "{{base_url}}/api/v1/policy/{{policy_id}}/remediation/open"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "reason_code": "DEPOSIT_SHORTFALL",
+      "grace_days": 7,
+      "required_actions": "Top up deposit wallet to minimum required amount",
+      "idempotency_key": "remediation-{{$guid}}"
+    }
+scripts:
+  - type: afterResponse
+    code: >-
+      if (pm.response.code === 201) {
+          const response = pm.response.json();
+          if (response.remediation_case_id) {
+              pm.collectionVariables.set('remediation_case_id', response.remediation_case_id);
+              console.log('✅ Remediation Case Opened:', response.remediation_case_id);
+          }
+      }
+
+
+      pm.test('Status code is 201', function () {
+          pm.response.to.have.status(201);
+      });
+    language: text/javascript
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+order: 1000

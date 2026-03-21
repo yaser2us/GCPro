@@ -1,0 +1,41 @@
+$kind: http-request
+description: Creates billing plan with 12 monthly installments
+url: "{{base_url}}/api/v1/policy/{{policy_id}}/billing-plan/create"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "billing_type": "monthly",
+      "total_amount": 9600.00,
+      "installment_count": 12,
+      "idempotency_key": "billing-{{$guid}}"
+    }
+scripts:
+  - type: afterResponse
+    code: >-
+      if (pm.response.code === 201) {
+          const response = pm.response.json();
+          if (response.billing_plan_id) {
+              pm.collectionVariables.set('billing_plan_id', response.billing_plan_id);
+              console.log('✅ Billing Plan Created:', response.billing_plan_id);
+          }
+      }
+
+
+      pm.test('Status code is 201', function () {
+          pm.response.to.have.status(201);
+      });
+    language: text/javascript
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+order: 1000

@@ -1,0 +1,27 @@
+# Use this workspace to collaborate
+workspace:
+  id: aeb50dc1-1da5-400b-8a55-44ba173f196a
+
+localResources:
+  collections:
+    - ../GCPro-All-Mission-APIs.postman_collection.json
+    - ../GCPro-Mission-APIs.postman_collection.json
+    - ../commission-api.postman_collection.json
+    - ../commission-wallet-integration.postman_collection.json
+    - ../e2e-referral-commission-workflow.postman_collection.json
+    - ../file-api.postman_collection.json
+    - ../mission-to-coins-workflow.postman_collection.json
+    - ../missions-api.postman_collection.json
+    - ../notification-api.postman_collection.json
+    - ../permission-api.postman_collection.json
+    - ../person-api.postman_collection.json
+    - ../policy-api.postman_collection.json
+    - ../referral-api.postman_collection.json
+    - ../survey-api.postman_collection.json
+    - ../user-api.postman_collection.json
+    - ../wallet-api.postman_collection.json
+
+# Each entry here maps a local resource to one or more corresponding objects in Postman Cloud
+cloudResources:
+  collections:
+    ../postman/collections/Policy API - Complete Workflow: e57f9a4c-efde-46b8-8bf0-09246fac0463

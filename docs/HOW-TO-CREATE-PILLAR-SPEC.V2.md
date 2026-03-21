@@ -61,9 +61,11 @@ You must work bottom-up in this order:
 10. Build commands from aggregate workflows
 11. Build coverage from commands
 12. Build changelog
+13. Build integration (if pillar emits/consumes cross-pillar events)
 
 Do NOT work top-down from imagination.
 Do NOT guess schema from domain logic.
+Do NOT add sections outside the defined list.
 
 --------------------------------------------------
 TARGET PILLAR
@@ -99,11 +101,14 @@ The YAML must contain these sections in order:
 14. commands
 15. changelog
 16. coverage
+17. integration (REQUIRED if pillar emits or consumes cross-pillar events)
 
 Optional section allowed only if useful:
-17. codegen
+18. codegen
 
-Do not include sections outside this unless explicitly requested.
+⚠️ CRITICAL: Do not include sections outside this list.
+⚠️ CRITICAL: Do not add custom sections unless explicitly requested.
+⚠️ CRITICAL: Follow the structure exactly as defined in these rules.
 
 --------------------------------------------------
 HEADER RULES
@@ -388,6 +393,101 @@ Optional:
 Coverage must be complete and consistent with commands.
 
 --------------------------------------------------
+INTEGRATION RULES
+--------------------------------------------------
+
+integration section is REQUIRED if the pillar:
+- emits events consumed by other pillars
+- consumes events from other pillars
+
+If no cross-pillar integration exists, omit this section.
+
+Structure:
+
+integration:
+  description: "Brief overview of cross-pillar integration pattern"
+
+  outbox_pattern:
+    how_it_works:
+      - "Step 1"
+      - "Step 2"
+    benefits:
+      - "Benefit 1"
+      - "Benefit 2"
+
+  {consuming_pillar_name}:
+    description: "What this pillar does with our events"
+    pattern: "event_driven_via_outbox"
+
+    consumers:
+      - event: "EVENT_NAME"
+        consumer_name: "ConsumerClassName"
+        location: "src/plugins/{pillar}/consumers/{file}.ts"
+        responsibility: "What this consumer does"
+
+        expected_behavior:
+          - "Behavior 1"
+          - "Behavior 2"
+
+        event_payload_example:
+          event_type: "EVENT_NAME"
+          aggregate_type: "AGGREGATE"
+          aggregate_id: 1
+          payload:
+            field1: "value"
+            field2: 123
+
+        idempotency_strategy:
+          - "How duplicates are prevented"
+
+        error_handling:
+          - "How errors are handled"
+
+  {emitting_pillar_name}:
+    description: "How we consume events from this pillar"
+    pattern: "event_driven_via_outbox"
+
+    consumers:
+      - event: "EXTERNAL_EVENT_NAME"
+        consumer_name: "OurConsumerName"
+        location: "src/plugins/{this_pillar}/consumers/{file}.ts"
+        responsibility: "What we do when this event arrives"
+
+        expected_behavior:
+          - "Our behavior 1"
+          - "Our behavior 2"
+
+  architecture_diagram: |
+    Optional ASCII diagram showing event flow between pillars
+
+  implementation_checklist:
+    {consuming_pillar}:
+      - "[ ] Task 1"
+      - "[ ] Task 2"
+
+    {this_pillar}:
+      - "[✓] Completed task"
+      - "[ ] Pending task"
+
+  testing_strategy:
+    end_to_end_test: |
+      Describe E2E test scenario
+
+    idempotency_test: |
+      Describe idempotency test
+
+    error_test: |
+      Describe error handling test
+
+Rules:
+- Only document actual cross-pillar integrations (based on events and consumers)
+- Consumer location must match actual file structure convention
+- Event payload examples must match actual event definitions
+- Idempotency strategy must reference actual implementation patterns
+- Do not invent integrations that don't exist in the codebase
+- If a pillar is self-contained, omit this section entirely
+
+--------------------------------------------------
 VALIDATION CHECKLIST
 --------------------------------------------------
 
@@ -405,6 +505,10 @@ Before finalizing, self-check all of these:
 10. every aggregate_type referenced by events exists in aggregates section
 11. every DTO referenced by commands exists in dtos
 12. coverage includes all commands and emitted events
+13. integration section exists if pillar has cross-pillar event consumption/emission
+14. integration.consumers reference actual events defined in events section
+15. integration section omitted if pillar is self-contained
+16. no custom sections added outside the defined list (sections 1-18)
 
 If any check fails, fix it before output.
 
@@ -424,6 +528,47 @@ Do not output explanations between YAML sections.
 Do not output pseudo-YAML.
 Do not output markdown tables unless explicitly asked.
 Do not omit sections.
+
+--------------------------------------------------
+⚠️ CRITICAL WARNINGS
+--------------------------------------------------
+
+NEVER add custom sections outside the defined list:
+  1. version
+  2. spec_id
+  3. domain
+  4. plugin
+  5. ownership
+  6. dependencies
+  7. conventions
+  8. schema
+  9. resources
+  10. aggregates
+  11. types
+  12. dtos
+  13. events
+  14. commands
+  15. changelog
+  16. coverage
+  17. integration (if cross-pillar events exist)
+  18. codegen (optional, if useful)
+
+NEVER invent sections like:
+  ❌ "architecture"
+  ❌ "implementation_notes"
+  ❌ "deployment"
+  ❌ "testing"
+  ❌ "examples"
+  ❌ "best_practices"
+  ❌ any other custom section
+
+If you need to document something that doesn't fit:
+  ✅ Put it in the appropriate existing section
+  ✅ Use integration section for cross-pillar patterns
+  ✅ Use conventions section for pillar-specific rules
+  ✅ Use changelog section for migration notes
+
+FOLLOW THE STRUCTURE EXACTLY.
 
 --------------------------------------------------
 INPUTS YOU WILL RECEIVE

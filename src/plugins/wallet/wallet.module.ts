@@ -21,9 +21,11 @@ import { WalletWorkflowService } from './services/wallet.workflow.service';
 
 // Event Handlers (one per event type)
 import { MissionRewardHandler } from './handlers/mission-reward.handler';
+import { CommissionAccrualHandler } from './handlers/commission-accrual.handler';
 
 // Event Consumers (one per event source)
 import { MissionRewardConsumer } from './consumers/mission-reward.consumer';
+import { CommissionAccrualConsumer } from './consumers/commission-accrual.consumer';
 
 // Controllers
 import { WalletController } from './controllers/wallet.controller';
@@ -83,11 +85,13 @@ import { WalletController } from './controllers/wallet.controller';
 
     // Event Handlers (one per event type)
     MissionRewardHandler,
-    // Future: ClaimPayoutHandler, CommissionHandler, etc.
+    CommissionAccrualHandler,
+    // Future: ClaimPayoutHandler, etc.
 
     // Event Consumers (one per event source)
     MissionRewardConsumer,
-    // Future: ClaimPayoutConsumer, CommissionConsumer, etc.
+    CommissionAccrualConsumer,
+    // Future: ClaimPayoutConsumer, etc.
   ],
   exports: [
     // Export shared services for other modules

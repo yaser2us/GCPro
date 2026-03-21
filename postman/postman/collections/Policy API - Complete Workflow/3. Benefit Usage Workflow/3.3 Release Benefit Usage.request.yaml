@@ -1,0 +1,38 @@
+$kind: http-request
+description: Releases reserved benefit usage (cancellation)
+url: "{{base_url}}/api/v1/policy/benefit-usage/release"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "policy_id": "{{policy_id}}",
+      "period_key": "2024",
+      "item_code": "OUTPATIENT_CONSULT",
+      "amount": 150.00,
+      "count": 1,
+      "idempotency_key": "release-{{$guid}}"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Status code is 200', function () {
+          pm.response.to.have.status(200);
+      });
+
+      if (pm.response.code === 200) {
+          console.log('✅ Benefit Usage Released');
+      }
+    language: text/javascript
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+order: 3000

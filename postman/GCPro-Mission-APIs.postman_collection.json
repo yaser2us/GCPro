@@ -1,5 +1,6 @@
 {
   "info": {
+    "_postman_id": "612578e9-1a93-4f1b-9b0b-2ddfa6756a2a",
     "name": "GCPro - Mission APIs",
     "description": "Complete Postman collection for testing Mission APIs\n\n**Available APIs:**\n1. Mission.Publish - Publish a draft/paused mission\n2. Mission.ApproveSubmission - Approve a mission submission\n\n**Authentication:**\n- X-User-Id: User ID header\n- X-User-Role: User role (ADMIN, REVIEWER, USER)\n\n**Setup:**\n1. Update {{base_url}} variable to your server URL\n2. Run SQL scripts to insert test data\n3. Update mission_id, submission_id variables with your test data",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
@@ -10,6 +11,7 @@
       "item": [
         {
           "name": "1. Publish Draft Mission (Success)",
+          "id": "e93fa8a0-8853-43b4-9663-0b8307cd10c3",
           "request": {
             "method": "POST",
             "header": [
@@ -34,8 +36,15 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/missions/{{mission_id}}/publish",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "missions", "{{mission_id}}", "publish"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "missions",
+                "{{mission_id}}",
+                "publish"
+              ]
             },
             "description": "Publishes a draft mission.\n\n**Prerequisites:**\n- Mission must exist with status='DRAFT'\n- Mission must not be expired\n\n**Expected Response:**\n```json\n{\n  \"mission_id\": \"123e4567-e89b-12d3-a456-426614174000\",\n  \"status\": \"PUBLISHED\"\n}\n```"
           },
@@ -43,6 +52,7 @@
         },
         {
           "name": "2. Idempotency Test (Same Key)",
+          "id": "49b194c3-8e4e-451c-b599-1fbf08b12c80",
           "request": {
             "method": "POST",
             "header": [
@@ -65,8 +75,15 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/missions/{{mission_id}}/publish",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "missions", "{{mission_id}}", "publish"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "missions",
+                "{{mission_id}}",
+                "publish"
+              ]
             },
             "description": "Call this twice with the SAME idempotency_key.\n\nFirst call: Publishes mission\nSecond call: Returns cached response, no database changes!\n\n**Expected:** Same response both times"
           },
@@ -74,6 +91,7 @@
         },
         {
           "name": "3. Already Published (Error)",
+          "id": "bd81a3d7-aefc-4173-b601-64826d98a596",
           "request": {
             "method": "POST",
             "header": [
@@ -96,8 +114,15 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/missions/{{published_mission_id}}/publish",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "missions", "{{published_mission_id}}", "publish"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "missions",
+                "{{published_mission_id}}",
+                "publish"
+              ]
             },
             "description": "Try to publish a mission that's already PUBLISHED.\n\n**Expected Response:** 409 Conflict\n```json\n{\n  \"statusCode\": 409,\n  \"message\": \"MISSION_NOT_PUBLISHABLE\",\n  \"error\": \"Conflict\"\n}\n```"
           },
@@ -105,6 +130,7 @@
         },
         {
           "name": "4. Permission Denied (Error)",
+          "id": "f5811618-2b9c-40b8-93e4-211813dfaa31",
           "request": {
             "method": "POST",
             "header": [
@@ -128,8 +154,15 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/missions/{{mission_id}}/publish",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "missions", "{{mission_id}}", "publish"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "missions",
+                "{{mission_id}}",
+                "publish"
+              ]
             },
             "description": "Try to publish as a regular USER (without admin permissions).\n\n**Expected Response:** 403 Forbidden\n```json\n{\n  \"statusCode\": 403,\n  \"message\": \"User lacks required permissions. Needs one of: missions:admin, missions:manage\",\n  \"error\": \"Forbidden\"\n}\n```"
           },
@@ -137,6 +170,7 @@
         },
         {
           "name": "5. Mission Not Found (Error)",
+          "id": "b8f39fc3-f16a-4a07-ae09-c436b65f1beb",
           "request": {
             "method": "POST",
             "header": [
@@ -159,14 +193,22 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/missions/nonexistent-id/publish",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "missions", "nonexistent-id", "publish"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "missions",
+                "nonexistent-id",
+                "publish"
+              ]
             },
             "description": "Try to publish a non-existent mission.\n\n**Expected Response:** 404 Not Found\n```json\n{\n  \"statusCode\": 404,\n  \"message\": \"MISSION_NOT_FOUND\",\n  \"error\": \"Not Found\"\n}\n```"
           },
           "response": []
         }
       ],
+      "id": "3ca54af9-a730-4f86-ae7a-63e169dc35e4",
       "description": "Mission.Publish API - Publishes a draft or paused mission\n\n**Endpoint:** POST /v1/missions/{mission_id}/publish\n**Permissions:** missions:admin OR missions:manage\n**Spec Reference:** mission.pillar.yml lines 254-298"
     },
     {
@@ -174,6 +216,7 @@
       "item": [
         {
           "name": "1. Approve Submission (Success)",
+          "id": "0fe2dcd6-217a-48e9-a71b-e7e24ff4f03f",
           "request": {
             "method": "POST",
             "header": [
@@ -196,7 +239,9 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/missions/{{mission_id}}/submissions/{{submission_id}}/approve",
-              "host": ["{{base_url}}"],
+              "host": [
+                "{{base_url}}"
+              ],
               "path": [
                 "v1",
                 "missions",
@@ -212,6 +257,7 @@
         },
         {
           "name": "2. Approve with Reviewer Role",
+          "id": "674c572a-6339-4123-9ffa-86591c07448e",
           "request": {
             "method": "POST",
             "header": [
@@ -235,7 +281,9 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/missions/{{mission_id}}/submissions/{{submission_id}}/approve",
-              "host": ["{{base_url}}"],
+              "host": [
+                "{{base_url}}"
+              ],
               "path": [
                 "v1",
                 "missions",
@@ -251,6 +299,7 @@
         },
         {
           "name": "3. Idempotency Test (Same Key)",
+          "id": "e0f12731-d733-40e6-85d2-dd21a36124e1",
           "request": {
             "method": "POST",
             "header": [
@@ -273,7 +322,9 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/missions/{{mission_id}}/submissions/{{submission_id}}/approve",
-              "host": ["{{base_url}}"],
+              "host": [
+                "{{base_url}}"
+              ],
               "path": [
                 "v1",
                 "missions",
@@ -289,6 +340,7 @@
         },
         {
           "name": "4. Already Approved (Error)",
+          "id": "4f031dcc-73ae-462c-a64e-c1acb1d3da2f",
           "request": {
             "method": "POST",
             "header": [
@@ -311,7 +363,9 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/missions/{{mission_id}}/submissions/{{approved_submission_id}}/approve",
-              "host": ["{{base_url}}"],
+              "host": [
+                "{{base_url}}"
+              ],
               "path": [
                 "v1",
                 "missions",
@@ -327,6 +381,7 @@
         },
         {
           "name": "5. Permission Denied (Error)",
+          "id": "5e08fc56-4742-42df-aa42-df67d9a99339",
           "request": {
             "method": "POST",
             "header": [
@@ -350,7 +405,9 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/missions/{{mission_id}}/submissions/{{submission_id}}/approve",
-              "host": ["{{base_url}}"],
+              "host": [
+                "{{base_url}}"
+              ],
               "path": [
                 "v1",
                 "missions",
@@ -366,6 +423,7 @@
         },
         {
           "name": "6. Submission Not Found (Error)",
+          "id": "9d448e7d-29d7-49af-a6c1-934c57eb8a00",
           "request": {
             "method": "POST",
             "header": [
@@ -388,7 +446,9 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/missions/{{mission_id}}/submissions/nonexistent-id/approve",
-              "host": ["{{base_url}}"],
+              "host": [
+                "{{base_url}}"
+              ],
               "path": [
                 "v1",
                 "missions",
@@ -403,6 +463,7 @@
           "response": []
         }
       ],
+      "id": "7e25082b-7780-4e30-a939-f48946f084ac",
       "description": "Mission.ApproveSubmission API - Approves a mission submission and completes enrollment\n\n**Endpoint:** POST /v1/missions/{mission_id}/submissions/{submission_id}/approve\n**Permissions:** missions:admin OR missions:review\n**Spec Reference:** mission.pillar.yml lines 514-613"
     },
     {
@@ -410,12 +471,15 @@
       "item": [
         {
           "name": "SQL - Insert Draft Mission",
+          "id": "75c72d6a-c720-4971-9f5a-34417e009390",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
               "raw": "{{base_url}}",
-              "host": ["{{base_url}}"]
+              "host": [
+                "{{base_url}}"
+              ]
             },
             "description": "Run this SQL in your MySQL database:\n\n```sql\nUSE GC_PRO;\n\n-- 1. Insert draft mission\nINSERT INTO missions.mission (\n  mission_id, status, title, description, starts_at, ends_at,\n  visibility, reward_json, created_by_user_id, created_at, updated_at\n) VALUES (\n  '123e4567-e89b-12d3-a456-426614174000',\n  'DRAFT',\n  'Complete 5 Policy Applications',\n  'Submit and get approved for 5 policy applications',\n  NOW(),\n  DATE_ADD(NOW(), INTERVAL 30 DAY),\n  'PUBLIC',\n  '{\"reward_type\":\"FIXED\",\"reward_money\":{\"currency\":\"MYR\",\"amount_minor\":5000},\"reward_reason\":\"MISSION_COMPLETION\"}',\n  'admin-user-123',\n  NOW(),\n  NOW()\n);\n```\n\nAfter running this:\n- Update {{mission_id}} variable to: 123e4567-e89b-12d3-a456-426614174000\n- Test Mission.Publish API"
           },
@@ -423,51 +487,61 @@
         },
         {
           "name": "SQL - Insert Test Data for Approve",
+          "id": "7ca632e6-bb1a-439d-80d6-3971ae53add0",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
               "raw": "{{base_url}}",
-              "host": ["{{base_url}}"]
+              "host": [
+                "{{base_url}}"
+              ]
             },
             "description": "Run this SQL in your MySQL database:\n\n```sql\nUSE GC_PRO;\n\n-- 1. Insert published mission\nINSERT INTO missions.mission (\n  mission_id, status, title, description, starts_at, ends_at,\n  visibility, reward_json, created_by_user_id, created_at, updated_at\n) VALUES (\n  '123e4567-e89b-12d3-a456-426614174000',\n  'PUBLISHED',\n  'Complete 5 Policy Applications',\n  'Submit and get approved for 5 policy applications',\n  NOW(),\n  DATE_ADD(NOW(), INTERVAL 30 DAY),\n  'PUBLIC',\n  '{\"reward_type\":\"FIXED\",\"reward_money\":{\"currency\":\"MYR\",\"amount_minor\":5000},\"reward_reason\":\"MISSION_COMPLETION\"}',\n  'admin-user-123',\n  NOW(),\n  NOW()\n);\n\n-- 2. Insert enrollment\nINSERT INTO missions.mission_enrollment (\n  enrollment_id, mission_id, participant_user_id,\n  status, enrolled_at, created_at, updated_at\n) VALUES (\n  '456f7890-a12b-34c5-d678-901234567890',\n  '123e4567-e89b-12d3-a456-426614174000',\n  'participant-user-456',\n  'SUBMITTED',\n  NOW(),\n  NOW(),\n  NOW()\n);\n\n-- 3. Insert submission\nINSERT INTO missions.mission_submission (\n  submission_id, mission_id, enrollment_id, participant_user_id,\n  status, proof_type, proof_payload_json, submitted_at,\n  created_at, updated_at\n) VALUES (\n  '987f6543-e21b-43d1-b098-765432109876',\n  '123e4567-e89b-12d3-a456-426614174000',\n  '456f7890-a12b-34c5-d678-901234567890',\n  'participant-user-456',\n  'PENDING',\n  'TEXT',\n  '{\"text\":\"I completed 5 applications!\"}',\n  NOW(),\n  NOW(),\n  NOW()\n);\n```\n\nAfter running this:\n- Update {{mission_id}} to: 123e4567-e89b-12d3-a456-426614174000\n- Update {{submission_id}} to: 987f6543-e21b-43d1-b098-765432109876\n- Test Mission.ApproveSubmission API"
           },
           "response": []
         }
       ],
+      "id": "9c26d95b-bf4e-44b8-a7e8-747743efd7c5",
       "description": "SQL scripts to insert test data.\n\nRun these in your MySQL database before testing the APIs."
     }
   ],
   "variable": [
     {
+      "id": "bd45f095-e3c7-4c6a-bd18-b127542aea9e",
       "key": "base_url",
       "value": "http://localhost:3000",
       "type": "string"
     },
     {
+      "id": "dd07bbca-5c02-4d33-a0e1-d61be750494d",
       "key": "admin_user_id",
       "value": "admin-user-123",
       "type": "string"
     },
     {
+      "id": "cd7166f0-b87d-4d8b-9cac-214fbf7aa815",
       "key": "mission_id",
       "value": "123e4567-e89b-12d3-a456-426614174000",
       "type": "string",
       "description": "Update this after inserting test mission"
     },
     {
+      "id": "c3b541b2-2950-4739-9920-312e1085ce6c",
       "key": "submission_id",
       "value": "987f6543-e21b-43d1-b098-765432109876",
       "type": "string",
       "description": "Update this after inserting test submission"
     },
     {
+      "id": "7fdcca83-e539-45b7-9f5e-ee108bf35f2c",
       "key": "published_mission_id",
       "value": "update-me",
       "type": "string",
       "description": "ID of an already published mission (for testing errors)"
     },
     {
+      "id": "b61a43f9-c24e-4151-a182-57d2155cd79d",
       "key": "approved_submission_id",
       "value": "update-me",
       "type": "string",

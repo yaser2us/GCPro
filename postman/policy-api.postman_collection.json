@@ -1,0 +1,898 @@
+{
+  "info": {
+    "_postman_id": "8f3c2a1d-4e9b-4c3a-9d2e-1f5a7b9c6e3d",
+    "name": "Policy API - Complete Workflow",
+    "description": "Complete test suite for Policy Pillar\n\nBased on: specs/policy/policy.pillar.v2.yml\n\nCovers:\n- Master data setup (packages, rates)\n- Policy creation and activation\n- Member management\n- Benefit usage (reserve → confirm → release)\n- Billing plan and installments\n- Deposit requirement evaluation\n- Remediation case management",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "user_id",
+      "value": "admin-123",
+      "type": "string"
+    },
+    {
+      "key": "user_role",
+      "value": "ADMIN",
+      "type": "string"
+    },
+    {
+      "key": "policy_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "billing_plan_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "installment_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "benefit_usage_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "remediation_case_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Setup Master Data (Admin)",
+      "item": [
+        {
+          "name": "0.1 Create Policy Package",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.package_id) {",
+                  "        console.log('✅ Package Created:', response.package_id);",
+                  "    }",
+                  "}",
+                  "",
+                  "pm.test('Status code is 201 or 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{user_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"PKG_BASIC_2024\",\n  \"name\": \"Basic Health Plan 2024\",\n  \"monthly_max_cap_default\": \"5000.00\",\n  \"deposit_capacity_multiplier\": \"2.000\",\n  \"min_deposit_pct\": \"0.500\",\n  \"warning_pct\": \"0.600\",\n  \"urgent_pct\": \"0.500\",\n  \"meta\": {\n    \"description\": \"Basic health insurance with essential coverage\",\n    \"category\": \"health\",\n    \"max_members\": 5,\n    \"benefit_catalog_code\": \"STANDARD_2024\",\n    \"level_code\": \"BASIC\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/policy/admin/packages",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "policy", "admin", "packages"]
+            },
+            "description": "Creates a policy package via admin API"
+          },
+          "response": []
+        },
+        {
+          "name": "0.2 Create Package Rate",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.rate_id) {",
+                  "        console.log('✅ Rate Created:', response.rate_id);",
+                  "    }",
+                  "}",
+                  "",
+                  "pm.test('Status code is 201 or 200', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{user_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"age_band_id\": 2,\n  \"smoker_profile_id\": 1,\n  \"annual_fee_amount\": \"9600.00\",\n  \"monthly_max_cap\": \"5000.00\",\n  \"weightage_factor\": \"1.0000\",\n  \"rate_version\": \"v2024\",\n  \"effective_from\": \"2024-01-01T00:00:00Z\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/policy/admin/packages/1/rates",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "policy", "admin", "packages", "1", "rates"]
+            },
+            "description": "Creates a rate for policy package ID 1"
+          },
+          "response": []
+        }
+      ],
+      "description": "Admin endpoints for master data setup"
+    },
+    {
+      "name": "1. Policy Lifecycle",
+      "item": [
+        {
+          "name": "1.1 Create Policy",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.policy_id) {",
+                  "        pm.collectionVariables.set('policy_id', response.policy_id);",
+                  "        console.log('✅ Policy Created:', response.policy_id);",
+                  "    }",
+                  "}",
+                  "",
+                  "pm.test('Status code is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{user_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"account_id\": \"1\",\n  \"holder_person_id\": \"1000\",\n  \"package_code\": \"PKG_BASIC_2024\",\n  \"start_at\": \"2024-04-01T00:00:00Z\",\n  \"auto_renew\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/policy/create",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "policy", "create"]
+            },
+            "description": "Creates a new policy with holder"
+          },
+          "response": []
+        },
+        {
+          "name": "1.2 Activate Policy",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    console.log('✅ Policy Activated');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{user_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/policy/{{policy_id}}/activate",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "policy", "{{policy_id}}", "activate"]
+            },
+            "description": "Activates a pending policy"
+          },
+          "response": []
+        }
+      ],
+      "description": "Core policy lifecycle operations"
+    },
+    {
+      "name": "2. Member Management",
+      "item": [
+        {
+          "name": "2.1 Add Policy Member",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 201) {",
+                  "    console.log('✅ Member Added');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{user_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"person_id\": \"1001\",\n  \"role\": \"dependent\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/policy/{{policy_id}}/members/add",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "policy", "{{policy_id}}", "members", "add"]
+            },
+            "description": "Adds a dependent member to the policy"
+          },
+          "response": []
+        }
+      ],
+      "description": "Policy member operations"
+    },
+    {
+      "name": "3. Benefit Usage Workflow",
+      "item": [
+        {
+          "name": "3.1 Reserve Benefit Usage",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.usage_id) {",
+                  "        pm.collectionVariables.set('benefit_usage_id', response.usage_id);",
+                  "        console.log('✅ Benefit Reserved:', response.usage_id);",
+                  "    }",
+                  "}",
+                  "",
+                  "pm.test('Status code is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{user_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"policy_id\": \"{{policy_id}}\",\n  \"period_key\": \"2024\",\n  \"item_code\": \"OUTPATIENT_CONSULT\",\n  \"amount\": 150.00,\n  \"count\": 1,\n  \"ref_type\": \"claim\",\n  \"ref_id\": \"CLM-2024-001\",\n  \"idempotency_key\": \"reserve-{{$guid}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/policy/benefit-usage/reserve",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "policy", "benefit-usage", "reserve"]
+            },
+            "description": "Reserves benefit usage (pre-authorization)"
+          },
+          "response": []
+        },
+        {
+          "name": "3.2 Confirm Benefit Usage",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    console.log('✅ Benefit Usage Confirmed');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{user_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"policy_id\": \"{{policy_id}}\",\n  \"period_key\": \"2024\",\n  \"item_code\": \"OUTPATIENT_CONSULT\",\n  \"amount\": 150.00,\n  \"count\": 1,\n  \"ref_type\": \"claim\",\n  \"ref_id\": \"CLM-2024-001\",\n  \"idempotency_key\": \"confirm-{{$guid}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/policy/benefit-usage/confirm",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "policy", "benefit-usage", "confirm"]
+            },
+            "description": "Confirms reserved benefit usage"
+          },
+          "response": []
+        },
+        {
+          "name": "3.3 Release Benefit Usage",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    console.log('✅ Benefit Usage Released');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{user_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"policy_id\": \"{{policy_id}}\",\n  \"period_key\": \"2024\",\n  \"item_code\": \"OUTPATIENT_CONSULT\",\n  \"amount\": 150.00,\n  \"count\": 1,\n  \"idempotency_key\": \"release-{{$guid}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/policy/benefit-usage/release",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "policy", "benefit-usage", "release"]
+            },
+            "description": "Releases reserved benefit usage (cancellation)"
+          },
+          "response": []
+        }
+      ],
+      "description": "3-phase benefit usage workflow"
+    },
+    {
+      "name": "4. Billing & Installments",
+      "item": [
+        {
+          "name": "4.1 Create Billing Plan",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.billing_plan_id) {",
+                  "        pm.collectionVariables.set('billing_plan_id', response.billing_plan_id);",
+                  "        console.log('✅ Billing Plan Created:', response.billing_plan_id);",
+                  "    }",
+                  "}",
+                  "",
+                  "pm.test('Status code is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{user_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"billing_type\": \"monthly\",\n  \"total_amount\": 9600.00,\n  \"installment_count\": 12,\n  \"idempotency_key\": \"billing-{{$guid}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/policy/{{policy_id}}/billing-plan/create",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "policy", "{{policy_id}}", "billing-plan", "create"]
+            },
+            "description": "Creates billing plan with 12 monthly installments"
+          },
+          "response": []
+        },
+        {
+          "name": "4.2 Pay Installment",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    console.log('✅ Installment Paid');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{user_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"payment_method\": \"wallet\",\n  \"payment_ref\": \"TXN-{{$timestamp}}\",\n  \"idempotency_key\": \"pay-{{$guid}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/policy/installment/1/pay",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "policy", "installment", "1", "pay"]
+            },
+            "description": "Records installment payment (change installment ID as needed)"
+          },
+          "response": []
+        }
+      ],
+      "description": "Billing plan and installment payment workflows"
+    },
+    {
+      "name": "5. Deposit Requirement",
+      "item": [
+        {
+          "name": "5.1 Evaluate Deposit Requirement",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    console.log('✅ Deposit Requirement Evaluated');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{user_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_balance\": 8000.00,\n  \"idempotency_key\": \"deposit-{{$guid}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/policy/{{policy_id}}/deposit/evaluate",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "policy", "{{policy_id}}", "deposit", "evaluate"]
+            },
+            "description": "Evaluates deposit requirement status"
+          },
+          "response": []
+        }
+      ],
+      "description": "Deposit requirement evaluation"
+    },
+    {
+      "name": "6. Remediation Cases",
+      "item": [
+        {
+          "name": "6.1 Open Remediation Case",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.remediation_case_id) {",
+                  "        pm.collectionVariables.set('remediation_case_id', response.remediation_case_id);",
+                  "        console.log('✅ Remediation Case Opened:', response.remediation_case_id);",
+                  "    }",
+                  "}",
+                  "",
+                  "pm.test('Status code is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{user_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason_code\": \"DEPOSIT_SHORTFALL\",\n  \"grace_days\": 7,\n  \"required_actions\": \"Top up deposit wallet to minimum required amount\",\n  \"idempotency_key\": \"remediation-{{$guid}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/policy/{{policy_id}}/remediation/open",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "policy", "{{policy_id}}", "remediation", "open"]
+            },
+            "description": "Opens a remediation case for policy issues"
+          },
+          "response": []
+        },
+        {
+          "name": "6.2 Clear Remediation Case",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    console.log('✅ Remediation Case Cleared');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{user_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/policy/remediation/1/clear",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "policy", "remediation", "1", "clear"]
+            },
+            "description": "Clears a remediation case (change case ID as needed)"
+          },
+          "response": []
+        }
+      ],
+      "description": "Remediation case management"
+    }
+  ]
+}

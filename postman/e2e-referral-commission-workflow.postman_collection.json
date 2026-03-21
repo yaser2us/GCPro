@@ -1,96 +1,10 @@
 {
   "info": {
+    "_postman_id": "30fdaecd-902e-47a9-bae4-8ed5a78cfc59",
     "name": "E2E Referral Commission Workflow",
     "description": "Complete end-to-end workflow: User Registration → Referral → Commission → Wallet Rewards\n\nThis collection demonstrates how all pillars work together:\n1. Setup referral program and enroll User A (referrer)\n2. User B registers using User A's referral\n3. User B completes qualifying action\n4. System records commission for User A\n5. System deposits reward coins into User A's wallet",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
-  "variable": [
-    {
-      "key": "base_url",
-      "value": "http://localhost:3000",
-      "type": "string"
-    },
-    {
-      "key": "admin_user_id",
-      "value": "admin-123",
-      "type": "string"
-    },
-    {
-      "key": "admin_role",
-      "value": "ADMIN",
-      "type": "string"
-    },
-    {
-      "key": "user_a_id",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "user_b_id",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "user_a_account_id",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "user_b_account_id",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "user_a_wallet_id",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "user_b_wallet_id",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "referral_program_id",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "referral_code_id",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "referral_invite_id",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "invite_token",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "conversion_id",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "commission_program_id",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "commission_participant_id",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "accrual_id",
-      "value": "",
-      "type": "string"
-    }
-  ],
   "item": [
     {
       "name": "PHASE 1: Setup Referral Program",
@@ -126,6 +40,7 @@
               }
             }
           ],
+          "id": "df16d78a-0a69-45ed-9ed9-d0f411b645eb",
           "request": {
             "method": "POST",
             "header": [
@@ -150,8 +65,14 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/referral/programs",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "referral", "programs"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "referral",
+                "programs"
+              ]
             }
           },
           "response": []
@@ -187,6 +108,7 @@
               }
             }
           ],
+          "id": "80865b91-e1eb-4751-8403-7215ad9c21e7",
           "request": {
             "method": "POST",
             "header": [
@@ -211,13 +133,20 @@
             },
             "url": {
               "raw": "{{base_url}}/api/commission/programs",
-              "host": ["{{base_url}}"],
-              "path": ["api", "commission", "programs"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "commission",
+                "programs"
+              ]
             }
           },
           "response": []
         }
-      ]
+      ],
+      "id": "a288a89d-d44c-4653-9a51-d514c1d34329"
     },
     {
       "name": "PHASE 2: Setup User A (Referrer)",
@@ -253,6 +182,7 @@
               }
             }
           ],
+          "id": "d0849f62-718a-4da9-a350-b116d7baacce",
           "request": {
             "method": "POST",
             "header": [
@@ -277,8 +207,13 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/users",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "users"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "users"
+              ]
             }
           },
           "response": []
@@ -314,6 +249,7 @@
               }
             }
           ],
+          "id": "350bbf71-1c9f-43e3-a743-bfb6a737fb5d",
           "request": {
             "method": "POST",
             "header": [
@@ -338,8 +274,13 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/accounts",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "accounts"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "accounts"
+              ]
             }
           },
           "response": []
@@ -375,6 +316,7 @@
               }
             }
           ],
+          "id": "5254dae1-623e-46b8-a895-b7ffd8a907a5",
           "request": {
             "method": "POST",
             "header": [
@@ -399,8 +341,13 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/wallets",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "wallets"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "wallets"
+              ]
             }
           },
           "response": []
@@ -436,6 +383,7 @@
               }
             }
           ],
+          "id": "4bb759fe-9d68-441e-8495-3bb00fdeda30",
           "request": {
             "method": "POST",
             "header": [
@@ -460,8 +408,16 @@
             },
             "url": {
               "raw": "{{base_url}}/api/commission/programs/{{commission_program_id}}/participants",
-              "host": ["{{base_url}}"],
-              "path": ["api", "commission", "programs", "{{commission_program_id}}", "participants"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "commission",
+                "programs",
+                "{{commission_program_id}}",
+                "participants"
+              ]
             }
           },
           "response": []
@@ -497,6 +453,7 @@
               }
             }
           ],
+          "id": "5db978b8-ff39-4bdc-beae-3b9a24ac29b5",
           "request": {
             "method": "POST",
             "header": [
@@ -521,8 +478,14 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/referral/codes",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "referral", "codes"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "referral",
+                "codes"
+              ]
             }
           },
           "response": []
@@ -562,6 +525,7 @@
               }
             }
           ],
+          "id": "791150c9-ee43-43df-a0a6-64c8b5584d92",
           "request": {
             "method": "POST",
             "header": [
@@ -586,13 +550,20 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/referral/invites",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "referral", "invites"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "referral",
+                "invites"
+              ]
             }
           },
           "response": []
         }
-      ]
+      ],
+      "id": "1613caef-22d7-489e-82fd-e30d4098a05c"
     },
     {
       "name": "PHASE 3: User B Registration (Referred User)",
@@ -624,6 +595,7 @@
               }
             }
           ],
+          "id": "e9d04cc4-b8ca-43ac-92f8-3f0118d0f7f3",
           "request": {
             "method": "POST",
             "header": [
@@ -648,8 +620,15 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/referral/invites/click",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "referral", "invites", "click"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "referral",
+                "invites",
+                "click"
+              ]
             }
           },
           "response": []
@@ -685,6 +664,7 @@
               }
             }
           ],
+          "id": "736dcc84-bc0d-4970-a180-8e9ca2a246ac",
           "request": {
             "method": "POST",
             "header": [
@@ -709,8 +689,13 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/users",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "users"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "users"
+              ]
             }
           },
           "response": []
@@ -746,6 +731,7 @@
               }
             }
           ],
+          "id": "990a0afe-f54c-4a8f-b391-b834ec5df68d",
           "request": {
             "method": "POST",
             "header": [
@@ -770,8 +756,13 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/accounts",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "accounts"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "accounts"
+              ]
             }
           },
           "response": []
@@ -807,6 +798,7 @@
               }
             }
           ],
+          "id": "68341dc6-d0a4-4268-880f-de4af82d2434",
           "request": {
             "method": "POST",
             "header": [
@@ -831,13 +823,19 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/wallets",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "wallets"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "wallets"
+              ]
             }
           },
           "response": []
         }
-      ]
+      ],
+      "id": "f5bd9b5c-6b99-4dee-8826-4ebbf45ef17d"
     },
     {
       "name": "PHASE 4: Conversion & Rewards",
@@ -873,6 +871,7 @@
               }
             }
           ],
+          "id": "5cd6f0fe-9ba9-4126-ada1-058c5cc7eac2",
           "request": {
             "method": "POST",
             "header": [
@@ -897,8 +896,14 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/referral/conversions",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "referral", "conversions"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "referral",
+                "conversions"
+              ]
             }
           },
           "response": []
@@ -936,6 +941,7 @@
               }
             }
           ],
+          "id": "610efbb2-8905-45af-b174-e4fa41a781ca",
           "request": {
             "method": "POST",
             "header": [
@@ -960,8 +966,14 @@
             },
             "url": {
               "raw": "{{base_url}}/api/commission/accruals",
-              "host": ["{{base_url}}"],
-              "path": ["api", "commission", "accruals"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "commission",
+                "accruals"
+              ]
             }
           },
           "response": []
@@ -995,6 +1007,7 @@
               }
             }
           ],
+          "id": "88d2ee70-2b24-4e56-8ec2-8f6b8d5ef23e",
           "request": {
             "method": "POST",
             "header": [
@@ -1019,8 +1032,15 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/wallets/{{user_a_wallet_id}}/deposit",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "wallets", "{{user_a_wallet_id}}", "deposit"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "wallets",
+                "{{user_a_wallet_id}}",
+                "deposit"
+              ]
             }
           },
           "response": []
@@ -1054,6 +1074,7 @@
               }
             }
           ],
+          "id": "ec86f1f0-b0b5-4e7f-b4b9-dcd3596b5130",
           "request": {
             "method": "POST",
             "header": [
@@ -1078,13 +1099,21 @@
             },
             "url": {
               "raw": "{{base_url}}/v1/wallets/{{user_b_wallet_id}}/deposit",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "wallets", "{{user_b_wallet_id}}", "deposit"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "wallets",
+                "{{user_b_wallet_id}}",
+                "deposit"
+              ]
             }
           },
           "response": []
         }
-      ]
+      ],
+      "id": "1b77b7ea-8aad-4355-9a32-8cccd61dd70e"
     },
     {
       "name": "PHASE 5: Verify Results",
@@ -1105,6 +1134,7 @@
               }
             }
           ],
+          "id": "f5c7f0e2-3c49-4168-8301-47fc1144c26c",
           "request": {
             "method": "GET",
             "header": [
@@ -1121,8 +1151,15 @@
             ],
             "url": {
               "raw": "{{base_url}}/v1/wallets/{{user_a_wallet_id}}/balance",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "wallets", "{{user_a_wallet_id}}", "balance"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "wallets",
+                "{{user_a_wallet_id}}",
+                "balance"
+              ]
             }
           },
           "response": []
@@ -1143,6 +1180,7 @@
               }
             }
           ],
+          "id": "8ca4b8e4-556f-4d97-9c23-fd133f4a2507",
           "request": {
             "method": "GET",
             "header": [
@@ -1159,8 +1197,15 @@
             ],
             "url": {
               "raw": "{{base_url}}/v1/wallets/{{user_b_wallet_id}}/balance",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "wallets", "{{user_b_wallet_id}}", "balance"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "wallets",
+                "{{user_b_wallet_id}}",
+                "balance"
+              ]
             }
           },
           "response": []
@@ -1181,6 +1226,7 @@
               }
             }
           ],
+          "id": "7e3f5d15-1a8e-4a0a-8bb7-d6f382f6716d",
           "request": {
             "method": "GET",
             "header": [
@@ -1197,8 +1243,15 @@
             ],
             "url": {
               "raw": "{{base_url}}/v1/wallets/{{user_a_wallet_id}}/transactions?limit=10",
-              "host": ["{{base_url}}"],
-              "path": ["v1", "wallets", "{{user_a_wallet_id}}", "transactions"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "wallets",
+                "{{user_a_wallet_id}}",
+                "transactions"
+              ],
               "query": [
                 {
                   "key": "limit",
@@ -1209,7 +1262,112 @@
           },
           "response": []
         }
-      ]
+      ],
+      "id": "5a621237-2f00-45b7-9890-6c3bf3223b66"
+    }
+  ],
+  "variable": [
+    {
+      "id": "0eb1a06f-f74a-4686-a48d-af2f993bc0f6",
+      "key": "base_url",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "id": "f18a90ed-bd3b-42a7-ba8b-2fb7f731d312",
+      "key": "admin_user_id",
+      "value": "admin-123",
+      "type": "string"
+    },
+    {
+      "id": "42ef0b26-f6ad-4daf-80f2-8a9a131a7bb9",
+      "key": "admin_role",
+      "value": "ADMIN",
+      "type": "string"
+    },
+    {
+      "id": "16cff1e2-354b-4712-9928-c61fe3731c41",
+      "key": "user_a_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "id": "d89c6143-880c-4a9f-bf40-cc2c55a07a6f",
+      "key": "user_b_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "id": "d3e14397-5d09-4efc-938c-34e1fcb27773",
+      "key": "user_a_account_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "id": "ad13e20e-7302-49f2-b8b2-246048dad138",
+      "key": "user_b_account_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "id": "4e2cb092-d194-4057-8e10-bda8c54fd564",
+      "key": "user_a_wallet_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "id": "8113b74c-32cf-4bd0-9b6a-372c9e21aab3",
+      "key": "user_b_wallet_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "id": "b57c84c4-8c1f-4609-888e-c46821817048",
+      "key": "referral_program_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "id": "f906b577-bc80-4b95-912c-9b5201efa45f",
+      "key": "referral_code_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "id": "d0d50ad5-8a33-4e0c-ae2a-9aa1c0502fba",
+      "key": "referral_invite_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "id": "cc7051cf-e688-4b11-8c6d-d1cbd015eed0",
+      "key": "invite_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "id": "1da897c2-685e-4e12-8f95-89940e4127ff",
+      "key": "conversion_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "id": "ed3bc3e5-2ff6-4b03-b721-3c69ff99fb02",
+      "key": "commission_program_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "id": "cc18209f-93df-446b-9e9f-d9a209c67951",
+      "key": "commission_participant_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "id": "748991c8-8dfd-4d85-98ff-4b1fbaf12532",
+      "key": "accrual_id",
+      "value": "",
+      "type": "string"
     }
   ]
 }

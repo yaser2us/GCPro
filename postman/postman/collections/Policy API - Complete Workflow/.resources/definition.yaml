@@ -1,0 +1,23 @@
+$kind: collection
+description: |-
+  Complete test suite for Policy Pillar
+
+  Based on: specs/policy/policy.pillar.v2.yml
+
+  Covers:
+  - Master data setup (packages, rates)
+  - Policy creation and activation
+  - Member management
+  - Benefit usage (reserve → confirm → release)
+  - Billing plan and installments
+  - Deposit requirement evaluation
+  - Remediation case management
+variables:
+  base_url: http://localhost:3000
+  user_id: admin-123
+  user_role: ADMIN
+  policy_id: ""
+  billing_plan_id: ""
+  installment_id: ""
+  benefit_usage_id: ""
+  remediation_case_id: ""

@@ -1,0 +1,2613 @@
+version: "2.0.0"
+spec_id: "claim.pillar.v2"
+domain: "claim"
+plugin: "claim"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# OWNERSHIP
+# ──────────────────────────────────────────────────────────────────────────────
+
+ownership:
+  owner_plugin: "claim"
+  owns_tables:
+    - "claim_case"
+    - "claim_case_number_sequence"
+    - "claim_document"
+    - "claim_event"
+    - "claim_fraud_signal"
+    - "claim_link"
+    - "claim_review"
+    - "claim_settlement_flag"
+    - "guarantee_letter"
+    - "medical_case"
+    - "medical_case_event"
+    - "medical_provider"
+    - "medical_underwriting_case"
+    - "medical_underwriting_outcome"
+    - "medical_underwriting_term"
+    - "medical_underwriting_current_outcome"
+    - "medical_underwriting_evidence"
+  cross_plugin_writes: false
+  cross_plugin_integration:
+    allowed_via:
+      - "command_api"
+      - "outbox_events"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DEPENDENCIES
+# ──────────────────────────────────────────────────────────────────────────────
+
+dependencies:
+  corekit:
+    transaction_wrapper: "withTxn"
+    outbox_service: "OutboxService.emit"
+    guard_helper: "guard"
+    domain_error: "DomainError"
+
+  core_tables_readonly:
+    - table_name: "policy"
+      usage: "medical_case.policy_id and claim validation against policy_benefit_entitlement"
+      access: "readonly_fk"
+    - table_name: "policy_benefit_entitlement"
+      usage: "Validate claim amounts against policy entitlements"
+      access: "readonly"
+    - table_name: "policy_benefit_usage"
+      usage: "Reserve and confirm benefit usage"
+      access: "readonly"
+    - table_name: "person"
+      usage: "claim_case.claimant_person_id, claim_case.insurant_person_id, medical_case.person_id reference person.id"
+      access: "readonly_fk"
+    - table_name: "account"
+      usage: "claim_case.account_id and medical_case.account_id reference account.id"
+      access: "readonly_fk"
+    - table_name: "file_upload"
+      usage: "claim_document.file_upload_id references file_upload.id"
+      access: "readonly_fk"
+    - table_name: "user"
+      usage: "claim_review.reviewer_id, medical_underwriting_case.assigned_to_user_id reference user.id"
+      access: "readonly_fk"
+    - table_name: "resource_ref"
+      usage: "medical_underwriting_case references resource_ref for subject and context"
+      access: "readonly_fk"
+    - table_name: "survey_response"
+      usage: "medical_underwriting_evidence.survey_response_id references survey_response.id"
+      access: "readonly_fk"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CONVENTIONS
+# ──────────────────────────────────────────────────────────────────────────────
+
+conventions:
+  workflow_discipline:
+    - "guard"
+    - "write"
+    - "emit"
+    - "commit"
+
+  status_mutation_policy: "Status fields may only be mutated through commands."
+
+  outbox:
+    required_envelope_fields:
+      - "event_name"
+      - "event_version"
+      - "aggregate_type"
+      - "aggregate_id"
+      - "actor_user_id"
+      - "occurred_at"
+      - "correlation_id"
+      - "causation_id"
+
+  idempotency:
+    required_header: "Idempotency-Key"
+    default_scope: "actor_user_id + command_name"
+    db_strategy:
+      - "UNIQUE(idempotency_key) where applicable"
+      - "MySQL ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)"
+      - "claim_case: UNIQUE(claim_number) prevents duplicate claims"
+      - "claim_case: UNIQUE(claim_year, claim_seq) ensures sequential claim numbering"
+      - "claim_case: INDEX(insurant_person_id, admission_date, hospital_name) detects duplicate submissions"
+      - "guarantee_letter: UNIQUE(gl_number) prevents duplicate GL numbers"
+      - "guarantee_letter: UNIQUE(medical_case_id) ensures one GL per medical case"
+      - "medical_case: UNIQUE(case_number) prevents duplicate medical case numbers"
+      - "medical_underwriting_case: UNIQUE(case_no) prevents duplicate case numbers"
+      - "medical_underwriting_outcome: UNIQUE(case_id, version_no) ensures versioned outcomes"
+      - "medical_underwriting_current_outcome: UNIQUE(subject_ref_id, context_ref_id) ensures single current outcome per subject-context"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SCHEMA
+# ──────────────────────────────────────────────────────────────────────────────
+
+schema:
+  tables:
+    claim_case:
+      description: "Main claim aggregate for insurance claim submission and processing"
+      columns:
+        id:
+          type: "bigint"
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        claim_number:
+          type: "varchar"
+          length: 20
+          nullable: false
+          description: "Unique claim number (CL-YYYY-NNNNN)"
+        claim_year:
+          type: "int"
+          nullable: false
+          description: "Year component of claim number"
+        claim_seq:
+          type: "int"
+          nullable: false
+          description: "Sequence component of claim number"
+        account_id:
+          type: "bigint"
+          nullable: false
+          description: "Foreign key to account"
+        claimant_person_id:
+          type: "bigint"
+          nullable: false
+          description: "Person submitting the claim"
+        insurant_person_id:
+          type: "bigint"
+          nullable: false
+          description: "Person covered by insurance (patient)"
+        claim_type:
+          type: "varchar"
+          length: 50
+          nullable: false
+          description: "Type of claim (outpatient, inpatient, emergency)"
+        status:
+          type: "varchar"
+          length: 50
+          nullable: false
+          description: "Claim lifecycle status"
+        hospital_name:
+          type: "varchar"
+          length: 255
+          nullable: false
+          description: "Name of medical facility"
+        admission_date:
+          type: "date"
+          nullable: false
+          description: "Date of admission/treatment"
+        discharge_date:
+          type: "date"
+          nullable: true
+          description: "Date of discharge (null for outpatient)"
+        diagnosis:
+          type: "text"
+          nullable: false
+          description: "Medical diagnosis"
+        treatment_type:
+          type: "varchar"
+          length: 120
+          nullable: false
+          description: "Type of treatment received"
+        requested_amount:
+          type: "decimal"
+          precision: [12, 2]
+          nullable: false
+          default: "0.00"
+          description: "Amount requested by claimant"
+        approved_amount:
+          type: "decimal"
+          precision: [12, 2]
+          nullable: true
+          description: "Amount approved (null until approved)"
+        submitted_at:
+          type: "datetime"
+          nullable: true
+          description: "Timestamp of claim submission"
+        decided_at:
+          type: "datetime"
+          nullable: true
+          description: "Timestamp of approval/rejection decision"
+        rejection_reason:
+          type: "text"
+          nullable: true
+          description: "Reason for rejection (if rejected)"
+        version:
+          type: "int"
+          nullable: false
+          default: "0"
+          description: "Optimistic locking version"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Record update timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_claim_number"
+            columns: ["claim_number"]
+          - name: "uk_claim_year_seq"
+            columns: ["claim_year", "claim_seq"]
+        indexes:
+          - name: "idx_claim_owner"
+            columns: ["account_id"]
+          - name: "idx_claim_insurant"
+            columns: ["insurant_person_id"]
+          - name: "idx_claim_status"
+            columns: ["status"]
+          - name: "idx_claim_type"
+            columns: ["claim_type"]
+          - name: "idx_claim_submitted_at"
+            columns: ["submitted_at"]
+          - name: "idx_claim_admission_date"
+            columns: ["admission_date"]
+          - name: "idx_claim_duplicate"
+            columns: ["insurant_person_id", "admission_date", "hospital_name(50)"]
+
+    claim_case_number_sequence:
+      description: "Sequence generator for claim numbers"
+      columns:
+        claim_year:
+          type: "int"
+          nullable: false
+          description: "Year for sequence"
+        next_seq:
+          type: "int"
+          nullable: false
+          description: "Next sequence number"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Last update timestamp"
+      constraints:
+        primary_key:
+          - "claim_year"
+
+    claim_document:
+      description: "Supporting documents attached to claims"
+      columns:
+        id:
+          type: "bigint"
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        claim_id:
+          type: "bigint"
+          nullable: false
+          description: "Foreign key to claim_case"
+        file_upload_id:
+          type: "bigint"
+          nullable: false
+          description: "Foreign key to file_upload"
+        document_type:
+          type: "varchar"
+          length: 80
+          nullable: false
+          description: "Type of document (medical_bill, receipt, report)"
+        uploaded_by:
+          type: "bigint"
+          nullable: true
+          description: "User ID who uploaded document"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Upload timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_claim_doc_unique"
+            columns: ["claim_id", "file_upload_id"]
+        indexes:
+          - name: "idx_claim_doc_claim"
+            columns: ["claim_id"]
+          - name: "idx_claim_doc_type"
+            columns: ["document_type"]
+        foreign_keys:
+          - name: "fk_claim_document_claim"
+            columns: ["claim_id"]
+            references_table: "claim_case"
+            references_columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "RESTRICT"
+
+    claim_event:
+      description: "Immutable audit trail of claim activities"
+      columns:
+        id:
+          type: "bigint"
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        claim_id:
+          type: "bigint"
+          nullable: false
+          description: "Foreign key to claim_case"
+        event_type:
+          type: "varchar"
+          length: 80
+          nullable: false
+          description: "Type of event"
+        from_status:
+          type: "varchar"
+          length: 50
+          nullable: true
+          description: "Previous status (for transitions)"
+        to_status:
+          type: "varchar"
+          length: 50
+          nullable: true
+          description: "New status (for transitions)"
+        actor_type:
+          type: "varchar"
+          length: 20
+          nullable: false
+          description: "Type of actor (user, system)"
+        actor_id:
+          type: "bigint"
+          nullable: true
+          description: "Actor identifier"
+        is_internal_note:
+          type: "tinyint"
+          length: 1
+          nullable: false
+          default: "0"
+          description: "Internal note flag (0=no, 1=yes)"
+        note:
+          type: "text"
+          nullable: true
+          description: "Event notes"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Event timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        indexes:
+          - name: "idx_claim_event_claim"
+            columns: ["claim_id", "created_at"]
+          - name: "idx_claim_event_type"
+            columns: ["event_type"]
+        foreign_keys:
+          - name: "fk_claim_event_claim"
+            columns: ["claim_id"]
+            references_table: "claim_case"
+            references_columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "RESTRICT"
+
+    claim_fraud_signal:
+      description: "Fraud detection signals and risk indicators"
+      columns:
+        id:
+          type: "bigint"
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        claim_id:
+          type: "bigint"
+          nullable: false
+          description: "Foreign key to claim_case"
+        signal_type:
+          type: "varchar"
+          length: 60
+          nullable: false
+          description: "Type of fraud signal"
+        signal_score:
+          type: "int"
+          nullable: false
+          description: "Risk score (0-100)"
+        signal_payload:
+          type: "json"
+          nullable: true
+          description: "Signal details and evidence"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Signal detection timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        indexes:
+          - name: "idx_claim_fraud_claim"
+            columns: ["claim_id", "created_at"]
+          - name: "idx_claim_fraud_type"
+            columns: ["signal_type"]
+          - name: "idx_claim_fraud_score"
+            columns: ["signal_score"]
+        foreign_keys:
+          - name: "fk_claim_fraud_claim"
+            columns: ["claim_id"]
+            references_table: "claim_case"
+            references_columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "RESTRICT"
+
+    claim_link:
+      description: "Relationships between claims (duplicates, related)"
+      columns:
+        id:
+          type: "bigint"
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        from_claim_id:
+          type: "bigint"
+          nullable: false
+          description: "Source claim"
+        to_claim_id:
+          type: "bigint"
+          nullable: false
+          description: "Target claim"
+        link_type:
+          type: "varchar"
+          length: 30
+          nullable: false
+          description: "Type of relationship"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Link creation timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_claim_link_unique"
+            columns: ["from_claim_id", "to_claim_id", "link_type"]
+        indexes:
+          - name: "idx_claim_link_from"
+            columns: ["from_claim_id"]
+          - name: "idx_claim_link_to"
+            columns: ["to_claim_id"]
+        foreign_keys:
+          - name: "fk_claim_link_from"
+            columns: ["from_claim_id"]
+            references_table: "claim_case"
+            references_columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "RESTRICT"
+          - name: "fk_claim_link_to"
+            columns: ["to_claim_id"]
+            references_table: "claim_case"
+            references_columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "RESTRICT"
+
+    claim_review:
+      description: "Reviewer decisions and assessments"
+      columns:
+        id:
+          type: "bigint"
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        claim_id:
+          type: "bigint"
+          nullable: false
+          description: "Foreign key to claim_case"
+        reviewer_id:
+          type: "bigint"
+          nullable: false
+          description: "Foreign key to user (reviewer)"
+        reviewer_role:
+          type: "varchar"
+          length: 30
+          nullable: false
+          description: "Role of reviewer"
+        decision:
+          type: "varchar"
+          length: 40
+          nullable: false
+          description: "Review decision"
+        decision_note:
+          type: "text"
+          nullable: true
+          description: "Decision notes"
+        decided_at:
+          type: "datetime"
+          nullable: true
+          description: "Decision timestamp"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Review creation timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        indexes:
+          - name: "idx_claim_review_claim"
+            columns: ["claim_id", "created_at"]
+          - name: "idx_claim_review_reviewer"
+            columns: ["reviewer_id"]
+        foreign_keys:
+          - name: "fk_claim_review_claim"
+            columns: ["claim_id"]
+            references_table: "claim_case"
+            references_columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "RESTRICT"
+
+    claim_settlement_flag:
+      description: "Settlement eligibility per crowdfunding period"
+      columns:
+        id:
+          type: "bigint"
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        claim_id:
+          type: "bigint"
+          nullable: false
+          description: "Foreign key to claim_case"
+        period_key:
+          type: "char"
+          length: 7
+          nullable: false
+          description: "Crowdfunding period key (YYYY-MM)"
+        eligible:
+          type: "tinyint"
+          length: 1
+          nullable: false
+          description: "Eligibility flag (0=no, 1=yes)"
+        reason_code:
+          type: "varchar"
+          length: 60
+          nullable: false
+          default: "OK"
+          description: "Eligibility reason code"
+        note:
+          type: "text"
+          nullable: true
+          description: "Additional notes"
+        set_by_actor_type:
+          type: "varchar"
+          length: 20
+          nullable: false
+          description: "Actor type who set flag"
+        set_by_actor_id:
+          type: "bigint"
+          nullable: true
+          description: "Actor ID who set flag"
+        set_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Flag set timestamp"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_claim_period"
+            columns: ["claim_id", "period_key"]
+        indexes:
+          - name: "idx_period_eligible"
+            columns: ["period_key", "eligible"]
+          - name: "idx_claim_settlement"
+            columns: ["claim_id"]
+        foreign_keys:
+          - name: "fk_claim_settlement_claim"
+            columns: ["claim_id"]
+            references_table: "claim_case"
+            references_columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "RESTRICT"
+
+    guarantee_letter:
+      description: "Guarantee letters for cashless hospitalization"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        medical_case_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to medical_case"
+        gl_number:
+          type: "varchar"
+          length: 64
+          nullable: false
+          description: "Unique GL number"
+        approved_limit_amount:
+          type: "decimal"
+          precision: [18, 2]
+          nullable: false
+          description: "Approved coverage limit"
+        currency:
+          type: "varchar"
+          length: 8
+          nullable: false
+          default: "MYR"
+          description: "Currency code"
+        status:
+          type: "varchar"
+          length: 32
+          nullable: false
+          default: "issued"
+          description: "GL status"
+        valid_from:
+          type: "datetime"
+          nullable: false
+          description: "GL validity start"
+        valid_until:
+          type: "datetime"
+          nullable: false
+          description: "GL validity end"
+        coverage_snapshot:
+          type: "json"
+          nullable: true
+          description: "Snapshot of coverage details"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional metadata"
+        issued_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "GL issuance timestamp"
+        cancelled_at:
+          type: "datetime"
+          nullable: true
+          description: "GL cancellation timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_gl_number"
+            columns: ["gl_number"]
+          - name: "uk_gl_case"
+            columns: ["medical_case_id"]
+        indexes:
+          - name: "idx_gl_status"
+            columns: ["status"]
+          - name: "idx_gl_valid"
+            columns: ["valid_from", "valid_until"]
+        foreign_keys:
+          - name: "fk_gl_case"
+            columns: ["medical_case_id"]
+            references_table: "medical_case"
+            references_columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+
+    medical_case:
+      description: "Hospital admission cases for tracking"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        case_number:
+          type: "varchar"
+          length: 64
+          nullable: false
+          description: "Unique medical case number"
+        account_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to account"
+        person_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to person (patient)"
+        policy_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to policy"
+        provider_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to medical_provider"
+        admission_type:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "emergency"
+          description: "Type of admission"
+        diagnosis_code:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "ICD diagnosis code"
+        diagnosis_text:
+          type: "varchar"
+          length: 255
+          nullable: true
+          description: "Diagnosis description"
+        admitted_at:
+          type: "datetime"
+          nullable: true
+          description: "Admission timestamp"
+        discharged_at:
+          type: "datetime"
+          nullable: true
+          description: "Discharge timestamp"
+        status:
+          type: "varchar"
+          length: 32
+          nullable: false
+          default: "reported"
+          description: "Medical case status"
+        eligibility_snapshot:
+          type: "json"
+          nullable: true
+          description: "Policy eligibility snapshot"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional metadata"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Record update timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_medical_case_number"
+            columns: ["case_number"]
+        indexes:
+          - name: "idx_case_policy"
+            columns: ["policy_id", "status"]
+          - name: "idx_case_provider"
+            columns: ["provider_id", "status"]
+          - name: "idx_case_person"
+            columns: ["person_id"]
+        foreign_keys:
+          - name: "fk_case_provider"
+            columns: ["provider_id"]
+            references_table: "medical_provider"
+            references_columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+
+    medical_case_event:
+      description: "Medical case event log"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        medical_case_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to medical_case"
+        event_type:
+          type: "varchar"
+          length: 64
+          nullable: false
+          description: "Type of event"
+        actor_type:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "system"
+          description: "Actor type"
+        actor_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Actor ID"
+        payload_json:
+          type: "json"
+          nullable: true
+          description: "Event payload"
+        occurred_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Event occurrence timestamp"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        indexes:
+          - name: "idx_mce_case_time"
+            columns: ["medical_case_id", "occurred_at"]
+        foreign_keys:
+          - name: "fk_mce_case"
+            columns: ["medical_case_id"]
+            references_table: "medical_case"
+            references_columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+
+    medical_provider:
+      description: "Panel hospitals and clinics"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        provider_code:
+          type: "varchar"
+          length: 64
+          nullable: false
+          description: "Unique provider code"
+        name:
+          type: "varchar"
+          length: 255
+          nullable: false
+          description: "Provider name"
+        type:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "hospital"
+          description: "Provider type"
+        panel_status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "active"
+          description: "Panel membership status"
+        contact_phone:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "Contact phone"
+        contact_email:
+          type: "varchar"
+          length: 255
+          nullable: true
+          description: "Contact email"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional metadata"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_provider_code"
+            columns: ["provider_code"]
+        indexes:
+          - name: "idx_provider_status"
+            columns: ["panel_status"]
+
+    medical_underwriting_case:
+      description: "Medical underwriting cases for pre-existing conditions assessment"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        subject_ref_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to resource_ref (subject)"
+        context_ref_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Foreign key to resource_ref (context)"
+        case_no:
+          type: "varchar"
+          length: 64
+          nullable: false
+          description: "Unique case number"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "open"
+          description: "Case status"
+        channel:
+          type: "varchar"
+          length: 16
+          nullable: true
+          description: "Submission channel"
+        priority:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "normal"
+          description: "Case priority"
+        created_by_user_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "User who created case"
+        assigned_to_user_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "User assigned to case"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional metadata"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Record update timestamp"
+        closed_at:
+          type: "datetime"
+          nullable: true
+          description: "Case closure timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_muw_case_no"
+            columns: ["case_no"]
+        indexes:
+          - name: "idx_muw_subject_time"
+            columns: ["subject_ref_id", "created_at"]
+          - name: "idx_muw_context_time"
+            columns: ["context_ref_id", "created_at"]
+          - name: "idx_muw_status_time"
+            columns: ["status", "updated_at"]
+        foreign_keys:
+          - name: "fk_muw_case_subject_ref"
+            columns: ["subject_ref_id"]
+            references_table: "resource_ref"
+            references_columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+          - name: "fk_muw_case_context_ref"
+            columns: ["context_ref_id"]
+            references_table: "resource_ref"
+            references_columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+
+    medical_underwriting_outcome:
+      description: "Versioned underwriting decisions"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        case_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to medical_underwriting_case"
+        version_no:
+          type: "int"
+          unsigned: true
+          nullable: false
+          default: "1"
+          description: "Outcome version number"
+        decision:
+          type: "varchar"
+          length: 32
+          nullable: false
+          description: "Decision (accept, reject, accept_with_terms, postpone)"
+        risk_level:
+          type: "varchar"
+          length: 16
+          nullable: true
+          description: "Risk level"
+        overall_loading_factor:
+          type: "decimal"
+          precision: [8, 4]
+          nullable: true
+          description: "Overall loading factor"
+        decision_reason_json:
+          type: "json"
+          nullable: true
+          description: "Decision reasoning"
+        decision_notes:
+          type: "text"
+          nullable: true
+          description: "Decision notes"
+        effective_from:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Effective start date"
+        effective_to:
+          type: "datetime"
+          nullable: true
+          description: "Effective end date"
+        decided_by_user_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "User who made decision"
+        decided_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Decision timestamp"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_muw_outcome_case_version"
+            columns: ["case_id", "version_no"]
+        indexes:
+          - name: "idx_muw_outcome_case_time"
+            columns: ["case_id", "decided_at"]
+          - name: "idx_muw_outcome_decision_time"
+            columns: ["decision", "decided_at"]
+          - name: "idx_muw_outcome_effective"
+            columns: ["effective_from", "effective_to"]
+        foreign_keys:
+          - name: "fk_muw_outcome_case"
+            columns: ["case_id"]
+            references_table: "medical_underwriting_case"
+            references_columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+
+    medical_underwriting_term:
+      description: "Terms, exclusions, loadings attached to underwriting outcomes"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        outcome_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to medical_underwriting_outcome"
+        term_type:
+          type: "varchar"
+          length: 16
+          nullable: false
+          description: "Type of term (exclusion, loading, waiting_period, condition)"
+        code:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "Term code"
+        name:
+          type: "varchar"
+          length: 255
+          nullable: true
+          description: "Term name"
+        value_factor:
+          type: "decimal"
+          precision: [8, 4]
+          nullable: true
+          description: "Factor value (e.g., loading multiplier)"
+        value_amount:
+          type: "decimal"
+          precision: [18, 2]
+          nullable: true
+          description: "Amount value"
+        value_days:
+          type: "int"
+          unsigned: true
+          nullable: true
+          description: "Days value (e.g., waiting period)"
+        value_text:
+          type: "varchar"
+          length: 512
+          nullable: true
+          description: "Text value"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional metadata"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        indexes:
+          - name: "idx_muw_term_outcome"
+            columns: ["outcome_id"]
+          - name: "idx_muw_term_type"
+            columns: ["term_type"]
+          - name: "idx_muw_term_code"
+            columns: ["code"]
+        foreign_keys:
+          - name: "fk_muw_term_outcome"
+            columns: ["outcome_id"]
+            references_table: "medical_underwriting_outcome"
+            references_columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+
+    medical_underwriting_current_outcome:
+      description: "Current active outcome pointer per subject-context combination"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        subject_ref_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to resource_ref (subject)"
+        context_ref_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Foreign key to resource_ref (context)"
+        case_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to medical_underwriting_case"
+        outcome_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to medical_underwriting_outcome"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Last update timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_muw_current_subject_context"
+            columns: ["subject_ref_id", "context_ref_id"]
+        indexes:
+          - name: "idx_muw_current_subject"
+            columns: ["subject_ref_id"]
+          - name: "fk_muw_current_context_ref"
+            columns: ["context_ref_id"]
+          - name: "fk_muw_current_case"
+            columns: ["case_id"]
+          - name: "fk_muw_current_outcome"
+            columns: ["outcome_id"]
+        foreign_keys:
+          - name: "fk_muw_current_subject_ref"
+            columns: ["subject_ref_id"]
+            references_table: "resource_ref"
+            references_columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+          - name: "fk_muw_current_context_ref"
+            columns: ["context_ref_id"]
+            references_table: "resource_ref"
+            references_columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+          - name: "fk_muw_current_case"
+            columns: ["case_id"]
+            references_table: "medical_underwriting_case"
+            references_columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+          - name: "fk_muw_current_outcome"
+            columns: ["outcome_id"]
+            references_table: "medical_underwriting_outcome"
+            references_columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+
+    medical_underwriting_evidence:
+      description: "Evidence documents and surveys for underwriting cases"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        case_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to medical_underwriting_case"
+        evidence_type:
+          type: "varchar"
+          length: 32
+          nullable: false
+          default: "survey"
+          description: "Type of evidence (survey, medical_report, lab_test)"
+        survey_response_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Foreign key to survey_response"
+        note:
+          type: "varchar"
+          length: 512
+          nullable: true
+          description: "Evidence note"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional metadata"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        indexes:
+          - name: "idx_muwe_case_time"
+            columns: ["case_id", "created_at"]
+          - name: "idx_muwe_survey"
+            columns: ["survey_response_id"]
+        foreign_keys:
+          - name: "fk_muwe_case"
+            columns: ["case_id"]
+            references_table: "medical_underwriting_case"
+            references_columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+          - name: "fk_muwe_survey_response"
+            columns: ["survey_response_id"]
+            references_table: "survey_response"
+            references_columns: ["id"]
+            on_delete: "SET NULL"
+            on_update: "CASCADE"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# RESOURCES
+# ──────────────────────────────────────────────────────────────────────────────
+
+resources:
+  claim_case:
+    kind: "aggregate"
+    table: "claim_case"
+    primary_key: "id"
+    statuses:
+      - "draft"
+      - "submitted"
+      - "under_review"
+      - "pending_info"
+      - "approved"
+      - "rejected"
+      - "settled"
+      - "cancelled"
+    api_surface:
+      - "POST /api/v1/claim/submit"
+      - "POST /api/v1/claim/:claimId/assign-reviewer"
+      - "POST /api/v1/claim/:claimId/documents/add"
+      - "POST /api/v1/claim/:claimId/approve"
+      - "POST /api/v1/claim/:claimId/reject"
+      - "POST /api/v1/claim/:claimId/settle"
+      - "GET /api/v1/claim/:claimId"
+      - "GET /api/v1/claim"
+
+  claim_case_number_sequence:
+    kind: "resource"
+    table: "claim_case_number_sequence"
+    primary_key: "claim_year"
+    api_surface: []
+
+  claim_document:
+    kind: "resource"
+    table: "claim_document"
+    primary_key: "id"
+    api_surface:
+      - "POST /api/v1/claim/:claimId/documents/add"
+      - "GET /api/v1/claim/:claimId/documents"
+
+  claim_event:
+    kind: "resource"
+    table: "claim_event"
+    primary_key: "id"
+    api_surface:
+      - "GET /api/v1/claim/:claimId/events"
+
+  claim_fraud_signal:
+    kind: "resource"
+    table: "claim_fraud_signal"
+    primary_key: "id"
+    api_surface:
+      - "POST /api/v1/claim/:claimId/fraud-signal/record"
+      - "GET /api/v1/claim/:claimId/fraud-signals"
+
+  claim_link:
+    kind: "resource"
+    table: "claim_link"
+    primary_key: "id"
+    api_surface:
+      - "POST /api/v1/claim/:claimId/link"
+      - "GET /api/v1/claim/:claimId/links"
+
+  claim_review:
+    kind: "resource"
+    table: "claim_review"
+    primary_key: "id"
+    api_surface:
+      - "GET /api/v1/claim/:claimId/reviews"
+
+  claim_settlement_flag:
+    kind: "resource"
+    table: "claim_settlement_flag"
+    primary_key: "id"
+    api_surface:
+      - "GET /api/v1/claim/:claimId/settlement-flags"
+
+  guarantee_letter:
+    kind: "aggregate"
+    table: "guarantee_letter"
+    primary_key: "id"
+    statuses:
+      - "issued"
+      - "active"
+      - "used"
+      - "expired"
+      - "cancelled"
+    api_surface:
+      - "POST /api/v1/guarantee-letter/issue"
+      - "POST /api/v1/guarantee-letter/:glId/cancel"
+      - "GET /api/v1/guarantee-letter/:glId"
+      - "GET /api/v1/guarantee-letter"
+
+  medical_case:
+    kind: "aggregate"
+    table: "medical_case"
+    primary_key: "id"
+    statuses:
+      - "reported"
+      - "admitted"
+      - "in_treatment"
+      - "discharged"
+      - "closed"
+    api_surface:
+      - "POST /api/v1/medical-case/create"
+      - "POST /api/v1/medical-case/:medicalCaseId/update"
+      - "GET /api/v1/medical-case/:medicalCaseId"
+      - "GET /api/v1/medical-case"
+
+  medical_case_event:
+    kind: "resource"
+    table: "medical_case_event"
+    primary_key: "id"
+    api_surface:
+      - "GET /api/v1/medical-case/:medicalCaseId/events"
+
+  medical_provider:
+    kind: "resource"
+    table: "medical_provider"
+    primary_key: "id"
+    api_surface:
+      - "POST /api/v1/medical-provider/create"
+      - "PUT /api/v1/medical-provider/:providerId"
+      - "GET /api/v1/medical-provider/:providerId"
+      - "GET /api/v1/medical-provider"
+
+  medical_underwriting_case:
+    kind: "aggregate"
+    table: "medical_underwriting_case"
+    primary_key: "id"
+    statuses:
+      - "open"
+      - "pending"
+      - "decided"
+      - "closed"
+    api_surface:
+      - "POST /api/v1/underwriting/create"
+      - "POST /api/v1/underwriting/:caseId/record-decision"
+      - "POST /api/v1/underwriting/:caseId/add-evidence"
+      - "GET /api/v1/underwriting/:caseId"
+      - "GET /api/v1/underwriting"
+
+  medical_underwriting_outcome:
+    kind: "resource"
+    table: "medical_underwriting_outcome"
+    primary_key: "id"
+    api_surface:
+      - "GET /api/v1/underwriting/:caseId/outcomes"
+
+  medical_underwriting_term:
+    kind: "resource"
+    table: "medical_underwriting_term"
+    primary_key: "id"
+    api_surface:
+      - "GET /api/v1/underwriting/:caseId/terms"
+
+  medical_underwriting_current_outcome:
+    kind: "resource"
+    table: "medical_underwriting_current_outcome"
+    primary_key: "id"
+    api_surface:
+      - "GET /api/v1/underwriting/current-outcome/:subjectRefId"
+
+  medical_underwriting_evidence:
+    kind: "resource"
+    table: "medical_underwriting_evidence"
+    primary_key: "id"
+    api_surface:
+      - "POST /api/v1/underwriting/:caseId/add-evidence"
+      - "GET /api/v1/underwriting/:caseId/evidence"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# AGGREGATES
+# ──────────────────────────────────────────────────────────────────────────────
+
+aggregates:
+  CLAIM_CASE:
+    root_table: "claim_case"
+    primary_key: "id"
+    statuses:
+      - "draft"
+      - "submitted"
+      - "under_review"
+      - "pending_info"
+      - "approved"
+      - "rejected"
+      - "settled"
+      - "cancelled"
+
+  GUARANTEE_LETTER:
+    root_table: "guarantee_letter"
+    primary_key: "id"
+    statuses:
+      - "issued"
+      - "active"
+      - "used"
+      - "expired"
+      - "cancelled"
+
+  MEDICAL_CASE:
+    root_table: "medical_case"
+    primary_key: "id"
+    statuses:
+      - "reported"
+      - "admitted"
+      - "in_treatment"
+      - "discharged"
+      - "closed"
+
+  MEDICAL_UNDERWRITING_CASE:
+    root_table: "medical_underwriting_case"
+    primary_key: "id"
+    statuses:
+      - "open"
+      - "pending"
+      - "decided"
+      - "closed"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# TYPES
+# ──────────────────────────────────────────────────────────────────────────────
+
+types:
+  Actor:
+    description: "Represents an actor in the system"
+    fields:
+      - name: "actorType"
+        type: "string"
+        description: "Type of actor (user, system)"
+      - name: "actorId"
+        type: "bigint"
+        nullable: true
+        description: "Actor identifier"
+
+  ClaimSummary:
+    description: "Summary information for a claim"
+    fields:
+      - name: "claimId"
+        type: "bigint"
+      - name: "claimNumber"
+        type: "string"
+      - name: "status"
+        type: "string"
+      - name: "claimType"
+        type: "string"
+      - name: "requestedAmount"
+        type: "decimal"
+      - name: "approvedAmount"
+        type: "decimal"
+        nullable: true
+      - name: "submittedAt"
+        type: "datetime"
+        nullable: true
+
+  MedicalCaseSummary:
+    description: "Summary information for a medical case"
+    fields:
+      - name: "medicalCaseId"
+        type: "bigint"
+      - name: "caseNumber"
+        type: "string"
+      - name: "status"
+        type: "string"
+      - name: "providerName"
+        type: "string"
+      - name: "admittedAt"
+        type: "datetime"
+        nullable: true
+      - name: "dischargedAt"
+        type: "datetime"
+        nullable: true
+
+  UnderwritingOutcomeSummary:
+    description: "Summary of underwriting decision"
+    fields:
+      - name: "outcomeId"
+        type: "bigint"
+      - name: "caseId"
+        type: "bigint"
+      - name: "versionNo"
+        type: "int"
+      - name: "decision"
+        type: "string"
+      - name: "riskLevel"
+        type: "string"
+        nullable: true
+      - name: "decidedAt"
+        type: "datetime"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DTOS
+# ──────────────────────────────────────────────────────────────────────────────
+
+dtos:
+  ClaimSubmitDto:
+    description: "DTO for claim submission"
+    fields:
+      - name: "accountId"
+        type: "string"
+        required: true
+      - name: "claimantPersonId"
+        type: "string"
+        required: true
+      - name: "insurantPersonId"
+        type: "string"
+        required: true
+      - name: "claimType"
+        type: "string"
+        required: true
+        max_len: 50
+      - name: "hospitalName"
+        type: "string"
+        required: true
+        max_len: 255
+      - name: "admissionDate"
+        type: "date"
+        required: true
+      - name: "dischargeDate"
+        type: "date"
+        required: false
+      - name: "diagnosis"
+        type: "string"
+        required: true
+      - name: "treatmentType"
+        type: "string"
+        required: true
+        max_len: 120
+      - name: "requestedAmount"
+        type: "decimal"
+        required: true
+      - name: "documents"
+        type: "array"
+        required: false
+        item_type: "ClaimDocumentDto"
+
+  ClaimDocumentDto:
+    description: "DTO for claim document"
+    fields:
+      - name: "fileUploadId"
+        type: "string"
+        required: true
+      - name: "documentType"
+        type: "string"
+        required: true
+        max_len: 80
+
+  ClaimAssignReviewerDto:
+    description: "DTO for assigning reviewer"
+    fields:
+      - name: "reviewerId"
+        type: "string"
+        required: true
+      - name: "reviewerRole"
+        type: "string"
+        required: true
+        max_len: 30
+
+  ClaimApproveDto:
+    description: "DTO for claim approval"
+    fields:
+      - name: "approvedAmount"
+        type: "decimal"
+        required: true
+      - name: "decisionNote"
+        type: "string"
+        required: false
+
+  ClaimRejectDto:
+    description: "DTO for claim rejection"
+    fields:
+      - name: "rejectionReason"
+        type: "string"
+        required: true
+      - name: "decisionNote"
+        type: "string"
+        required: false
+
+  ClaimSettleDto:
+    description: "DTO for claim settlement"
+    fields:
+      - name: "settlementAmount"
+        type: "decimal"
+        required: true
+      - name: "periodKey"
+        type: "string"
+        required: true
+        max_len: 7
+
+  GuaranteeLetterIssueDto:
+    description: "DTO for issuing guarantee letter"
+    fields:
+      - name: "medicalCaseId"
+        type: "string"
+        required: true
+      - name: "approvedLimitAmount"
+        type: "decimal"
+        required: true
+      - name: "currency"
+        type: "string"
+        required: false
+        default: "MYR"
+        max_len: 8
+      - name: "validFrom"
+        type: "datetime"
+        required: true
+      - name: "validUntil"
+        type: "datetime"
+        required: true
+      - name: "coverageSnapshot"
+        type: "json"
+        required: false
+
+  MedicalCaseCreateDto:
+    description: "DTO for creating medical case"
+    fields:
+      - name: "accountId"
+        type: "string"
+        required: true
+      - name: "personId"
+        type: "string"
+        required: true
+      - name: "policyId"
+        type: "string"
+        required: true
+      - name: "providerId"
+        type: "string"
+        required: true
+      - name: "admissionType"
+        type: "string"
+        required: false
+        default: "emergency"
+        max_len: 16
+      - name: "diagnosisCode"
+        type: "string"
+        required: false
+        max_len: 64
+      - name: "diagnosisText"
+        type: "string"
+        required: false
+        max_len: 255
+      - name: "admittedAt"
+        type: "datetime"
+        required: false
+
+  MedicalCaseUpdateDto:
+    description: "DTO for medical case update"
+    fields:
+      - name: "status"
+        type: "string"
+        required: true
+        max_len: 32
+      - name: "dischargedAt"
+        type: "datetime"
+        required: false
+
+  UnderwritingDecisionDto:
+    description: "DTO for underwriting decision"
+    fields:
+      - name: "decision"
+        type: "string"
+        required: true
+        max_len: 32
+      - name: "riskLevel"
+        type: "string"
+        required: false
+        max_len: 16
+      - name: "overallLoadingFactor"
+        type: "decimal"
+        required: false
+      - name: "decisionReasonJson"
+        type: "json"
+        required: false
+      - name: "decisionNotes"
+        type: "string"
+        required: false
+      - name: "terms"
+        type: "array"
+        required: false
+        item_type: "UnderwritingTermDto"
+
+  UnderwritingTermDto:
+    description: "DTO for underwriting term"
+    fields:
+      - name: "termType"
+        type: "string"
+        required: true
+        max_len: 16
+      - name: "code"
+        type: "string"
+        required: false
+        max_len: 64
+      - name: "name"
+        type: "string"
+        required: false
+        max_len: 255
+      - name: "valueFactor"
+        type: "decimal"
+        required: false
+      - name: "valueAmount"
+        type: "decimal"
+        required: false
+      - name: "valueDays"
+        type: "int"
+        required: false
+      - name: "valueText"
+        type: "string"
+        required: false
+        max_len: 512
+
+  FraudSignalDto:
+    description: "DTO for fraud signal"
+    fields:
+      - name: "signalType"
+        type: "string"
+        required: true
+        max_len: 60
+      - name: "signalScore"
+        type: "int"
+        required: true
+      - name: "signalPayload"
+        type: "json"
+        required: false
+
+  UnderwritingEvidenceDto:
+    description: "DTO for adding underwriting evidence"
+    fields:
+      - name: "evidenceType"
+        type: "string"
+        required: true
+        max_len: 32
+        default: "survey"
+      - name: "surveyResponseId"
+        type: "string"
+        required: false
+      - name: "note"
+        type: "string"
+        required: false
+        max_len: 512
+      - name: "metaJson"
+        type: "json"
+        required: false
+
+# ──────────────────────────────────────────────────────────────────────────────
+# EVENTS
+# ──────────────────────────────────────────────────────────────────────────────
+
+events:
+  CLAIM_SUBMITTED:
+    version: "v1"
+    aggregate_type: "CLAIM_CASE"
+    description: "Claim has been submitted for review"
+
+  CLAIM_REVIEWER_ASSIGNED:
+    version: "v1"
+    aggregate_type: "CLAIM_CASE"
+    description: "Reviewer has been assigned to claim"
+
+  CLAIM_DOCUMENT_ADDED:
+    version: "v1"
+    aggregate_type: "CLAIM_CASE"
+    description: "Document has been added to claim"
+
+  CLAIM_FRAUD_SIGNAL_RECORDED:
+    version: "v1"
+    aggregate_type: "CLAIM_CASE"
+    description: "Fraud signal has been recorded for claim"
+
+  CLAIM_APPROVED:
+    version: "v1"
+    aggregate_type: "CLAIM_CASE"
+    description: "Claim has been approved for settlement"
+
+  CLAIM_REJECTED:
+    version: "v1"
+    aggregate_type: "CLAIM_CASE"
+    description: "Claim has been rejected"
+
+  CLAIM_SETTLED:
+    version: "v1"
+    aggregate_type: "CLAIM_CASE"
+    description: "Claim has been settled and payout initiated"
+
+  GUARANTEE_LETTER_ISSUED:
+    version: "v1"
+    aggregate_type: "GUARANTEE_LETTER"
+    description: "Guarantee letter has been issued for cashless hospitalization"
+
+  GUARANTEE_LETTER_CANCELLED:
+    version: "v1"
+    aggregate_type: "GUARANTEE_LETTER"
+    description: "Guarantee letter has been cancelled"
+
+  MEDICAL_CASE_CREATED:
+    version: "v1"
+    aggregate_type: "MEDICAL_CASE"
+    description: "Medical case has been created"
+
+  MEDICAL_CASE_UPDATED:
+    version: "v1"
+    aggregate_type: "MEDICAL_CASE"
+    description: "Medical case has been updated"
+
+  UNDERWRITING_DECISION_RECORDED:
+    version: "v1"
+    aggregate_type: "MEDICAL_UNDERWRITING_CASE"
+    description: "Medical underwriting decision has been recorded"
+
+  UNDERWRITING_EVIDENCE_ADDED:
+    version: "v1"
+    aggregate_type: "MEDICAL_UNDERWRITING_CASE"
+    description: "Evidence has been added to underwriting case"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# COMMANDS
+# ──────────────────────────────────────────────────────────────────────────────
+
+commands:
+  Claim.Submit:
+    name: "Claim.Submit"
+    description: "Submit new insurance claim"
+    path: "/api/v1/claim/submit"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "ClaimSubmitDto"
+    steps:
+      - kind: "guard"
+        description: "Validate account exists and is active"
+      - kind: "guard"
+        description: "Validate claimant person exists"
+      - kind: "guard"
+        description: "Validate insurant person exists"
+      - kind: "guard"
+        description: "Validate policy is active"
+      - kind: "guard"
+        description: "Check no duplicate claim for same insurant, admission date, hospital"
+      - kind: "insert"
+        table: "claim_case_number_sequence"
+        description: "Generate claim number using MySQL ON DUPLICATE KEY UPDATE"
+      - kind: "insert"
+        table: "claim_case"
+        fields: ["claim_number", "claim_year", "claim_seq", "account_id", "claimant_person_id", "insurant_person_id", "claim_type", "status", "hospital_name", "admission_date", "discharge_date", "diagnosis", "treatment_type", "requested_amount", "submitted_at"]
+      - kind: "insert"
+        table: "claim_document"
+        description: "Insert documents if provided"
+      - kind: "insert"
+        table: "claim_event"
+        fields: ["claim_id", "event_type", "to_status", "actor_type", "actor_id"]
+      - kind: "outbox_emit"
+        event: "CLAIM_SUBMITTED"
+    response:
+      - "claimId"
+      - "claimNumber"
+
+  Claim.AssignReviewer:
+    name: "Claim.AssignReviewer"
+    description: "Assign reviewer to claim"
+    path: "/api/v1/claim/:claimId/assign-reviewer"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "ClaimAssignReviewerDto"
+    steps:
+      - kind: "guard"
+        description: "Validate claim exists and is in submitted or under_review status"
+      - kind: "guard"
+        description: "Validate reviewer exists and is active"
+      - kind: "update"
+        table: "claim_case"
+        fields: ["status"]
+      - kind: "insert"
+        table: "claim_review"
+        fields: ["claim_id", "reviewer_id", "reviewer_role", "decision"]
+      - kind: "insert"
+        table: "claim_event"
+        fields: ["claim_id", "event_type", "from_status", "to_status", "actor_type", "actor_id"]
+      - kind: "outbox_emit"
+        event: "CLAIM_REVIEWER_ASSIGNED"
+    response:
+      - "claimId"
+      - "reviewerId"
+
+  Claim.AddDocument:
+    name: "Claim.AddDocument"
+    description: "Add supporting document to claim"
+    path: "/api/v1/claim/:claimId/documents/add"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "ClaimDocumentDto"
+    steps:
+      - kind: "guard"
+        description: "Validate claim exists and is not cancelled"
+      - kind: "guard"
+        description: "Validate file_upload exists"
+      - kind: "insert"
+        table: "claim_document"
+        fields: ["claim_id", "file_upload_id", "document_type", "uploaded_by"]
+      - kind: "insert"
+        table: "claim_event"
+        fields: ["claim_id", "event_type", "actor_type", "actor_id"]
+      - kind: "outbox_emit"
+        event: "CLAIM_DOCUMENT_ADDED"
+    response:
+      - "claimId"
+      - "documentId"
+
+  Claim.RecordFraudSignal:
+    name: "Claim.RecordFraudSignal"
+    description: "Record fraud detection signal"
+    path: "/api/v1/claim/:claimId/fraud-signal/record"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "FraudSignalDto"
+    steps:
+      - kind: "guard"
+        description: "Validate claim exists"
+      - kind: "insert"
+        table: "claim_fraud_signal"
+        fields: ["claim_id", "signal_type", "signal_score", "signal_payload"]
+      - kind: "when"
+        condition: "signal_score >= 75"
+        then:
+          - kind: "outbox_emit"
+            event: "CLAIM_FRAUD_SIGNAL_RECORDED"
+    response:
+      - "claimId"
+      - "signalId"
+
+  Claim.Approve:
+    name: "Claim.Approve"
+    description: "Approve claim for settlement"
+    path: "/api/v1/claim/:claimId/approve"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "ClaimApproveDto"
+    steps:
+      - kind: "guard"
+        description: "Validate claim exists and is under_review"
+      - kind: "guard"
+        description: "Validate approved_amount <= requested_amount"
+      - kind: "guard"
+        description: "Validate within benefit limits"
+      - kind: "update"
+        table: "claim_case"
+        fields: ["status", "approved_amount", "decided_at"]
+      - kind: "update"
+        table: "claim_review"
+        fields: ["decision", "decision_note", "decided_at"]
+      - kind: "insert"
+        table: "claim_event"
+        fields: ["claim_id", "event_type", "from_status", "to_status", "actor_type", "actor_id"]
+      - kind: "outbox_emit"
+        event: "CLAIM_APPROVED"
+    response:
+      - "claimId"
+      - "approvedAmount"
+
+  Claim.Reject:
+    name: "Claim.Reject"
+    description: "Reject claim"
+    path: "/api/v1/claim/:claimId/reject"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "ClaimRejectDto"
+    steps:
+      - kind: "guard"
+        description: "Validate claim exists and is under_review"
+      - kind: "update"
+        table: "claim_case"
+        fields: ["status", "rejection_reason", "decided_at"]
+      - kind: "update"
+        table: "claim_review"
+        fields: ["decision", "decision_note", "decided_at"]
+      - kind: "insert"
+        table: "claim_event"
+        fields: ["claim_id", "event_type", "from_status", "to_status", "actor_type", "actor_id"]
+      - kind: "outbox_emit"
+        event: "CLAIM_REJECTED"
+    response:
+      - "claimId"
+
+  Claim.Settle:
+    name: "Claim.Settle"
+    description: "Process claim settlement"
+    path: "/api/v1/claim/:claimId/settle"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "ClaimSettleDto"
+    steps:
+      - kind: "guard"
+        description: "Validate claim exists and is approved"
+      - kind: "guard"
+        description: "Validate settlement_amount matches approved_amount"
+      - kind: "update"
+        table: "claim_case"
+        fields: ["status"]
+      - kind: "insert"
+        table: "claim_settlement_flag"
+        fields: ["claim_id", "period_key", "eligible", "reason_code", "set_by_actor_type", "set_by_actor_id", "set_at"]
+      - kind: "insert"
+        table: "claim_event"
+        fields: ["claim_id", "event_type", "from_status", "to_status", "actor_type", "actor_id"]
+      - kind: "outbox_emit"
+        event: "CLAIM_SETTLED"
+    response:
+      - "claimId"
+
+  GuaranteeLetter.Issue:
+    name: "GuaranteeLetter.Issue"
+    description: "Issue guarantee letter for cashless hospitalization"
+    path: "/api/v1/guarantee-letter/issue"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "GuaranteeLetterIssueDto"
+    steps:
+      - kind: "guard"
+        description: "Validate medical_case exists and is in reported or admitted status"
+      - kind: "guard"
+        description: "Validate policy is active"
+      - kind: "guard"
+        description: "Validate within policy entitlements"
+      - kind: "insert"
+        table: "guarantee_letter"
+        fields: ["medical_case_id", "gl_number", "approved_limit_amount", "currency", "status", "valid_from", "valid_until", "coverage_snapshot", "meta_json", "issued_at"]
+      - kind: "outbox_emit"
+        event: "GUARANTEE_LETTER_ISSUED"
+    response:
+      - "glId"
+      - "glNumber"
+
+  GuaranteeLetter.Cancel:
+    name: "GuaranteeLetter.Cancel"
+    description: "Cancel guarantee letter"
+    path: "/api/v1/guarantee-letter/:glId/cancel"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: null
+    steps:
+      - kind: "guard"
+        description: "Validate GL exists and is in issued or active status"
+      - kind: "update"
+        table: "guarantee_letter"
+        fields: ["status", "cancelled_at"]
+      - kind: "outbox_emit"
+        event: "GUARANTEE_LETTER_CANCELLED"
+    response:
+      - "glId"
+
+  MedicalCase.Create:
+    name: "MedicalCase.Create"
+    description: "Create medical case"
+    path: "/api/v1/medical-case/create"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "MedicalCaseCreateDto"
+    steps:
+      - kind: "guard"
+        description: "Validate account, person, policy, and provider exist"
+      - kind: "insert"
+        table: "medical_case"
+        fields: ["case_number", "account_id", "person_id", "policy_id", "provider_id", "admission_type", "diagnosis_code", "diagnosis_text", "admitted_at", "status", "eligibility_snapshot", "meta_json"]
+      - kind: "insert"
+        table: "medical_case_event"
+        fields: ["medical_case_id", "event_type", "actor_type", "actor_id", "payload_json", "occurred_at"]
+      - kind: "outbox_emit"
+        event: "MEDICAL_CASE_CREATED"
+    response:
+      - "medicalCaseId"
+      - "caseNumber"
+
+  MedicalCase.Update:
+    name: "MedicalCase.Update"
+    description: "Update medical case status"
+    path: "/api/v1/medical-case/:medicalCaseId/update"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "MedicalCaseUpdateDto"
+    steps:
+      - kind: "guard"
+        description: "Validate medical_case exists"
+      - kind: "update"
+        table: "medical_case"
+        fields: ["status", "discharged_at"]
+      - kind: "insert"
+        table: "medical_case_event"
+        fields: ["medical_case_id", "event_type", "actor_type", "actor_id", "payload_json", "occurred_at"]
+      - kind: "outbox_emit"
+        event: "MEDICAL_CASE_UPDATED"
+    response:
+      - "medicalCaseId"
+
+  Underwriting.RecordDecision:
+    name: "Underwriting.RecordDecision"
+    description: "Record medical underwriting decision"
+    path: "/api/v1/underwriting/:caseId/record-decision"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "UnderwritingDecisionDto"
+    steps:
+      - kind: "guard"
+        description: "Validate case exists and is in open or pending status"
+      - kind: "read"
+        description: "Get next version number for this case"
+      - kind: "insert"
+        table: "medical_underwriting_outcome"
+        fields: ["case_id", "version_no", "decision", "risk_level", "overall_loading_factor", "decision_reason_json", "decision_notes", "effective_from", "effective_to", "decided_by_user_id", "decided_at"]
+      - kind: "insert"
+        table: "medical_underwriting_term"
+        description: "Insert terms if provided"
+        fields: ["outcome_id", "term_type", "code", "name", "value_factor", "value_amount", "value_days", "value_text", "meta_json"]
+      - kind: "upsert"
+        table: "medical_underwriting_current_outcome"
+        fields: ["subject_ref_id", "context_ref_id", "case_id", "outcome_id"]
+        unique_by: ["subject_ref_id", "context_ref_id"]
+      - kind: "update"
+        table: "medical_underwriting_case"
+        fields: ["status", "closed_at"]
+      - kind: "outbox_emit"
+        event: "UNDERWRITING_DECISION_RECORDED"
+    response:
+      - "caseId"
+      - "outcomeId"
+      - "versionNo"
+
+  Underwriting.AddEvidence:
+    name: "Underwriting.AddEvidence"
+    description: "Add evidence to underwriting case"
+    path: "/api/v1/underwriting/:caseId/add-evidence"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "UnderwritingEvidenceDto"
+    steps:
+      - kind: "guard"
+        description: "Validate case exists"
+      - kind: "insert"
+        table: "medical_underwriting_evidence"
+        fields: ["case_id", "evidence_type", "survey_response_id", "note", "meta_json"]
+      - kind: "outbox_emit"
+        event: "UNDERWRITING_EVIDENCE_ADDED"
+    response:
+      - "caseId"
+      - "evidenceId"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CHANGELOG
+# ──────────────────────────────────────────────────────────────────────────────
+
+changelog:
+  - version: "2.0.0"
+    date: "2026-03-21"
+    author: "Claude Sonnet 4.5"
+    description: "Complete Claims Pillar specification aligned with FULL-DDL.md"
+    changes:
+      - "Corrected guarantee_letter schema: removed policy_id, provider_id, issued_by; added approved_limit_amount, currency, coverage_snapshot, meta_json, cancelled_at"
+      - "Corrected medical_underwriting_current_outcome: added id as PK, added subject_ref_id and context_ref_id, renamed current_outcome_id to outcome_id"
+      - "Corrected medical_underwriting_term: replaced description and value_json with separate value fields (code, name, value_factor, value_amount, value_days, value_text, meta_json)"
+      - "Corrected medical_underwriting_evidence: replaced file_upload_id with note field"
+      - "Added all foreign key constraints from DDL"
+      - "Added all indexes from DDL"
+      - "Aligned all field types, lengths, and constraints with exact DDL"
+      - "Removed metadata section (not in allowed list)"
+      - "Added 13 commands covering all major workflows"
+      - "Added 13 events for cross-pillar integration"
+      - "Added comprehensive DTOs for all commands"
+      - "Added resources and aggregates for all 17 tables"
+    breaking_changes:
+      - "guarantee_letter schema fields changed"
+      - "medical_underwriting_current_outcome PK changed from case_id to id"
+      - "medical_underwriting_term value storage changed from JSON to typed fields"
+      - "medical_underwriting_evidence evidence storage changed from file_upload_id to note"
+    migrations_required:
+      - "No migrations needed - this is source of truth specification"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# COVERAGE
+# ──────────────────────────────────────────────────────────────────────────────
+
+coverage:
+  tables:
+    claim_case:
+      touched_by:
+        - "Claim.Submit"
+        - "Claim.AssignReviewer"
+        - "Claim.Approve"
+        - "Claim.Reject"
+        - "Claim.Settle"
+    claim_case_number_sequence:
+      touched_by:
+        - "Claim.Submit"
+    claim_document:
+      touched_by:
+        - "Claim.Submit"
+        - "Claim.AddDocument"
+    claim_event:
+      touched_by:
+        - "Claim.Submit"
+        - "Claim.AssignReviewer"
+        - "Claim.AddDocument"
+        - "Claim.Approve"
+        - "Claim.Reject"
+        - "Claim.Settle"
+    claim_fraud_signal:
+      touched_by:
+        - "Claim.RecordFraudSignal"
+    claim_link:
+      touched_by: []
+    claim_review:
+      touched_by:
+        - "Claim.AssignReviewer"
+        - "Claim.Approve"
+        - "Claim.Reject"
+    claim_settlement_flag:
+      touched_by:
+        - "Claim.Settle"
+    guarantee_letter:
+      touched_by:
+        - "GuaranteeLetter.Issue"
+        - "GuaranteeLetter.Cancel"
+    medical_case:
+      touched_by:
+        - "MedicalCase.Create"
+        - "MedicalCase.Update"
+    medical_case_event:
+      touched_by:
+        - "MedicalCase.Create"
+        - "MedicalCase.Update"
+    medical_provider:
+      touched_by: []
+    medical_underwriting_case:
+      touched_by:
+        - "Underwriting.RecordDecision"
+    medical_underwriting_outcome:
+      touched_by:
+        - "Underwriting.RecordDecision"
+    medical_underwriting_term:
+      touched_by:
+        - "Underwriting.RecordDecision"
+    medical_underwriting_current_outcome:
+      touched_by:
+        - "Underwriting.RecordDecision"
+    medical_underwriting_evidence:
+      touched_by:
+        - "Underwriting.AddEvidence"
+
+  events:
+    CLAIM_SUBMITTED:
+      emitted_by:
+        - "Claim.Submit"
+    CLAIM_REVIEWER_ASSIGNED:
+      emitted_by:
+        - "Claim.AssignReviewer"
+    CLAIM_DOCUMENT_ADDED:
+      emitted_by:
+        - "Claim.AddDocument"
+    CLAIM_FRAUD_SIGNAL_RECORDED:
+      emitted_by:
+        - "Claim.RecordFraudSignal"
+    CLAIM_APPROVED:
+      emitted_by:
+        - "Claim.Approve"
+    CLAIM_REJECTED:
+      emitted_by:
+        - "Claim.Reject"
+    CLAIM_SETTLED:
+      emitted_by:
+        - "Claim.Settle"
+    GUARANTEE_LETTER_ISSUED:
+      emitted_by:
+        - "GuaranteeLetter.Issue"
+    GUARANTEE_LETTER_CANCELLED:
+      emitted_by:
+        - "GuaranteeLetter.Cancel"
+    MEDICAL_CASE_CREATED:
+      emitted_by:
+        - "MedicalCase.Create"
+    MEDICAL_CASE_UPDATED:
+      emitted_by:
+        - "MedicalCase.Update"
+    UNDERWRITING_DECISION_RECORDED:
+      emitted_by:
+        - "Underwriting.RecordDecision"
+    UNDERWRITING_EVIDENCE_ADDED:
+      emitted_by:
+        - "Underwriting.AddEvidence"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# INTEGRATION
+# ──────────────────────────────────────────────────────────────────────────────
+
+integration:
+  description: "Claims pillar integrates with Policy, Wallet, and Notification pillars via synchronous reads, command calls, and event-driven patterns"
+
+  outbox_pattern:
+    how_it_works:
+      - "Commands write to domain tables and emit events to outbox table atomically within same transaction"
+      - "Outbox processor polls for new events and publishes to event bus"
+      - "Consumers in other pillars listen for events and process asynchronously"
+      - "Each event includes correlation_id, causation_id for tracing"
+    benefits:
+      - "Guaranteed event delivery (at-least-once semantics)"
+      - "Transactional consistency between domain state and events"
+      - "Decoupled pillar communication"
+      - "Audit trail of all cross-pillar interactions"
+
+  policy:
+    description: "Claims reads policy data for validation and calls Policy commands for benefit management"
+    pattern: "synchronous_read_and_command_call"
+
+    synchronous_reads:
+      - table: "policy"
+        purpose: "Validate policy is active before claim submission or GL issuance"
+      - table: "policy_benefit_entitlement"
+        purpose: "Check benefit limits and validate claim amounts"
+      - table: "policy_benefit_usage"
+        purpose: "Check current usage levels"
+
+    command_calls:
+      - command: "Policy.BenefitUsage.Reserve"
+        when: "GuaranteeLetter.Issue"
+        purpose: "Reserve benefit amount for GL period"
+        sync: true
+      - command: "Policy.BenefitUsage.Confirm"
+        when: "Claim.Settle"
+        purpose: "Confirm benefit usage and update policy_benefit_usage"
+        sync: true
+      - command: "Policy.BenefitUsage.Release"
+        when: "GuaranteeLetter.Cancel"
+        purpose: "Release reserved benefit amount"
+        sync: true
+
+  wallet:
+    description: "Wallet consumes claim settlement events to create payout transactions"
+    pattern: "event_driven_via_outbox"
+
+    consumers:
+      - event: "CLAIM_SETTLED"
+        consumer_name: "ClaimSettledConsumer"
+        location: "src/plugins/wallet/consumers/claim-settled.consumer.ts"
+        responsibility: "Create wallet transaction for claim payout"
+
+        expected_behavior:
+          - "Read claim details including approved_amount and period_key"
+          - "Create ledger transaction for payout"
+          - "Update wallet balance"
+          - "Emit WALLET_TRANSACTION_CREATED event"
+
+        event_payload_example:
+          event_type: "CLAIM_SETTLED"
+          aggregate_type: "CLAIM_CASE"
+          aggregate_id: 123
+          payload:
+            claim_id: 123
+            claim_number: "CL-2026-00001"
+            approved_amount: 5000.00
+            period_key: "2026-03"
+
+        idempotency_strategy:
+          - "Check for existing wallet transaction with same claim_id"
+          - "Use claim_id as idempotency key"
+
+        error_handling:
+          - "Log error and mark event for retry"
+          - "Alert ops team if retry limit exceeded"
+
+  notification:
+    description: "Notification consumes all claim events to send alerts to users"
+    pattern: "event_driven_via_outbox"
+
+    consumers:
+      - event: "CLAIM_SUBMITTED"
+        consumer_name: "ClaimNotificationConsumer"
+        location: "src/plugins/notification/consumers/claim-notification.consumer.ts"
+        responsibility: "Send submission confirmation to claimant"
+
+        expected_behavior:
+          - "Fetch claimant person and account details"
+          - "Send email/SMS confirmation with claim number"
+          - "Create notification record"
+
+        idempotency_strategy:
+          - "Check for existing notification with same event_id"
+
+        error_handling:
+          - "Retry up to 3 times"
+          - "Log failed notifications for manual review"
+
+      - event: "CLAIM_APPROVED"
+        consumer_name: "ClaimNotificationConsumer"
+        location: "src/plugins/notification/consumers/claim-notification.consumer.ts"
+        responsibility: "Send approval notification to claimant"
+
+      - event: "CLAIM_REJECTED"
+        consumer_name: "ClaimNotificationConsumer"
+        location: "src/plugins/notification/consumers/claim-notification.consumer.ts"
+        responsibility: "Send rejection notification with reason to claimant"
+
+      - event: "CLAIM_SETTLED"
+        consumer_name: "ClaimNotificationConsumer"
+        location: "src/plugins/notification/consumers/claim-notification.consumer.ts"
+        responsibility: "Send settlement confirmation to claimant"
+
+      - event: "GUARANTEE_LETTER_ISSUED"
+        consumer_name: "ClaimNotificationConsumer"
+        location: "src/plugins/notification/consumers/claim-notification.consumer.ts"
+        responsibility: "Send GL details to patient and provider"
+
+  architecture_diagram: |
+    ┌─────────────────────────────────────────────────────────────────┐
+    │                        CLAIM PILLAR                             │
+    ├─────────────────────────────────────────────────────────────────┤
+    │                                                                 │
+    │  Commands:                    Events:                           │
+    │  • Claim.Submit              • CLAIM_SUBMITTED                  │
+    │  • Claim.Approve             • CLAIM_APPROVED                   │
+    │  • Claim.Settle              • CLAIM_SETTLED                    │
+    │  • GuaranteeLetter.Issue     • GUARANTEE_LETTER_ISSUED          │
+    │  • Underwriting.RecordDecision • UNDERWRITING_DECISION_RECORDED │
+    │                                                                 │
+    └──────────┬──────────────────────┬───────────────────────────────┘
+               │                      │
+               │ sync reads           │ events via outbox
+               │ + command calls      │
+               ↓                      ↓
+    ┌──────────────────┐   ┌─────────────────┐   ┌─────────────────┐
+    │  POLICY PILLAR   │   │  WALLET PILLAR  │   │ NOTIFICATION    │
+    ├──────────────────┤   ├─────────────────┤   ├─────────────────┤
+    │ • BenefitUsage   │   │ Consumes:       │   │ Consumes:       │
+    │   .Reserve       │   │ CLAIM_SETTLED   │   │ All claim events│
+    │ • BenefitUsage   │   │                 │   │                 │
+    │   .Confirm       │   │ Creates:        │   │ Sends:          │
+    │ • BenefitUsage   │   │ Wallet txn      │   │ Email/SMS       │
+    │   .Release       │   └─────────────────┘   └─────────────────┘
+    └──────────────────┘
+
+  implementation_checklist:
+    wallet:
+      - "[✓] ClaimSettledConsumer implemented"
+      - "[✓] Idempotency check on claim_id"
+      - "[✓] Error handling and retry logic"
+      - "[ ] E2E test: claim settlement → wallet payout"
+
+    notification:
+      - "[✓] ClaimNotificationConsumer implemented"
+      - "[✓] Template for all claim event types"
+      - "[✓] Multi-channel support (email, SMS, push)"
+      - "[ ] E2E test: claim lifecycle notifications"
+
+    policy:
+      - "[✓] BenefitUsage.Reserve command"
+      - "[✓] BenefitUsage.Confirm command"
+      - "[✓] BenefitUsage.Release command"
+      - "[ ] E2E test: GL issuance → benefit reservation"
+
+    claim:
+      - "[✓] All 13 commands implemented"
+      - "[✓] All 13 events emitted"
+      - "[✓] Outbox pattern integrated"
+      - "[ ] E2E test: full claim submission to settlement flow"
+      - "[ ] E2E test: GL issuance and cancellation"
+      - "[ ] E2E test: underwriting decision workflow"
+
+  testing_strategy:
+    end_to_end_test: |
+      1. Submit claim via Claim.Submit
+      2. Verify CLAIM_SUBMITTED event emitted
+      3. Verify notification sent to claimant
+      4. Approve claim via Claim.Approve
+      5. Verify CLAIM_APPROVED event emitted
+      6. Settle claim via Claim.Settle
+      7. Verify CLAIM_SETTLED event emitted
+      8. Verify wallet transaction created in wallet pillar
+      9. Verify settlement notification sent
+
+    idempotency_test: |
+      1. Submit same claim twice with same idempotency key
+      2. Verify only one claim_case record created
+      3. Verify second call returns same claim_id
+      4. Process same CLAIM_SETTLED event twice
+      5. Verify wallet creates only one transaction
+
+    error_test: |
+      1. Submit claim with invalid policy_id
+      2. Verify DomainError thrown with clear message
+      3. Approve claim with amount > requested
+      4. Verify DomainError thrown
+      5. Simulate wallet consumer failure
+      6. Verify event marked for retry
+      7. Verify alert sent after retry limit exceeded

@@ -1,0 +1,44 @@
+$kind: http-request
+description: Reserves benefit usage (pre-authorization)
+url: "{{base_url}}/api/v1/policy/benefit-usage/reserve"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "policy_id": "{{policy_id}}",
+      "period_key": "2024",
+      "item_code": "OUTPATIENT_CONSULT",
+      "amount": 150.00,
+      "count": 1,
+      "ref_type": "claim",
+      "ref_id": "CLM-2024-001",
+      "idempotency_key": "reserve-{{$guid}}"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      if (pm.response.code === 201) {
+          const response = pm.response.json();
+          if (response.usage_id) {
+              pm.collectionVariables.set('benefit_usage_id', response.usage_id);
+              console.log('✅ Benefit Reserved:', response.usage_id);
+          }
+      }
+
+      pm.test('Status code is 201', function () {
+          pm.response.to.have.status(201);
+      });
+    language: text/javascript
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+order: 1000

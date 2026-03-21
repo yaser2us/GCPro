@@ -1,0 +1,42 @@
+$kind: http-request
+description: Creates a policy package via admin API
+url: "{{base_url}}/api/v1/policy/admin/packages"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "code": "PKG_BASIC_2024",
+      "name": "Basic Health Plan 2024",
+      "monthly_max_cap_default": "5000.00",
+      "deposit_capacity_multiplier": "2.000",
+      "min_deposit_pct": "0.500",
+      "warning_pct": "0.600",
+      "urgent_pct": "0.500",
+      "meta": {
+        "description": "Basic health insurance with essential coverage",
+        "category": "health",
+        "max_members": 5,
+        "benefit_catalog_code": "STANDARD_2024",
+        "level_code": "BASIC"
+      }
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      if (pm.response.code === 201 || pm.response.code === 200) {
+          const response = pm.response.json();
+          if (response.package_id) {
+              console.log('✅ Package Created:', response.package_id);
+          }
+      }
+
+      pm.test('Status code is 201 or 200', function () {
+          pm.expect(pm.response.code).to.be.oneOf([200, 201]);
+      });
+    language: text/javascript
+order: 1000

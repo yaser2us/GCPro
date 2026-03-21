@@ -1,0 +1,2252 @@
+version: "2.0.0"
+spec_id: "policy.pillar.v2"
+domain: "policy"
+plugin: "policy"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# OWNERSHIP
+# ──────────────────────────────────────────────────────────────────────────────
+
+ownership:
+  owner_plugin: "policy"
+  owns_tables:
+    - "policy"
+    - "policy_package"
+    - "policy_benefit_entitlement"
+    - "policy_benefit_usage"
+    - "policy_benefit_usage_event"
+    - "policy_billing_plan"
+    - "policy_deposit_requirement"
+    - "policy_discount_applied"
+    - "policy_installment"
+    - "policy_member"
+    - "policy_package_rate"
+    - "policy_remediation_case"
+    - "policy_status_event"
+  cross_plugin_writes: false
+  cross_plugin_integration:
+    allowed_via:
+      - "command_api"
+      - "outbox_events"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DEPENDENCIES
+# ──────────────────────────────────────────────────────────────────────────────
+
+dependencies:
+  corekit:
+    transaction_wrapper: "withTxn"
+    outbox_service: "OutboxService.emit"
+    guard_helper: "guard"
+    domain_error: "DomainError"
+
+  core_tables_readonly:
+    - table_name: "account"
+      usage: "policy.account_id references account.id"
+      access: "readonly_fk"
+    - table_name: "person"
+      usage: "policy.holder_person_id and policy_member.person_id reference person.id"
+      access: "readonly_fk"
+    - table_name: "wallet"
+      usage: "policy_deposit_requirement.deposit_wallet_id references wallet.id"
+      access: "readonly_fk"
+    - table_name: "discount_program"
+      usage: "policy_discount_applied.discount_program_id references discount_program.id"
+      access: "readonly_fk"
+    - table_name: "age_band"
+      usage: "policy_package_rate.age_band_id references age_band.id"
+      access: "readonly_fk"
+    - table_name: "smoker_profile"
+      usage: "policy_package_rate.smoker_profile_id references smoker_profile.id"
+      access: "readonly_fk"
+    - table_name: "benefit_catalog"
+      usage: "Policy benefit entitlements reference benefit catalog"
+      access: "readonly"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CONVENTIONS
+# ──────────────────────────────────────────────────────────────────────────────
+
+conventions:
+  workflow_discipline:
+    - "guard"
+    - "write"
+    - "emit"
+    - "commit"
+
+  status_mutation_policy: "Status fields may only be mutated through commands."
+
+  outbox:
+    required_envelope_fields:
+      - "event_name"
+      - "event_version"
+      - "aggregate_type"
+      - "aggregate_id"
+      - "actor_user_id"
+      - "occurred_at"
+      - "correlation_id"
+      - "causation_id"
+
+  idempotency:
+    required_header: "Idempotency-Key"
+    default_scope: "actor_user_id + command_name"
+    db_strategy:
+      - "UNIQUE(idempotency_key) where applicable"
+      - "MySQL ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)"
+      - "policy: UNIQUE(policy_number) prevents duplicate policies"
+      - "policy_package: UNIQUE(code) prevents duplicate packages"
+      - "policy_benefit_entitlement: UNIQUE(policy_id, status) ensures single active entitlement per policy"
+      - "policy_benefit_usage: UNIQUE(policy_id, period_key, item_code) prevents duplicate usage tracking"
+      - "policy_benefit_usage_event: UNIQUE(idempotency_key) prevents duplicate usage events"
+      - "policy_deposit_requirement: UNIQUE(policy_id) ensures single requirement record per policy"
+      - "policy_installment: UNIQUE(idempotency_key) and UNIQUE(billing_plan_id, installment_no) prevent duplicate installments"
+      - "policy_member: UNIQUE(policy_id, person_id) prevents duplicate policy members"
+      - "policy_package_rate: UNIQUE(package_id, age_band_id, smoker_profile_id, rate_version, effective_from) prevents duplicate rates"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SCHEMA
+# ──────────────────────────────────────────────────────────────────────────────
+
+schema:
+  tables:
+    policy:
+      description: "Core policy entity representing insurance policies with lifecycle management"
+      columns:
+        id:
+          type: "bigint"
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        policy_number:
+          type: "varchar"
+          length: 40
+          nullable: false
+          description: "Unique policy number for external identification"
+        account_id:
+          type: "bigint"
+          nullable: false
+          description: "Foreign key to account"
+        holder_person_id:
+          type: "bigint"
+          nullable: false
+          description: "Foreign key to person (policy holder)"
+        status:
+          type: "varchar"
+          length: 20
+          nullable: false
+          default: "pending"
+          description: "Policy lifecycle status"
+        start_at:
+          type: "datetime"
+          nullable: true
+          description: "Policy effective start date"
+        end_at:
+          type: "datetime"
+          nullable: true
+          description: "Policy expiration/end date"
+        auto_renew:
+          type: "tinyint"
+          length: 1
+          nullable: false
+          default: "0"
+          description: "Auto-renewal flag (0=no, 1=yes)"
+        package_code_snapshot:
+          type: "varchar"
+          length: 32
+          nullable: true
+          description: "Snapshot of package code at policy creation"
+        rule_version:
+          type: "varchar"
+          length: 40
+          nullable: true
+          description: "Rule version applied to this policy"
+        annual_fee_grace_days:
+          type: "int"
+          nullable: false
+          default: "7"
+          description: "Grace period days for annual fee payment"
+        annual_fee_retry_limit:
+          type: "int"
+          nullable: false
+          default: "3"
+          description: "Maximum retry attempts for annual fee payment"
+        deposit_topup_grace_days:
+          type: "int"
+          nullable: false
+          default: "14"
+          description: "Grace period days for deposit top-up"
+        meta:
+          type: "json"
+          nullable: true
+          description: "Additional metadata"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Record update timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_policy_number"
+            columns: ["policy_number"]
+        indexes:
+          - name: "idx_policy_account"
+            columns: ["account_id"]
+          - name: "idx_policy_status"
+            columns: ["status"]
+          - name: "idx_policy_period"
+            columns: ["start_at", "end_at"]
+
+    policy_package:
+      description: "Policy package catalog defining coverage tiers and parameters"
+      columns:
+        id:
+          type: "bigint"
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        code:
+          type: "varchar"
+          length: 32
+          nullable: false
+          description: "Unique package code"
+        name:
+          type: "varchar"
+          length: 120
+          nullable: false
+          description: "Package display name"
+        monthly_max_cap_default:
+          type: "decimal"
+          precision: [12, 2]
+          nullable: false
+          default: "0.00"
+          description: "Default monthly maximum cap amount"
+        deposit_capacity_multiplier:
+          type: "decimal"
+          precision: [8, 3]
+          nullable: false
+          default: "2.000"
+          description: "Multiplier for deposit capacity calculation"
+        min_deposit_pct:
+          type: "decimal"
+          precision: [8, 3]
+          nullable: false
+          default: "0.500"
+          description: "Minimum deposit percentage (50%)"
+        warning_pct:
+          type: "decimal"
+          precision: [8, 3]
+          nullable: false
+          default: "0.600"
+          description: "Warning threshold percentage (60%)"
+        urgent_pct:
+          type: "decimal"
+          precision: [8, 3]
+          nullable: false
+          default: "0.500"
+          description: "Urgent threshold percentage (50%)"
+        meta:
+          type: "json"
+          nullable: true
+          description: "Additional package metadata"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Record update timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_policy_package_code"
+            columns: ["code"]
+        indexes:
+          - name: "idx_policy_package_name"
+            columns: ["name"]
+
+    policy_benefit_entitlement:
+      description: "Policy benefit entitlements linked to benefit catalog"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        policy_id:
+          type: "bigint"
+          nullable: false
+          description: "Foreign key to policy"
+        catalog_code_snapshot:
+          type: "varchar"
+          length: 64
+          nullable: false
+          description: "Snapshot of benefit catalog code"
+        catalog_version_snapshot:
+          type: "varchar"
+          length: 40
+          nullable: false
+          description: "Snapshot of benefit catalog version"
+        level_code_snapshot:
+          type: "varchar"
+          length: 32
+          nullable: false
+          description: "Snapshot of benefit level code"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "active"
+          description: "Entitlement status (active, expired, superseded)"
+        start_at:
+          type: "datetime"
+          nullable: true
+          description: "Entitlement start date"
+        end_at:
+          type: "datetime"
+          nullable: true
+          description: "Entitlement end date"
+        entitlement_json:
+          type: "json"
+          nullable: false
+          description: "Entitlement details and rules"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_policy_entitlement_active"
+            columns: ["policy_id", "status"]
+        indexes:
+          - name: "idx_policy_entitlement_policy"
+            columns: ["policy_id"]
+        foreign_keys:
+          - name: "fk_entitlement_policy"
+            columns: ["policy_id"]
+            references:
+              table: "policy"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "RESTRICT"
+
+    policy_benefit_usage:
+      description: "Tracks benefit usage and reservations per policy and period"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        policy_id:
+          type: "bigint"
+          nullable: false
+          description: "Foreign key to policy"
+        period_key:
+          type: "varchar"
+          length: 32
+          nullable: false
+          description: "Period identifier (e.g., '2024-01', '2024-Q1')"
+        item_code:
+          type: "varchar"
+          length: 64
+          nullable: false
+          description: "Benefit item code"
+        used_amount:
+          type: "decimal"
+          precision: [18, 2]
+          nullable: false
+          default: "0.00"
+          description: "Total amount used"
+        used_count:
+          type: "int"
+          unsigned: true
+          nullable: false
+          default: "0"
+          description: "Total count used"
+        reserved_amount:
+          type: "decimal"
+          precision: [18, 2]
+          nullable: false
+          default: "0.00"
+          description: "Amount reserved but not yet confirmed"
+        reserved_count:
+          type: "int"
+          unsigned: true
+          nullable: false
+          default: "0"
+          description: "Count reserved but not yet confirmed"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "open"
+          description: "Usage status (open, closed, archived)"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Last update timestamp"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_policy_usage"
+            columns: ["policy_id", "period_key", "item_code"]
+        indexes:
+          - name: "idx_policy_usage_policy_period"
+            columns: ["policy_id", "period_key"]
+          - name: "idx_policy_usage_status"
+            columns: ["status"]
+        foreign_keys:
+          - name: "fk_usage_policy"
+            columns: ["policy_id"]
+            references:
+              table: "policy"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "RESTRICT"
+
+    policy_benefit_usage_event:
+      description: "Immutable event log of benefit usage changes"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        usage_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to policy_benefit_usage"
+        event_type:
+          type: "varchar"
+          length: 16
+          nullable: false
+          description: "Event type (reserve, confirm, release, adjust)"
+        ref_type:
+          type: "varchar"
+          length: 32
+          nullable: true
+          description: "Reference entity type (e.g., 'claim')"
+        ref_id:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Reference entity ID"
+        amount:
+          type: "decimal"
+          precision: [18, 2]
+          nullable: false
+          default: "0.00"
+          description: "Amount affected by this event"
+        count:
+          type: "int"
+          unsigned: true
+          nullable: false
+          default: "0"
+          description: "Count affected by this event"
+        idempotency_key:
+          type: "varchar"
+          length: 128
+          nullable: false
+          description: "Idempotency key for event deduplication"
+        payload_json:
+          type: "json"
+          nullable: true
+          description: "Additional event payload"
+        occurred_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Event occurrence timestamp"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_usage_event_idem"
+            columns: ["idempotency_key"]
+        indexes:
+          - name: "idx_usage_event_usage_time"
+            columns: ["usage_id", "occurred_at"]
+          - name: "idx_usage_event_ref"
+            columns: ["ref_type", "ref_id"]
+        foreign_keys:
+          - name: "fk_usage_event_usage"
+            columns: ["usage_id"]
+            references:
+              table: "policy_benefit_usage"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+
+    policy_billing_plan:
+      description: "Policy billing plans defining payment schedules"
+      columns:
+        id:
+          type: "bigint"
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        policy_id:
+          type: "bigint"
+          nullable: false
+          description: "Foreign key to policy"
+        billing_type:
+          type: "varchar"
+          length: 20
+          nullable: false
+          description: "Billing type (annual, monthly, quarterly)"
+        total_amount:
+          type: "decimal"
+          precision: [12, 2]
+          nullable: false
+          default: "0.00"
+          description: "Total billing amount"
+        installment_count:
+          type: "int"
+          nullable: false
+          default: "1"
+          description: "Number of installments"
+        status:
+          type: "varchar"
+          length: 20
+          nullable: false
+          default: "pending"
+          description: "Billing plan status (pending, active, completed, cancelled)"
+        activated_at:
+          type: "datetime"
+          nullable: true
+          description: "Plan activation timestamp"
+        completed_at:
+          type: "datetime"
+          nullable: true
+          description: "Plan completion timestamp"
+        meta:
+          type: "json"
+          nullable: true
+          description: "Additional billing metadata"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        indexes:
+          - name: "idx_billing_plan_policy"
+            columns: ["policy_id"]
+          - name: "idx_billing_plan_status"
+            columns: ["status"]
+        foreign_keys:
+          - name: "fk_billing_plan_policy"
+            columns: ["policy_id"]
+            references:
+              table: "policy"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "RESTRICT"
+
+    policy_deposit_requirement:
+      description: "Policy deposit requirement tracking and thresholds"
+      columns:
+        id:
+          type: "bigint"
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        policy_id:
+          type: "bigint"
+          nullable: false
+          description: "Foreign key to policy"
+        monthly_max_cap:
+          type: "decimal"
+          precision: [12, 2]
+          nullable: false
+          default: "0.00"
+          description: "Monthly maximum cap for this policy"
+        deposit_capacity_amount:
+          type: "decimal"
+          precision: [12, 2]
+          nullable: false
+          default: "0.00"
+          description: "Total deposit capacity (monthly_max_cap * multiplier)"
+        min_required_amount:
+          type: "decimal"
+          precision: [12, 2]
+          nullable: false
+          default: "0.00"
+          description: "Minimum required deposit amount"
+        warning_amount:
+          type: "decimal"
+          precision: [12, 2]
+          nullable: false
+          default: "0.00"
+          description: "Warning threshold amount"
+        urgent_amount:
+          type: "decimal"
+          precision: [12, 2]
+          nullable: false
+          default: "0.00"
+          description: "Urgent threshold amount"
+        deposit_wallet_id:
+          type: "bigint"
+          nullable: true
+          description: "Foreign key to wallet for deposit"
+        status:
+          type: "varchar"
+          length: 20
+          nullable: false
+          default: "ok"
+          description: "Deposit status (ok, warning, urgent, critical)"
+        last_evaluated_at:
+          type: "datetime"
+          nullable: true
+          description: "Last evaluation timestamp"
+        meta:
+          type: "json"
+          nullable: true
+          description: "Additional metadata"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Record update timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_deposit_req_policy"
+            columns: ["policy_id"]
+        indexes:
+          - name: "idx_deposit_req_status"
+            columns: ["status"]
+        foreign_keys:
+          - name: "fk_deposit_req_policy"
+            columns: ["policy_id"]
+            references:
+              table: "policy"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "RESTRICT"
+
+    policy_discount_applied:
+      description: "Records of discounts applied to policies"
+      columns:
+        id:
+          type: "bigint"
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        policy_id:
+          type: "bigint"
+          nullable: false
+          description: "Foreign key to policy"
+        discount_program_id:
+          type: "bigint"
+          nullable: false
+          description: "Foreign key to discount_program"
+        amount_applied:
+          type: "decimal"
+          precision: [12, 2]
+          nullable: false
+          default: "0.00"
+          description: "Discount amount applied"
+        applied_to:
+          type: "varchar"
+          length: 40
+          nullable: false
+          default: "annual_fee"
+          description: "Target of discount (annual_fee, deposit, etc.)"
+        applied_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Discount application timestamp"
+        meta:
+          type: "json"
+          nullable: true
+          description: "Additional discount metadata"
+      constraints:
+        primary_key:
+          - "id"
+        indexes:
+          - name: "idx_policy_discount_policy"
+            columns: ["policy_id"]
+          - name: "idx_policy_discount_program"
+            columns: ["discount_program_id"]
+        foreign_keys:
+          - name: "fk_policy_discount_policy"
+            columns: ["policy_id"]
+            references:
+              table: "policy"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "RESTRICT"
+          - name: "fk_policy_discount_program"
+            columns: ["discount_program_id"]
+            references:
+              table: "discount_program"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "RESTRICT"
+
+    policy_installment:
+      description: "Individual installment records for billing plans"
+      columns:
+        id:
+          type: "bigint"
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        billing_plan_id:
+          type: "bigint"
+          nullable: false
+          description: "Foreign key to policy_billing_plan"
+        installment_no:
+          type: "int"
+          nullable: false
+          description: "Installment sequence number"
+        amount:
+          type: "decimal"
+          precision: [12, 2]
+          nullable: false
+          default: "0.00"
+          description: "Installment amount"
+        due_at:
+          type: "datetime"
+          nullable: false
+          description: "Due date for this installment"
+        status:
+          type: "varchar"
+          length: 20
+          nullable: false
+          default: "pending"
+          description: "Installment status (pending, paid, overdue, waived)"
+        paid_at:
+          type: "datetime"
+          nullable: true
+          description: "Payment timestamp"
+        payment_method:
+          type: "varchar"
+          length: 20
+          nullable: true
+          description: "Payment method used"
+        payment_ref:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "Payment reference ID"
+        idempotency_key:
+          type: "varchar"
+          length: 64
+          nullable: false
+          description: "Idempotency key for payment processing"
+        attempts:
+          type: "int"
+          nullable: false
+          default: "0"
+          description: "Payment attempt counter"
+        last_attempt_at:
+          type: "datetime"
+          nullable: true
+          description: "Last payment attempt timestamp"
+        failure_code:
+          type: "varchar"
+          length: 60
+          nullable: true
+          description: "Payment failure code"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_installment_idem"
+            columns: ["idempotency_key"]
+          - name: "uk_installment_no"
+            columns: ["billing_plan_id", "installment_no"]
+        indexes:
+          - name: "idx_installment_plan_status"
+            columns: ["billing_plan_id", "status"]
+          - name: "idx_installment_due"
+            columns: ["due_at"]
+          - name: "idx_installment_payment_ref"
+            columns: ["payment_ref"]
+        foreign_keys:
+          - name: "fk_installment_plan"
+            columns: ["billing_plan_id"]
+            references:
+              table: "policy_billing_plan"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "RESTRICT"
+
+    policy_member:
+      description: "Policy members including holder and dependents"
+      columns:
+        id:
+          type: "bigint"
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        policy_id:
+          type: "bigint"
+          nullable: false
+          description: "Foreign key to policy"
+        person_id:
+          type: "bigint"
+          nullable: false
+          description: "Foreign key to person"
+        role:
+          type: "varchar"
+          length: 20
+          nullable: false
+          default: "dependent"
+          description: "Member role (holder, dependent, beneficiary)"
+        dob_snapshot:
+          type: "date"
+          nullable: true
+          description: "Date of birth snapshot"
+        age_years_snapshot:
+          type: "int"
+          nullable: true
+          description: "Age in years snapshot"
+        smoker_snapshot:
+          type: "tinyint"
+          length: 1
+          nullable: true
+          description: "Smoker status snapshot (0=no, 1=yes)"
+        status:
+          type: "varchar"
+          length: 20
+          nullable: false
+          default: "active"
+          description: "Member status (active, removed, suspended)"
+        added_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Member addition timestamp"
+        removed_at:
+          type: "datetime"
+          nullable: true
+          description: "Member removal timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_policy_person"
+            columns: ["policy_id", "person_id"]
+        indexes:
+          - name: "idx_policy_member_policy"
+            columns: ["policy_id"]
+          - name: "idx_policy_member_status"
+            columns: ["policy_id", "status"]
+        foreign_keys:
+          - name: "fk_policy_member_policy"
+            columns: ["policy_id"]
+            references:
+              table: "policy"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "RESTRICT"
+
+    policy_package_rate:
+      description: "Rate table for policy packages by age, smoker status, and version"
+      columns:
+        id:
+          type: "bigint"
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        package_id:
+          type: "bigint"
+          nullable: false
+          description: "Foreign key to policy_package"
+        age_band_id:
+          type: "bigint"
+          nullable: false
+          description: "Foreign key to age_band"
+        smoker_profile_id:
+          type: "bigint"
+          nullable: false
+          description: "Foreign key to smoker_profile"
+        annual_fee_amount:
+          type: "decimal"
+          precision: [12, 2]
+          nullable: false
+          default: "0.00"
+          description: "Annual fee amount for this rate"
+        monthly_max_cap:
+          type: "decimal"
+          precision: [12, 2]
+          nullable: false
+          default: "0.00"
+          description: "Monthly maximum cap for this rate"
+        weightage_factor:
+          type: "decimal"
+          precision: [12, 4]
+          nullable: true
+          description: "Weightage factor for crowdfunding calculations"
+        rate_version:
+          type: "varchar"
+          length: 40
+          nullable: false
+          description: "Rate version identifier"
+        effective_from:
+          type: "datetime"
+          nullable: false
+          description: "Rate effective from date"
+        effective_to:
+          type: "datetime"
+          nullable: true
+          description: "Rate effective until date"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_rate_unique"
+            columns: ["package_id", "age_band_id", "smoker_profile_id", "rate_version", "effective_from"]
+        indexes:
+          - name: "idx_rate_lookup"
+            columns: ["package_id", "age_band_id", "smoker_profile_id", "effective_from", "effective_to"]
+          - name: "idx_rate_version"
+            columns: ["rate_version"]
+          - name: "fk_rate_age_band"
+            columns: ["age_band_id"]
+          - name: "fk_rate_smoker"
+            columns: ["smoker_profile_id"]
+        foreign_keys:
+          - name: "fk_rate_age_band"
+            columns: ["age_band_id"]
+            references:
+              table: "age_band"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "RESTRICT"
+          - name: "fk_rate_package"
+            columns: ["package_id"]
+            references:
+              table: "policy_package"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "RESTRICT"
+          - name: "fk_rate_smoker"
+            columns: ["smoker_profile_id"]
+            references:
+              table: "smoker_profile"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "RESTRICT"
+
+    policy_remediation_case:
+      description: "Remediation cases for policy compliance and issue resolution"
+      columns:
+        id:
+          type: "bigint"
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        policy_id:
+          type: "bigint"
+          nullable: false
+          description: "Foreign key to policy"
+        reason_code:
+          type: "varchar"
+          length: 60
+          nullable: false
+          description: "Remediation reason code"
+        status:
+          type: "varchar"
+          length: 20
+          nullable: false
+          default: "open"
+          description: "Case status (open, in_progress, cleared, expired)"
+        opened_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Case opening timestamp"
+        grace_end_at:
+          type: "datetime"
+          nullable: true
+          description: "Grace period end timestamp"
+        cleared_at:
+          type: "datetime"
+          nullable: true
+          description: "Case clearance timestamp"
+        expired_at:
+          type: "datetime"
+          nullable: true
+          description: "Case expiration timestamp"
+        required_actions:
+          type: "json"
+          nullable: true
+          description: "Required actions to resolve case"
+        meta:
+          type: "json"
+          nullable: true
+          description: "Additional case metadata"
+      constraints:
+        primary_key:
+          - "id"
+        indexes:
+          - name: "idx_remediation_policy_status"
+            columns: ["policy_id", "status"]
+          - name: "idx_remediation_grace"
+            columns: ["grace_end_at"]
+        foreign_keys:
+          - name: "fk_remediation_policy"
+            columns: ["policy_id"]
+            references:
+              table: "policy"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "RESTRICT"
+
+    policy_status_event:
+      description: "Immutable event log of policy status transitions and lifecycle events"
+      columns:
+        id:
+          type: "bigint"
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        policy_id:
+          type: "bigint"
+          nullable: false
+          description: "Foreign key to policy"
+        event_type:
+          type: "varchar"
+          length: 60
+          nullable: false
+          description: "Event type identifier"
+        from_status:
+          type: "varchar"
+          length: 20
+          nullable: true
+          description: "Previous status before transition"
+        to_status:
+          type: "varchar"
+          length: 20
+          nullable: true
+          description: "New status after transition"
+        trigger_code:
+          type: "varchar"
+          length: 60
+          nullable: false
+          description: "Event trigger code"
+        actor_type:
+          type: "varchar"
+          length: 20
+          nullable: false
+          description: "Actor type (user, system, admin)"
+        actor_id:
+          type: "bigint"
+          nullable: true
+          description: "Actor ID if applicable"
+        note:
+          type: "text"
+          nullable: true
+          description: "Event notes"
+        payload:
+          type: "json"
+          nullable: true
+          description: "Event payload data"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Event timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        indexes:
+          - name: "idx_policy_event_policy"
+            columns: ["policy_id", "created_at"]
+          - name: "idx_policy_event_type"
+            columns: ["event_type"]
+        foreign_keys:
+          - name: "fk_policy_event_policy"
+            columns: ["policy_id"]
+            references:
+              table: "policy"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "RESTRICT"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# RESOURCES
+# ──────────────────────────────────────────────────────────────────────────────
+
+resources:
+  - name: "Policy"
+    kind: "aggregate"
+    table: "policy"
+    primary_key: "id"
+    statuses: ["pending", "active", "suspended", "expired", "cancelled"]
+    api_surface:
+      - "create"
+      - "read"
+      - "update"
+      - "activate"
+      - "suspend"
+      - "cancel"
+      - "renew"
+
+  - name: "PolicyPackage"
+    kind: "resource"
+    table: "policy_package"
+    primary_key: "id"
+    api_surface:
+      - "create"
+      - "read"
+      - "update"
+      - "list"
+
+  - name: "PolicyBenefitEntitlement"
+    kind: "resource"
+    table: "policy_benefit_entitlement"
+    primary_key: "id"
+    api_surface:
+      - "create"
+      - "read"
+      - "update"
+
+  - name: "PolicyBenefitUsage"
+    kind: "resource"
+    table: "policy_benefit_usage"
+    primary_key: "id"
+    api_surface:
+      - "read"
+      - "reserve"
+      - "confirm"
+      - "release"
+
+  - name: "PolicyBenefitUsageEvent"
+    kind: "resource"
+    table: "policy_benefit_usage_event"
+    primary_key: "id"
+    api_surface:
+      - "create"
+      - "read"
+
+  - name: "PolicyBillingPlan"
+    kind: "aggregate"
+    table: "policy_billing_plan"
+    primary_key: "id"
+    statuses: ["pending", "active", "completed", "cancelled"]
+    api_surface:
+      - "create"
+      - "read"
+      - "activate"
+      - "complete"
+      - "cancel"
+
+  - name: "PolicyDepositRequirement"
+    kind: "resource"
+    table: "policy_deposit_requirement"
+    primary_key: "id"
+    api_surface:
+      - "create"
+      - "read"
+      - "update"
+      - "evaluate"
+
+  - name: "PolicyDiscountApplied"
+    kind: "resource"
+    table: "policy_discount_applied"
+    primary_key: "id"
+    api_surface:
+      - "create"
+      - "read"
+
+  - name: "PolicyInstallment"
+    kind: "resource"
+    table: "policy_installment"
+    primary_key: "id"
+    api_surface:
+      - "create"
+      - "read"
+      - "pay"
+      - "waive"
+
+  - name: "PolicyMember"
+    kind: "resource"
+    table: "policy_member"
+    primary_key: "id"
+    api_surface:
+      - "create"
+      - "read"
+      - "update"
+      - "remove"
+
+  - name: "PolicyPackageRate"
+    kind: "resource"
+    table: "policy_package_rate"
+    primary_key: "id"
+    api_surface:
+      - "create"
+      - "read"
+      - "lookup"
+
+  - name: "PolicyRemediationCase"
+    kind: "aggregate"
+    table: "policy_remediation_case"
+    primary_key: "id"
+    statuses: ["open", "in_progress", "cleared", "expired"]
+    api_surface:
+      - "create"
+      - "read"
+      - "update"
+      - "clear"
+
+  - name: "PolicyStatusEvent"
+    kind: "resource"
+    table: "policy_status_event"
+    primary_key: "id"
+    api_surface:
+      - "create"
+      - "read"
+      - "list"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# AGGREGATES
+# ──────────────────────────────────────────────────────────────────────────────
+
+aggregates:
+  POLICY:
+    root_table: "policy"
+    primary_key: "id"
+    statuses: ["pending", "active", "suspended", "expired", "cancelled"]
+    lifecycle:
+      - "pending → active (activation)"
+      - "active → suspended (suspension)"
+      - "suspended → active (reactivation)"
+      - "active → expired (expiration)"
+      - "* → cancelled (cancellation)"
+
+  POLICY_BILLING_PLAN:
+    root_table: "policy_billing_plan"
+    primary_key: "id"
+    statuses: ["pending", "active", "completed", "cancelled"]
+    lifecycle:
+      - "pending → active (activation)"
+      - "active → completed (all installments paid)"
+      - "* → cancelled (cancellation)"
+
+  POLICY_REMEDIATION_CASE:
+    root_table: "policy_remediation_case"
+    primary_key: "id"
+    statuses: ["open", "in_progress", "cleared", "expired"]
+    lifecycle:
+      - "open → in_progress (action taken)"
+      - "in_progress → cleared (resolved)"
+      - "open → expired (grace period exceeded)"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# TYPES
+# ──────────────────────────────────────────────────────────────────────────────
+
+types:
+  Actor:
+    actor_type:
+      type: "string"
+      required: true
+      enum: ["user", "system", "admin"]
+    actor_id:
+      type: "string"
+      required: false
+
+  PolicySummary:
+    policy_id:
+      type: "string"
+      required: true
+    policy_number:
+      type: "string"
+      required: true
+    status:
+      type: "string"
+      required: true
+    holder_person_id:
+      type: "string"
+      required: true
+    package_code:
+      type: "string"
+      required: false
+
+  BenefitUsageInfo:
+    item_code:
+      type: "string"
+      required: true
+    used_amount:
+      type: "number"
+      required: true
+    used_count:
+      type: "number"
+      required: true
+    limit_amount:
+      type: "number"
+      required: false
+    limit_count:
+      type: "number"
+      required: false
+
+  DepositStatus:
+    current_amount:
+      type: "number"
+      required: true
+    required_amount:
+      type: "number"
+      required: true
+    status:
+      type: "string"
+      required: true
+      enum: ["ok", "warning", "urgent", "critical"]
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DTOS
+# ──────────────────────────────────────────────────────────────────────────────
+
+dtos:
+  CreatePolicyInput:
+    account_id:
+      type: "string"
+      required: true
+      description: "Account ID for the policy"
+    holder_person_id:
+      type: "string"
+      required: true
+      description: "Policy holder person ID"
+    package_code:
+      type: "string"
+      required: true
+      max_len: 32
+      description: "Policy package code"
+    start_at:
+      type: "string"
+      format: "datetime"
+      required: false
+      description: "Policy start date"
+    auto_renew:
+      type: "boolean"
+      required: false
+      default: false
+      description: "Auto-renewal flag"
+    members:
+      type: "array"
+      required: false
+      description: "Policy members to add"
+    idempotency_key:
+      type: "string"
+      required: true
+      description: "Idempotency key"
+
+  ActivatePolicyInput:
+    policy_id:
+      type: "string"
+      required: true
+      description: "Policy ID to activate"
+    actor:
+      type: "Actor"
+      required: true
+
+  AddPolicyMemberInput:
+    policy_id:
+      type: "string"
+      required: true
+      description: "Policy ID"
+    person_id:
+      type: "string"
+      required: true
+      description: "Person ID to add as member"
+    role:
+      type: "string"
+      required: true
+      enum: ["holder", "dependent", "beneficiary"]
+      description: "Member role"
+    idempotency_key:
+      type: "string"
+      required: true
+
+  ReserveBenefitUsageInput:
+    policy_id:
+      type: "string"
+      required: true
+      description: "Policy ID"
+    period_key:
+      type: "string"
+      required: true
+      max_len: 32
+      description: "Period identifier"
+    item_code:
+      type: "string"
+      required: true
+      max_len: 64
+      description: "Benefit item code"
+    amount:
+      type: "number"
+      required: true
+      description: "Amount to reserve"
+    count:
+      type: "number"
+      required: false
+      default: 0
+      description: "Count to reserve"
+    ref_type:
+      type: "string"
+      required: false
+      max_len: 32
+      description: "Reference type"
+    ref_id:
+      type: "string"
+      required: false
+      max_len: 128
+      description: "Reference ID"
+    idempotency_key:
+      type: "string"
+      required: true
+
+  ConfirmBenefitUsageInput:
+    policy_id:
+      type: "string"
+      required: true
+      description: "Policy ID"
+    period_key:
+      type: "string"
+      required: true
+      max_len: 32
+      description: "Period identifier"
+    item_code:
+      type: "string"
+      required: true
+      max_len: 64
+      description: "Benefit item code"
+    amount:
+      type: "number"
+      required: true
+      description: "Amount to confirm"
+    count:
+      type: "number"
+      required: false
+      default: 0
+      description: "Count to confirm"
+    ref_type:
+      type: "string"
+      required: false
+      max_len: 32
+    ref_id:
+      type: "string"
+      required: false
+      max_len: 128
+    idempotency_key:
+      type: "string"
+      required: true
+
+  CreateBillingPlanInput:
+    policy_id:
+      type: "string"
+      required: true
+      description: "Policy ID"
+    billing_type:
+      type: "string"
+      required: true
+      max_len: 20
+      enum: ["annual", "monthly", "quarterly"]
+      description: "Billing type"
+    total_amount:
+      type: "number"
+      required: true
+      description: "Total billing amount"
+    installment_count:
+      type: "number"
+      required: true
+      description: "Number of installments"
+    idempotency_key:
+      type: "string"
+      required: true
+
+  PayInstallmentInput:
+    installment_id:
+      type: "string"
+      required: true
+      description: "Installment ID"
+    payment_method:
+      type: "string"
+      required: true
+      max_len: 20
+      description: "Payment method"
+    payment_ref:
+      type: "string"
+      required: false
+      max_len: 64
+      description: "Payment reference"
+    actor:
+      type: "Actor"
+      required: true
+
+  CreateRemediationCaseInput:
+    policy_id:
+      type: "string"
+      required: true
+      description: "Policy ID"
+    reason_code:
+      type: "string"
+      required: true
+      max_len: 60
+      description: "Remediation reason code"
+    grace_days:
+      type: "number"
+      required: false
+      description: "Grace period in days"
+    required_actions:
+      type: "object"
+      required: false
+      description: "Required actions"
+    actor:
+      type: "Actor"
+      required: true
+
+  EvaluateDepositRequirementInput:
+    policy_id:
+      type: "string"
+      required: true
+      description: "Policy ID"
+    current_balance:
+      type: "number"
+      required: true
+      description: "Current deposit wallet balance"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# EVENTS
+# ──────────────────────────────────────────────────────────────────────────────
+
+events:
+  - name: "POLICY_CREATED"
+    version: "1.0.0"
+    aggregate_type: "POLICY"
+    description: "Policy successfully created in pending state"
+
+  - name: "POLICY_ACTIVATED"
+    version: "1.0.0"
+    aggregate_type: "POLICY"
+    description: "Policy activated and coverage started"
+
+  - name: "POLICY_SUSPENDED"
+    version: "1.0.0"
+    aggregate_type: "POLICY"
+    description: "Policy suspended due to remediation or administrative action"
+
+  - name: "POLICY_REACTIVATED"
+    version: "1.0.0"
+    aggregate_type: "POLICY"
+    description: "Policy reactivated after suspension"
+
+  - name: "POLICY_EXPIRED"
+    version: "1.0.0"
+    aggregate_type: "POLICY"
+    description: "Policy expired at end date"
+
+  - name: "POLICY_CANCELLED"
+    version: "1.0.0"
+    aggregate_type: "POLICY"
+    description: "Policy cancelled by user or system"
+
+  - name: "POLICY_MEMBER_ADDED"
+    version: "1.0.0"
+    aggregate_type: "POLICY"
+    description: "Member added to policy"
+
+  - name: "POLICY_MEMBER_REMOVED"
+    version: "1.0.0"
+    aggregate_type: "POLICY"
+    description: "Member removed from policy"
+
+  - name: "BENEFIT_USAGE_RESERVED"
+    version: "1.0.0"
+    aggregate_type: "POLICY"
+    description: "Benefit usage amount reserved"
+
+  - name: "BENEFIT_USAGE_CONFIRMED"
+    version: "1.0.0"
+    aggregate_type: "POLICY"
+    description: "Reserved benefit usage confirmed"
+
+  - name: "BENEFIT_USAGE_RELEASED"
+    version: "1.0.0"
+    aggregate_type: "POLICY"
+    description: "Reserved benefit usage released without confirmation"
+
+  - name: "BILLING_PLAN_CREATED"
+    version: "1.0.0"
+    aggregate_type: "POLICY_BILLING_PLAN"
+    description: "Billing plan created for policy"
+
+  - name: "BILLING_PLAN_ACTIVATED"
+    version: "1.0.0"
+    aggregate_type: "POLICY_BILLING_PLAN"
+    description: "Billing plan activated"
+
+  - name: "INSTALLMENT_PAID"
+    version: "1.0.0"
+    aggregate_type: "POLICY_BILLING_PLAN"
+    description: "Installment payment successful"
+
+  - name: "INSTALLMENT_OVERDUE"
+    version: "1.0.0"
+    aggregate_type: "POLICY_BILLING_PLAN"
+    description: "Installment payment overdue"
+
+  - name: "DEPOSIT_REQUIREMENT_EVALUATED"
+    version: "1.0.0"
+    aggregate_type: "POLICY"
+    description: "Deposit requirement evaluated and status updated"
+
+  - name: "REMEDIATION_CASE_OPENED"
+    version: "1.0.0"
+    aggregate_type: "POLICY_REMEDIATION_CASE"
+    description: "Remediation case opened for policy"
+
+  - name: "REMEDIATION_CASE_CLEARED"
+    version: "1.0.0"
+    aggregate_type: "POLICY_REMEDIATION_CASE"
+    description: "Remediation case cleared and resolved"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# COMMANDS
+# ──────────────────────────────────────────────────────────────────────────────
+
+commands:
+  - name: "Policy.Create"
+    description: "Create a new insurance policy"
+    path: "/api/v1/policy/create"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "CreatePolicyInput"
+    steps:
+      - kind: "guard"
+        description: "Validate account exists and is active"
+        expression: "account.status === 'active'"
+      - kind: "guard"
+        description: "Validate holder person exists"
+        expression: "holder_person exists"
+      - kind: "guard"
+        description: "Validate package exists"
+        expression: "policy_package.code === input.package_code"
+      - kind: "read"
+        table: "policy_package_rate"
+        where: "package_id = package.id AND rate_version = 'current'"
+        description: "Load applicable rates"
+      - kind: "insert"
+        table: "policy"
+        fields:
+          - "policy_number"
+          - "account_id"
+          - "holder_person_id"
+          - "status"
+          - "package_code_snapshot"
+          - "auto_renew"
+          - "start_at"
+      - kind: "insert"
+        table: "policy_member"
+        fields:
+          - "policy_id"
+          - "person_id"
+          - "role"
+          - "status"
+        description: "Add holder as primary member"
+      - kind: "insert"
+        table: "policy_status_event"
+        fields:
+          - "policy_id"
+          - "event_type"
+          - "to_status"
+          - "trigger_code"
+          - "actor_type"
+          - "actor_id"
+      - kind: "outbox_emit"
+        event: "POLICY_CREATED"
+        aggregate_type: "POLICY"
+        aggregate_id: "policy.id"
+    response:
+      policy_id: "string"
+      policy_number: "string"
+      status: "string"
+
+  - name: "Policy.Activate"
+    description: "Activate a pending policy to start coverage"
+    path: "/api/v1/policy/:policyId/activate"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "ActivatePolicyInput"
+    steps:
+      - kind: "read"
+        table: "policy"
+        where: "id = input.policy_id"
+      - kind: "guard"
+        description: "Policy must be in pending status"
+        expression: "policy.status === 'pending'"
+      - kind: "guard"
+        description: "Validate all required preconditions met"
+        expression: "policy has valid members and billing plan"
+      - kind: "update"
+        table: "policy"
+        where: "id = input.policy_id"
+        fields:
+          - "status"
+          - "start_at"
+      - kind: "insert"
+        table: "policy_status_event"
+        fields:
+          - "policy_id"
+          - "event_type"
+          - "from_status"
+          - "to_status"
+          - "trigger_code"
+          - "actor_type"
+          - "actor_id"
+      - kind: "outbox_emit"
+        event: "POLICY_ACTIVATED"
+        aggregate_type: "POLICY"
+        aggregate_id: "policy.id"
+    response:
+      policy_id: "string"
+      status: "string"
+
+  - name: "Policy.AddMember"
+    description: "Add a member (dependent) to an existing policy"
+    path: "/api/v1/policy/:policyId/members/add"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "AddPolicyMemberInput"
+    steps:
+      - kind: "read"
+        table: "policy"
+        where: "id = input.policy_id"
+      - kind: "guard"
+        description: "Policy must be active"
+        expression: "policy.status === 'active'"
+      - kind: "guard"
+        description: "Person must exist"
+        expression: "person exists"
+      - kind: "upsert"
+        table: "policy_member"
+        unique_by: ["policy_id", "person_id"]
+        fields:
+          - "policy_id"
+          - "person_id"
+          - "role"
+          - "status"
+          - "added_at"
+      - kind: "outbox_emit"
+        event: "POLICY_MEMBER_ADDED"
+        aggregate_type: "POLICY"
+        aggregate_id: "policy.id"
+    response:
+      policy_member_id: "string"
+      status: "string"
+
+  - name: "BenefitUsage.Reserve"
+    description: "Reserve benefit usage amount for a pending claim or transaction"
+    path: "/api/v1/policy/benefit-usage/reserve"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "ReserveBenefitUsageInput"
+    steps:
+      - kind: "read"
+        table: "policy"
+        where: "id = input.policy_id"
+      - kind: "guard"
+        description: "Policy must be active"
+        expression: "policy.status === 'active'"
+      - kind: "read"
+        table: "policy_benefit_entitlement"
+        where: "policy_id = input.policy_id AND status = 'active'"
+        description: "Load active entitlements"
+      - kind: "guard"
+        description: "Validate benefit limits not exceeded"
+        expression: "entitlement allows requested amount"
+      - kind: "upsert"
+        table: "policy_benefit_usage"
+        unique_by: ["policy_id", "period_key", "item_code"]
+        fields:
+          - "policy_id"
+          - "period_key"
+          - "item_code"
+          - "reserved_amount"
+          - "reserved_count"
+      - kind: "insert"
+        table: "policy_benefit_usage_event"
+        fields:
+          - "usage_id"
+          - "event_type"
+          - "ref_type"
+          - "ref_id"
+          - "amount"
+          - "count"
+          - "idempotency_key"
+      - kind: "outbox_emit"
+        event: "BENEFIT_USAGE_RESERVED"
+        aggregate_type: "POLICY"
+        aggregate_id: "policy.id"
+    response:
+      usage_id: "string"
+      reserved_amount: "number"
+
+  - name: "BenefitUsage.Confirm"
+    description: "Confirm reserved benefit usage and convert to used"
+    path: "/api/v1/policy/benefit-usage/confirm"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "ConfirmBenefitUsageInput"
+    steps:
+      - kind: "read"
+        table: "policy_benefit_usage"
+        where: "policy_id = input.policy_id AND period_key = input.period_key AND item_code = input.item_code"
+      - kind: "guard"
+        description: "Validate sufficient reserved amount"
+        expression: "usage.reserved_amount >= input.amount"
+      - kind: "update"
+        table: "policy_benefit_usage"
+        where: "id = usage.id"
+        fields:
+          - "used_amount"
+          - "used_count"
+          - "reserved_amount"
+          - "reserved_count"
+      - kind: "insert"
+        table: "policy_benefit_usage_event"
+        fields:
+          - "usage_id"
+          - "event_type"
+          - "ref_type"
+          - "ref_id"
+          - "amount"
+          - "count"
+          - "idempotency_key"
+      - kind: "outbox_emit"
+        event: "BENEFIT_USAGE_CONFIRMED"
+        aggregate_type: "POLICY"
+        aggregate_id: "input.policy_id"
+    response:
+      usage_id: "string"
+      used_amount: "number"
+
+  - name: "BenefitUsage.Release"
+    description: "Release reserved benefit usage without confirmation"
+    path: "/api/v1/policy/benefit-usage/release"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "ReserveBenefitUsageInput"
+    steps:
+      - kind: "read"
+        table: "policy_benefit_usage"
+        where: "policy_id = input.policy_id AND period_key = input.period_key AND item_code = input.item_code"
+      - kind: "guard"
+        description: "Validate sufficient reserved amount"
+        expression: "usage.reserved_amount >= input.amount"
+      - kind: "update"
+        table: "policy_benefit_usage"
+        where: "id = usage.id"
+        fields:
+          - "reserved_amount"
+          - "reserved_count"
+      - kind: "insert"
+        table: "policy_benefit_usage_event"
+        fields:
+          - "usage_id"
+          - "event_type"
+          - "ref_type"
+          - "ref_id"
+          - "amount"
+          - "count"
+          - "idempotency_key"
+      - kind: "outbox_emit"
+        event: "BENEFIT_USAGE_RELEASED"
+        aggregate_type: "POLICY"
+        aggregate_id: "input.policy_id"
+    response:
+      usage_id: "string"
+      reserved_amount: "number"
+
+  - name: "BillingPlan.Create"
+    description: "Create billing plan with installments for a policy"
+    path: "/api/v1/policy/:policyId/billing-plan/create"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "CreateBillingPlanInput"
+    steps:
+      - kind: "read"
+        table: "policy"
+        where: "id = input.policy_id"
+      - kind: "guard"
+        description: "Policy must exist"
+        expression: "policy exists"
+      - kind: "insert"
+        table: "policy_billing_plan"
+        fields:
+          - "policy_id"
+          - "billing_type"
+          - "total_amount"
+          - "installment_count"
+          - "status"
+      - kind: "hook"
+        description: "Generate installment records based on plan"
+      - kind: "outbox_emit"
+        event: "BILLING_PLAN_CREATED"
+        aggregate_type: "POLICY_BILLING_PLAN"
+        aggregate_id: "billing_plan.id"
+    response:
+      billing_plan_id: "string"
+      installment_count: "number"
+
+  - name: "Installment.Pay"
+    description: "Process installment payment"
+    path: "/api/v1/policy/installment/:installmentId/pay"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "PayInstallmentInput"
+    steps:
+      - kind: "read"
+        table: "policy_installment"
+        where: "id = input.installment_id"
+      - kind: "guard"
+        description: "Installment must be pending or overdue"
+        expression: "installment.status IN ('pending', 'overdue')"
+      - kind: "update"
+        table: "policy_installment"
+        where: "id = input.installment_id"
+        fields:
+          - "status"
+          - "paid_at"
+          - "payment_method"
+          - "payment_ref"
+      - kind: "hook"
+        description: "Check if all installments paid, update billing plan status"
+      - kind: "outbox_emit"
+        event: "INSTALLMENT_PAID"
+        aggregate_type: "POLICY_BILLING_PLAN"
+        aggregate_id: "installment.billing_plan_id"
+    response:
+      installment_id: "string"
+      status: "string"
+
+  - name: "DepositRequirement.Evaluate"
+    description: "Evaluate deposit requirement and update status"
+    path: "/api/v1/policy/:policyId/deposit/evaluate"
+    method: "POST"
+    idempotent: false
+    permissions: []
+    input: "EvaluateDepositRequirementInput"
+    steps:
+      - kind: "read"
+        table: "policy_deposit_requirement"
+        where: "policy_id = input.policy_id"
+      - kind: "guard"
+        description: "Deposit requirement must exist"
+        expression: "deposit_requirement exists"
+      - kind: "hook"
+        description: "Calculate status based on balance thresholds"
+      - kind: "update"
+        table: "policy_deposit_requirement"
+        where: "policy_id = input.policy_id"
+        fields:
+          - "status"
+          - "last_evaluated_at"
+      - kind: "when"
+        condition: "status changed to warning or urgent"
+        then:
+          - kind: "outbox_emit"
+            event: "DEPOSIT_REQUIREMENT_EVALUATED"
+            aggregate_type: "POLICY"
+            aggregate_id: "input.policy_id"
+    response:
+      status: "string"
+      current_amount: "number"
+      required_amount: "number"
+
+  - name: "RemediationCase.Open"
+    description: "Open a remediation case for policy compliance issues"
+    path: "/api/v1/policy/:policyId/remediation/open"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "CreateRemediationCaseInput"
+    steps:
+      - kind: "read"
+        table: "policy"
+        where: "id = input.policy_id"
+      - kind: "guard"
+        description: "Policy must exist"
+        expression: "policy exists"
+      - kind: "insert"
+        table: "policy_remediation_case"
+        fields:
+          - "policy_id"
+          - "reason_code"
+          - "status"
+          - "opened_at"
+          - "grace_end_at"
+          - "required_actions"
+      - kind: "outbox_emit"
+        event: "REMEDIATION_CASE_OPENED"
+        aggregate_type: "POLICY_REMEDIATION_CASE"
+        aggregate_id: "remediation_case.id"
+    response:
+      remediation_case_id: "string"
+      grace_end_at: "string"
+
+  - name: "RemediationCase.Clear"
+    description: "Clear a remediation case after resolution"
+    path: "/api/v1/policy/remediation/:caseId/clear"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "Actor"
+    steps:
+      - kind: "read"
+        table: "policy_remediation_case"
+        where: "id = input.case_id"
+      - kind: "guard"
+        description: "Case must be open or in_progress"
+        expression: "remediation_case.status IN ('open', 'in_progress')"
+      - kind: "update"
+        table: "policy_remediation_case"
+        where: "id = input.case_id"
+        fields:
+          - "status"
+          - "cleared_at"
+      - kind: "outbox_emit"
+        event: "REMEDIATION_CASE_CLEARED"
+        aggregate_type: "POLICY_REMEDIATION_CASE"
+        aggregate_id: "input.case_id"
+    response:
+      remediation_case_id: "string"
+      status: "string"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CHANGELOG
+# ──────────────────────────────────────────────────────────────────────────────
+
+changelog:
+  - version: "2.0.0"
+    date: "2026-03-19"
+    author: "Claude Sonnet 4.5"
+    description: "Initial policy pillar specification v2"
+    changes:
+      - "Extracted 13 policy tables from FULL-DDL.md"
+      - "Defined policy aggregate with lifecycle states"
+      - "Created commands for policy creation, activation, member management"
+      - "Defined benefit usage reservation and confirmation workflow"
+      - "Created billing plan and installment management commands"
+      - "Defined deposit requirement evaluation workflow"
+      - "Created remediation case management commands"
+      - "Defined 18 domain events for policy lifecycle"
+    breaking_changes: []
+    migrations_required:
+      - "Initial database schema creation for all policy tables"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# COVERAGE
+# ──────────────────────────────────────────────────────────────────────────────
+
+coverage:
+  tables:
+    policy:
+      touched_by:
+        - "Policy.Create"
+        - "Policy.Activate"
+        - "Policy.AddMember"
+        - "BenefitUsage.Reserve"
+        - "DepositRequirement.Evaluate"
+        - "RemediationCase.Open"
+
+    policy_package:
+      touched_by:
+        - "Policy.Create"
+
+    policy_benefit_entitlement:
+      touched_by:
+        - "BenefitUsage.Reserve"
+
+    policy_benefit_usage:
+      touched_by:
+        - "BenefitUsage.Reserve"
+        - "BenefitUsage.Confirm"
+        - "BenefitUsage.Release"
+
+    policy_benefit_usage_event:
+      touched_by:
+        - "BenefitUsage.Reserve"
+        - "BenefitUsage.Confirm"
+        - "BenefitUsage.Release"
+
+    policy_billing_plan:
+      touched_by:
+        - "BillingPlan.Create"
+        - "Installment.Pay"
+
+    policy_deposit_requirement:
+      touched_by:
+        - "DepositRequirement.Evaluate"
+
+    policy_discount_applied:
+      touched_by:
+        - "Policy.Create"
+
+    policy_installment:
+      touched_by:
+        - "BillingPlan.Create"
+        - "Installment.Pay"
+
+    policy_member:
+      touched_by:
+        - "Policy.Create"
+        - "Policy.AddMember"
+
+    policy_package_rate:
+      touched_by:
+        - "Policy.Create"
+
+    policy_remediation_case:
+      touched_by:
+        - "RemediationCase.Open"
+        - "RemediationCase.Clear"
+
+    policy_status_event:
+      touched_by:
+        - "Policy.Create"
+        - "Policy.Activate"
+
+  events:
+    POLICY_CREATED:
+      emitted_by:
+        - "Policy.Create"
+
+    POLICY_ACTIVATED:
+      emitted_by:
+        - "Policy.Activate"
+
+    POLICY_MEMBER_ADDED:
+      emitted_by:
+        - "Policy.AddMember"
+
+    BENEFIT_USAGE_RESERVED:
+      emitted_by:
+        - "BenefitUsage.Reserve"
+
+    BENEFIT_USAGE_CONFIRMED:
+      emitted_by:
+        - "BenefitUsage.Confirm"
+
+    BENEFIT_USAGE_RELEASED:
+      emitted_by:
+        - "BenefitUsage.Release"
+
+    BILLING_PLAN_CREATED:
+      emitted_by:
+        - "BillingPlan.Create"
+
+    INSTALLMENT_PAID:
+      emitted_by:
+        - "Installment.Pay"
+
+    DEPOSIT_REQUIREMENT_EVALUATED:
+      emitted_by:
+        - "DepositRequirement.Evaluate"
+
+    REMEDIATION_CASE_OPENED:
+      emitted_by:
+        - "RemediationCase.Open"
+
+    REMEDIATION_CASE_CLEARED:
+      emitted_by:
+        - "RemediationCase.Clear"
+
+  aggregate_transitions:
+    POLICY:
+      - transition: "pending → active"
+        command: "Policy.Activate"
+        event: "POLICY_ACTIVATED"
+      - transition: "active → suspended"
+        command: "Policy.Suspend"
+        event: "POLICY_SUSPENDED"
+      - transition: "suspended → active"
+        command: "Policy.Reactivate"
+        event: "POLICY_REACTIVATED"
+      - transition: "active → expired"
+        command: "Policy.Expire"
+        event: "POLICY_EXPIRED"
+      - transition: "* → cancelled"
+        command: "Policy.Cancel"
+        event: "POLICY_CANCELLED"
+
+    POLICY_BILLING_PLAN:
+      - transition: "pending → active"
+        command: "BillingPlan.Activate"
+        event: "BILLING_PLAN_ACTIVATED"
+      - transition: "active → completed"
+        command: "Installment.Pay"
+        event: "BILLING_PLAN_COMPLETED"
+
+    POLICY_REMEDIATION_CASE:
+      - transition: "open → in_progress"
+        command: "RemediationCase.Update"
+        event: "REMEDIATION_CASE_UPDATED"
+      - transition: "in_progress → cleared"
+        command: "RemediationCase.Clear"
+        event: "REMEDIATION_CASE_CLEARED"

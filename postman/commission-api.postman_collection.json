@@ -1,46 +1,10 @@
 {
   "info": {
+    "_postman_id": "da0aef29-9dbf-41cb-ae0e-dfa16dc49b11",
     "name": "Commission API",
     "description": "Commission management endpoints based on commission.pillar.v2.yml",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
-  "variable": [
-    {
-      "key": "base_url",
-      "value": "http://localhost:3000",
-      "type": "string"
-    },
-    {
-      "key": "user_id",
-      "value": "admin-123",
-      "type": "string"
-    },
-    {
-      "key": "user_role",
-      "value": "ADMIN",
-      "type": "string"
-    },
-    {
-      "key": "program_id",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "participant_id",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "accrual_id",
-      "value": "",
-      "type": "string"
-    },
-    {
-      "key": "payout_batch_id",
-      "value": "",
-      "type": "string"
-    }
-  ],
   "item": [
     {
       "name": "Program Management",
@@ -76,6 +40,7 @@
               }
             }
           ],
+          "id": "901d2709-7ef6-4419-b09c-893eb936e524",
           "request": {
             "method": "POST",
             "header": [
@@ -100,8 +65,14 @@
             },
             "url": {
               "raw": "{{base_url}}/api/commission/programs",
-              "host": ["{{base_url}}"],
-              "path": ["api", "commission", "programs"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "commission",
+                "programs"
+              ]
             }
           },
           "response": []
@@ -122,6 +93,7 @@
               }
             }
           ],
+          "id": "26ee00da-c68a-480b-9e51-163cf5b09cf0",
           "request": {
             "method": "POST",
             "header": [
@@ -142,8 +114,16 @@
             ],
             "url": {
               "raw": "{{base_url}}/api/commission/programs/{{program_id}}/pause",
-              "host": ["{{base_url}}"],
-              "path": ["api", "commission", "programs", "{{program_id}}", "pause"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "commission",
+                "programs",
+                "{{program_id}}",
+                "pause"
+              ]
             }
           },
           "response": []
@@ -164,6 +144,7 @@
               }
             }
           ],
+          "id": "24154b38-75bb-4eca-9e5c-39af6edb5f90",
           "request": {
             "method": "POST",
             "header": [
@@ -184,13 +165,22 @@
             ],
             "url": {
               "raw": "{{base_url}}/api/commission/programs/{{program_id}}/activate",
-              "host": ["{{base_url}}"],
-              "path": ["api", "commission", "programs", "{{program_id}}", "activate"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "commission",
+                "programs",
+                "{{program_id}}",
+                "activate"
+              ]
             }
           },
           "response": []
         }
-      ]
+      ],
+      "id": "190bb862-428d-42b2-bef6-74e72194f1a8"
     },
     {
       "name": "Participant Management",
@@ -226,6 +216,7 @@
               }
             }
           ],
+          "id": "08bf234c-5903-4ae5-a641-9aa764ed3c15",
           "request": {
             "method": "POST",
             "header": [
@@ -250,8 +241,16 @@
             },
             "url": {
               "raw": "{{base_url}}/api/commission/programs/{{program_id}}/participants",
-              "host": ["{{base_url}}"],
-              "path": ["api", "commission", "programs", "{{program_id}}", "participants"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "commission",
+                "programs",
+                "{{program_id}}",
+                "participants"
+              ]
             }
           },
           "response": []
@@ -272,6 +271,7 @@
               }
             }
           ],
+          "id": "cc54bc5e-8869-4c1d-aa06-4d8e0dbfaceb",
           "request": {
             "method": "PUT",
             "header": [
@@ -296,13 +296,22 @@
             },
             "url": {
               "raw": "{{base_url}}/api/commission/participants/{{participant_id}}/status",
-              "host": ["{{base_url}}"],
-              "path": ["api", "commission", "participants", "{{participant_id}}", "status"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "commission",
+                "participants",
+                "{{participant_id}}",
+                "status"
+              ]
             }
           },
           "response": []
         }
-      ]
+      ],
+      "id": "ced9ed95-b785-43a2-94bc-eb13e5e5303f"
     },
     {
       "name": "Rule Management",
@@ -323,6 +332,7 @@
               }
             }
           ],
+          "id": "fbd170da-fac6-4426-8f6f-8b6e212faa41",
           "request": {
             "method": "POST",
             "header": [
@@ -347,13 +357,22 @@
             },
             "url": {
               "raw": "{{base_url}}/api/commission/programs/{{program_id}}/rules",
-              "host": ["{{base_url}}"],
-              "path": ["api", "commission", "programs", "{{program_id}}", "rules"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "commission",
+                "programs",
+                "{{program_id}}",
+                "rules"
+              ]
             }
           },
           "response": []
         }
-      ]
+      ],
+      "id": "75f1d062-d15e-483b-85d9-7dc5c46c2b53"
     },
     {
       "name": "Accrual Management",
@@ -389,6 +408,7 @@
               }
             }
           ],
+          "id": "a6d6815b-3716-4354-bc47-912a8066c6d3",
           "request": {
             "method": "POST",
             "header": [
@@ -413,8 +433,14 @@
             },
             "url": {
               "raw": "{{base_url}}/api/commission/accruals",
-              "host": ["{{base_url}}"],
-              "path": ["api", "commission", "accruals"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "commission",
+                "accruals"
+              ]
             }
           },
           "response": []
@@ -435,6 +461,7 @@
               }
             }
           ],
+          "id": "e1785b5a-d232-4e95-95de-dd5ec6cc549b",
           "request": {
             "method": "PUT",
             "header": [
@@ -459,13 +486,22 @@
             },
             "url": {
               "raw": "{{base_url}}/api/commission/accruals/{{accrual_id}}/void",
-              "host": ["{{base_url}}"],
-              "path": ["api", "commission", "accruals", "{{accrual_id}}", "void"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "commission",
+                "accruals",
+                "{{accrual_id}}",
+                "void"
+              ]
             }
           },
           "response": []
         }
-      ]
+      ],
+      "id": "4a8bb1d2-15d1-4cb5-9da8-199ed5ffbf83"
     },
     {
       "name": "Payout Management",
@@ -501,6 +537,7 @@
               }
             }
           ],
+          "id": "b1b749f1-5e3c-435f-b4c2-fe3cfa2ca34c",
           "request": {
             "method": "POST",
             "header": [
@@ -525,8 +562,16 @@
             },
             "url": {
               "raw": "{{base_url}}/api/commission/programs/{{program_id}}/payout-batches",
-              "host": ["{{base_url}}"],
-              "path": ["api", "commission", "programs", "{{program_id}}", "payout-batches"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "commission",
+                "programs",
+                "{{program_id}}",
+                "payout-batches"
+              ]
             }
           },
           "response": []
@@ -547,6 +592,7 @@
               }
             }
           ],
+          "id": "919c75bc-1c7a-475a-946e-941d004d65aa",
           "request": {
             "method": "POST",
             "header": [
@@ -567,13 +613,66 @@
             ],
             "url": {
               "raw": "{{base_url}}/api/commission/payout-batches/{{payout_batch_id}}/process",
-              "host": ["{{base_url}}"],
-              "path": ["api", "commission", "payout-batches", "{{payout_batch_id}}", "process"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "commission",
+                "payout-batches",
+                "{{payout_batch_id}}",
+                "process"
+              ]
             }
           },
           "response": []
         }
-      ]
+      ],
+      "id": "031d161f-47aa-4731-b7dc-3bb0876a2a94"
+    }
+  ],
+  "variable": [
+    {
+      "id": "4fe251d9-bc09-415c-aef4-1192b336ac50",
+      "key": "base_url",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "id": "f8380761-d7a3-41c5-8b5a-15a150305af7",
+      "key": "user_id",
+      "value": "admin-123",
+      "type": "string"
+    },
+    {
+      "id": "4fccc688-4578-4e01-9e38-0f3dd176680d",
+      "key": "user_role",
+      "value": "ADMIN",
+      "type": "string"
+    },
+    {
+      "id": "efab5870-315f-4a4d-8faa-b3f28e3c9177",
+      "key": "program_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "id": "29f7795b-cab3-40d6-9c31-8aae236da420",
+      "key": "participant_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "id": "dd75fb2c-b6db-4c7b-9c88-a04f81547039",
+      "key": "accrual_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "id": "bb64ae10-a7e9-4da0-94a4-3b646adee9c8",
+      "key": "payout_batch_id",
+      "value": "",
+      "type": "string"
     }
   ]
 }

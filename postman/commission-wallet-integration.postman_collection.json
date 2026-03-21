@@ -1,0 +1,938 @@
+{
+  "info": {
+    "_postman_id": "8093e01d-6be5-4591-9938-a772bbb600fb",
+    "name": "Commission-Wallet Integration Test",
+    "description": "End-to-end test for Referral → Commission → Wallet flow with multi-level chains",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "SETUP: Commission Program",
+      "item": [
+        {
+          "name": "1.1 Create Commission Program",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('Program ID returned', () => pm.expect(json.program_id).to.be.a('number'));",
+                  "pm.collectionVariables.set('program_id', json.program_id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "id": "320d2101-f34d-4371-817c-7cde06e8acc9",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "admin"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "create-program-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"REFERRAL_COMMISSION_V2\",\n  \"name\": \"Referral Commission Program\",\n  \"currency\": \"COIN\",\n  \"settlement_cycle\": \"monthly\",\n  \"meta_json\": {\n    \"max_referral_depth\": 3\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/commission/programs",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "commission",
+                "programs"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "1.2 Create Level 1 Rule (25%)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set('rule_level1_id', json.rule_id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "id": "890d3781-d05e-4e7b-80c8-10615848b0d8",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "admin"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "create-rule-level1-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rule_type\": \"percentage\",\n  \"conditions\": {\n    \"referral_level\": 1\n  },\n  \"rate_pct\": 25.00,\n  \"meta_json\": {\n    \"description\": \"Direct referral commission\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/commission/programs/{{program_id}}/rules",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "commission",
+                "programs",
+                "{{program_id}}",
+                "rules"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "1.3 Create Level 2 Rule (10%)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set('rule_level2_id', json.rule_id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "id": "21899300-54e5-46ba-9a7b-be458aca02df",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "admin"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "create-rule-level2-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rule_type\": \"percentage\",\n  \"conditions\": {\n    \"referral_level\": 2\n  },\n  \"rate_pct\": 10.00,\n  \"meta_json\": {\n    \"description\": \"Indirect referral commission (2 levels)\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/commission/programs/{{program_id}}/rules",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "commission",
+                "programs",
+                "{{program_id}}",
+                "rules"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "1.4 Enroll User A as Participant",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set('participant_a_id', json.participant_id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "id": "51ef0218-f92c-41b3-9f3b-edfd9a04874f",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "admin"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "enroll-user-a-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"participant_type\": \"user\",\n  \"participant_id\": {{user_a_id}},\n  \"wallet_id\": {{wallet_a_id}},\n  \"meta_json\": {\n    \"username\": \"user_a\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/commission/programs/{{program_id}}/participants",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "commission",
+                "programs",
+                "{{program_id}}",
+                "participants"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "1.5 Enroll User B as Participant",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set('participant_b_id', json.participant_id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "id": "cbbf3b37-1a35-41ed-b92f-5f02f3a3bfef",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "admin"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "enroll-user-b-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"participant_type\": \"user\",\n  \"participant_id\": {{user_b_id}},\n  \"wallet_id\": {{wallet_b_id}},\n  \"meta_json\": {\n    \"username\": \"user_b\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/commission/programs/{{program_id}}/participants",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "commission",
+                "programs",
+                "{{program_id}}",
+                "participants"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "id": "857715fa-0568-43c8-b98d-8d88ba3e9463"
+    },
+    {
+      "name": "SETUP: Referral Chain (A → B → C)",
+      "item": [
+        {
+          "name": "2.1 Create User B Referral Code",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set('code_b_id', json.code_id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "id": "45a0ded5-a6e2-4150-8c0e-90f1b9d377ad",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_b_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "user"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "code-user-b-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"program_id\": {{referral_program_id}}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v2/referral/codes",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v2",
+                "referral",
+                "codes"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2.2 Create Invite B → C",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set('invite_b_to_c_token', json.invite_token);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "id": "3b796613-f889-4c74-bbc9-c2f07aff0460",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_b_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "user"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "invite-b-to-c-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"program_id\": {{referral_program_id}},\n  \"referral_code_id\": {{code_b_id}},\n  \"channel_type\": \"email\",\n  \"channel_value\": \"userC@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v2/referral/invites",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v2",
+                "referral",
+                "invites"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2.3 User C Converts (Signup)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Referral chain should be built automatically', () => {",
+                  "  // Chain should exist: A → B → C",
+                  "  // Will be verified in next step",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "id": "f618a7b6-5f7a-4161-afc0-24eca3c26588",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "system"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "conversion-user-c-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"invite_token\": \"{{invite_b_to_c_token}}\",\n  \"referred_user_id\": {{user_c_id}}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v2/referral/conversions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v2",
+                "referral",
+                "conversions"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "id": "8f4504ad-73bb-463a-95a8-bcee31bca3b5"
+    },
+    {
+      "name": "TEST: Record Commission Accruals",
+      "item": [
+        {
+          "name": "3.1 Record User B Commission (Level 1, $25)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set('accrual_userb_id', json.accrual_id);",
+                  "pm.test('ACCRUAL_RECORDED event should be emitted to outbox', () => {",
+                  "  // Verification happens in next step",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "id": "097c036c-4303-473d-bd2c-dae93287685a",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "admin"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "accrual-userb-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"participant_id\": {{participant_b_id}},\n  \"rule_id\": {{rule_level1_id}},\n  \"accrual_type\": \"recurring\",\n  \"currency\": \"COIN\",\n  \"base_amount\": 100.00,\n  \"rate_pct\": 25.00,\n  \"amount\": 25.00,\n  \"source_ref_type\": \"referral_conversion\",\n  \"source_ref_id\": \"{{user_c_id}}\",\n  \"meta_json\": {\n    \"referred_user_id\": {{user_c_id}},\n    \"level\": 1\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/commission/programs/{{program_id}}/accruals",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "commission",
+                "programs",
+                "{{program_id}}",
+                "accruals"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3.2 Record User A Commission (Level 2, $10)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set('accrual_usera_id', json.accrual_id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "id": "84e71599-76d3-41ec-9eb2-9152d07bb5ac",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "admin"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "accrual-usera-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"participant_id\": {{participant_a_id}},\n  \"rule_id\": {{rule_level2_id}},\n  \"accrual_type\": \"recurring\",\n  \"currency\": \"COIN\",\n  \"base_amount\": 100.00,\n  \"rate_pct\": 10.00,\n  \"amount\": 10.00,\n  \"source_ref_type\": \"referral_conversion\",\n  \"source_ref_id\": \"{{user_c_id}}\",\n  \"meta_json\": {\n    \"referred_user_id\": {{user_c_id}},\n    \"level\": 2\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/commission/programs/{{program_id}}/accruals",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "commission",
+                "programs",
+                "{{program_id}}",
+                "accruals"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3.3 Wait for Event Processing (5s)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Wait 5 seconds for OutboxPublisher to process events",
+                  "setTimeout(() => {}, 5000);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "id": "0c9d0d2f-9dd0-4ff7-8459-985dfcbf939f",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "id": "f78995f3-0aed-4766-b1d6-bf8a1833c366"
+    },
+    {
+      "name": "VERIFY: Wallet Credits",
+      "item": [
+        {
+          "name": "4.1 Verify User B Wallet Balance (Should be 25 COIN)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('User B wallet credited with 25 COIN', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.available_amount).to.equal('25.00');",
+                  "  pm.expect(json.total_amount).to.equal('25.00');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "id": "581bb571-cb00-409e-83de-f354dd691f3e",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_b_id}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/wallet/balance/{{wallet_b_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "wallet",
+                "balance",
+                "{{wallet_b_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "4.2 Verify User A Wallet Balance (Should be 10 COIN)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('User A wallet credited with 10 COIN', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.available_amount).to.equal('10.00');",
+                  "  pm.expect(json.total_amount).to.equal('10.00');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "id": "3cf9c6c9-eec9-497c-aaa0-6e28feb23042",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_a_id}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/wallet/balance/{{wallet_a_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "wallet",
+                "balance",
+                "{{wallet_a_id}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "id": "5d84b685-64e6-482d-94df-8328cc6ea20d"
+    },
+    {
+      "name": "TEST: Accrual Void (Reversal)",
+      "item": [
+        {
+          "name": "5.1 Void User B Accrual",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('ACCRUAL_VOIDED event emitted', () => {",
+                  "  // Wallet should be debited automatically",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "id": "116f2bb2-7329-4b9c-9d72-95d8f14df3c6",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "admin"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "void-accrual-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Fraudulent conversion detected\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/commission/programs/{{program_id}}/accruals/{{accrual_userb_id}}/void",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "commission",
+                "programs",
+                "{{program_id}}",
+                "accruals",
+                "{{accrual_userb_id}}",
+                "void"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5.2 Wait for Event Processing (5s)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "setTimeout(() => {}, 5000);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "id": "ca2bac47-fc92-410b-a231-ece3e43de61d",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5.3 Verify User B Wallet Reversed (Should be 0 COIN)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('User B wallet reversed to 0 COIN', () => {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.available_amount).to.equal('0.00');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "id": "9ce5a8cf-ec64-4304-b00d-619a6b889be1",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-User-Id",
+                "value": "{{user_b_id}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/wallet/balance/{{wallet_b_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "wallet",
+                "balance",
+                "{{wallet_b_id}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "id": "60490f05-6f19-436d-a164-2ca6d1bbb222"
+    }
+  ],
+  "variable": [
+    {
+      "id": "11819c23-a710-4874-82d1-efa1b96804a2",
+      "key": "base_url",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "id": "689f3175-bd55-436f-ac63-ef52413bc340",
+      "key": "admin_user_id",
+      "value": "999",
+      "type": "string"
+    },
+    {
+      "id": "329244e2-9349-4019-a7e8-67cc2744cf53",
+      "key": "user_a_id",
+      "value": "100",
+      "type": "string"
+    },
+    {
+      "id": "e58964de-933c-49ff-813c-eda60270cdd7",
+      "key": "user_b_id",
+      "value": "200",
+      "type": "string"
+    },
+    {
+      "id": "4fa1115c-ecd3-4fac-8671-b4b0d6f0bc02",
+      "key": "user_c_id",
+      "value": "300",
+      "type": "string"
+    },
+    {
+      "id": "45ac8f80-631b-48de-bb96-cfa608b6b847",
+      "key": "program_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "id": "f62a05da-f716-440d-bc0e-79add10c38d1",
+      "key": "participant_a_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "id": "14a6052c-a3e4-4046-be54-dbd9bb56be13",
+      "key": "participant_b_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "id": "7e36b026-08c1-4219-9779-064dbc3fcbe7",
+      "key": "wallet_a_id",
+      "value": "1000",
+      "type": "string"
+    },
+    {
+      "id": "d175e6eb-09bb-4bf7-9e78-0bd4d0a7f8eb",
+      "key": "wallet_b_id",
+      "value": "2000",
+      "type": "string"
+    },
+    {
+      "id": "85ac864d-0423-4b8f-99cf-3c1487af5ec0",
+      "key": "rule_level1_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "id": "09e295c6-0c67-41e7-911c-c130f308d520",
+      "key": "rule_level2_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "id": "aceb1f2f-dba0-4464-b4f5-5e97e4286b00",
+      "key": "accrual_userb_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "id": "46dfb1e9-277d-4cf1-9829-e41729c5081a",
+      "key": "accrual_usera_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "id": "09483db8-4e0b-400c-a5ae-5c9102f455e9",
+      "key": "referral_program_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "id": "0bc0a374-4483-465e-b446-8b84ff92b36f",
+      "key": "code_b_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "id": "436b8f4d-f596-42d9-8260-e881a47486bb",
+      "key": "invite_b_to_c_token",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

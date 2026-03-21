@@ -1,0 +1,41 @@
+$kind: http-request
+description: Creates a new policy with holder
+url: "{{base_url}}/api/v1/policy/create"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "account_id": "1",
+      "holder_person_id": "1000",
+      "package_code": "PKG_BASIC_2024",
+      "start_at": "2024-04-01T00:00:00Z",
+      "auto_renew": true
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      if (pm.response.code === 201) {
+          const response = pm.response.json();
+          if (response.policy_id) {
+              pm.collectionVariables.set('policy_id', response.policy_id);
+              console.log('✅ Policy Created:', response.policy_id);
+          }
+      }
+
+      pm.test('Status code is 201', function () {
+          pm.response.to.have.status(201);
+      });
+    language: text/javascript
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+order: 1000
