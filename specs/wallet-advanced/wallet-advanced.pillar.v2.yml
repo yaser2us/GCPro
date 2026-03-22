@@ -1,0 +1,2681 @@
+version: "2.0.0"
+spec_id: "wallet-advanced.pillar.v2"
+domain: "wallet-advanced"
+plugin: "wallet-advanced"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# OWNERSHIP
+# ──────────────────────────────────────────────────────────────────────────────
+
+ownership:
+  owner_plugin: "wallet-advanced"
+  owns_tables:
+    - "wallet_deposit_intent"
+    - "wallet_spend_intent"
+    - "wallet_withdrawal_request"
+    - "wallet_hold"
+    - "wallet_payout_attempt"
+    - "wallet_batch"
+    - "wallet_batch_item"
+    - "wallet_rule_set"
+    - "wallet_rule"
+    - "wallet_threshold_rule"
+    - "wallet_threshold_event"
+    - "wallet_policy_gate"
+  cross_plugin_writes: false
+  cross_plugin_integration:
+    allowed_via:
+      - "command_api"
+      - "outbox_events"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DEPENDENCIES
+# ──────────────────────────────────────────────────────────────────────────────
+
+dependencies:
+  corekit:
+    transaction_wrapper: "withTxn"
+    outbox_service: "OutboxService.emit"
+    guard_helper: "guard"
+    domain_error: "DomainError"
+
+  core_tables_readonly:
+    - table_name: "wallet"
+      usage: "All 12 tables FK → wallet.id (owned by wallet plugin)"
+      access: "readonly_fk"
+
+    - table_name: "account"
+      usage: "wallet_deposit_intent, wallet_spend_intent, wallet_withdrawal_request, wallet_batch_item FK → account.id"
+      access: "readonly_fk"
+
+    - table_name: "bank_profile"
+      usage: "wallet_withdrawal_request.bank_profile_id FK → bank_profile.id (owned by payment plugin)"
+      access: "readonly_fk"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CONVENTIONS
+# ──────────────────────────────────────────────────────────────────────────────
+
+conventions:
+  workflow_discipline:
+    - "guard"
+    - "write"
+    - "emit"
+    - "commit"
+
+  status_mutation_policy: "Status fields may only be mutated through commands."
+
+  outbox:
+    required_envelope_fields:
+      - "event_name"
+      - "event_version"
+      - "aggregate_type"
+      - "aggregate_id"
+      - "actor_user_id"
+      - "occurred_at"
+      - "correlation_id"
+      - "causation_id"
+
+  idempotency:
+    required_header: "Idempotency-Key"
+    default_scope: "actor_user_id + command_name"
+    db_strategy:
+      - "UNIQUE(idempotency_key) where applicable"
+      - "MySQL ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)"
+      - "wallet_deposit_intent: UNIQUE(idempotency_key) — uk_wdi_idempotency"
+      - "wallet_spend_intent: UNIQUE(idempotency_key) — uk_wsi_idempotency"
+      - "wallet_hold: UNIQUE(idempotency_key) — uk_wallet_hold_idempotency"
+      - "wallet_batch: UNIQUE(idempotency_key) — uk_wb_idempotency"
+      - "wallet_batch_item: UNIQUE(idempotency_key) — uk_wbi_idempotency"
+      - "wallet_threshold_event: UNIQUE(idempotency_key) — uk_wte_idempotency"
+      - "wallet_rule: UNIQUE(rule_set_id, rule_code) — uk_wr_ruleset_code"
+      - "wallet_threshold_rule: UNIQUE(wallet_id, threshold_code) — uk_wtr_wallet_code"
+      - "wallet_policy_gate: UNIQUE(wallet_id, gate_code) — uk_wpg_wallet_gate"
+      - "wallet_withdrawal_request: no idempotency_key — use guard on status before write"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SCHEMA
+# ──────────────────────────────────────────────────────────────────────────────
+
+schema:
+  tables:
+
+    wallet_deposit_intent:
+      description: >
+        Intent to deposit funds into a wallet. Created by payment or admin flows.
+        Lifecycle: created → pending → completed | failed | cancelled.
+        UNIQUE(idempotency_key) guarantees at-most-once insert per key.
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Surrogate primary key"
+        wallet_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "Target wallet; FK → wallet.id RESTRICT"
+        account_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "Owning account; FK → account.id RESTRICT"
+        amount:
+          type: decimal
+          precision: [18, 2]
+          nullable: false
+          description: "Deposit amount"
+        currency:
+          type: varchar
+          length: 8
+          nullable: false
+          default: "MYR"
+          description: "ISO 4217 currency code"
+        status:
+          type: varchar
+          length: 32
+          nullable: false
+          default: "created"
+          description: "Lifecycle: created | pending | completed | failed | cancelled"
+        ref_type:
+          type: varchar
+          length: 64
+          nullable: true
+          description: "Polymorphic reference type (e.g. payment_intent)"
+        ref_id:
+          type: varchar
+          length: 128
+          nullable: true
+          description: "Polymorphic reference ID"
+        idempotency_key:
+          type: varchar
+          length: 128
+          nullable: true
+          description: "Caller-supplied idempotency key; UNIQUE"
+        meta_json:
+          type: json
+          nullable: true
+          description: "Arbitrary metadata"
+        created_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Row creation timestamp"
+        updated_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Last update timestamp"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          uk_wdi_idempotency:
+            columns: ["idempotency_key"]
+        indexes:
+          idx_wdi_wallet_status:
+            columns: ["wallet_id", "status"]
+          idx_wdi_account:
+            columns: ["account_id"]
+          idx_wdi_ref:
+            columns: ["ref_type", "ref_id"]
+        foreign_keys:
+          fk_wdi_wallet:
+            columns: ["wallet_id"]
+            references: "wallet(id)"
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+          fk_wdi_account:
+            columns: ["account_id"]
+            references: "account(id)"
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+
+    wallet_spend_intent:
+      description: >
+        Intent to spend (debit) funds from a wallet. Created before ledger debit is executed.
+        Lifecycle: created → pending → completed | failed | cancelled.
+        UNIQUE(idempotency_key) guarantees at-most-once insert per key.
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Surrogate primary key"
+        wallet_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "Source wallet; FK → wallet.id RESTRICT"
+        account_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "Owning account; FK → account.id RESTRICT"
+        amount:
+          type: decimal
+          precision: [18, 2]
+          nullable: false
+          description: "Spend amount"
+        currency:
+          type: varchar
+          length: 8
+          nullable: false
+          default: "MYR"
+          description: "ISO 4217 currency code"
+        status:
+          type: varchar
+          length: 32
+          nullable: false
+          default: "created"
+          description: "Lifecycle: created | pending | completed | failed | cancelled"
+        ref_type:
+          type: varchar
+          length: 64
+          nullable: true
+          description: "Polymorphic reference type (e.g. policy_id, claim_id)"
+        ref_id:
+          type: varchar
+          length: 128
+          nullable: true
+          description: "Polymorphic reference ID"
+        idempotency_key:
+          type: varchar
+          length: 128
+          nullable: true
+          description: "Caller-supplied idempotency key; UNIQUE"
+        meta_json:
+          type: json
+          nullable: true
+          description: "Arbitrary metadata"
+        created_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Row creation timestamp"
+        updated_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Last update timestamp"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          uk_wsi_idempotency:
+            columns: ["idempotency_key"]
+        indexes:
+          idx_wsi_wallet_status:
+            columns: ["wallet_id", "status"]
+          idx_wsi_account:
+            columns: ["account_id"]
+          idx_wsi_ref:
+            columns: ["ref_type", "ref_id"]
+        foreign_keys:
+          fk_wsi_wallet:
+            columns: ["wallet_id"]
+            references: "wallet(id)"
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+          fk_wsi_account:
+            columns: ["account_id"]
+            references: "account(id)"
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+
+    wallet_withdrawal_request:
+      description: >
+        Request to withdraw funds from a wallet to a bank account.
+        Requires admin approval before payout attempt.
+        Lifecycle: requested → approved | rejected → processing → completed | failed.
+        Links to bank_profile for bank account details.
+        No idempotency_key — callers must guard against duplicates by status check.
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Surrogate primary key"
+        wallet_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "Source wallet; FK → wallet.id RESTRICT"
+        account_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "Owning account; FK → account.id RESTRICT"
+        bank_profile_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "Destination bank account; FK → bank_profile.id RESTRICT"
+        amount:
+          type: decimal
+          precision: [18, 2]
+          nullable: false
+          description: "Withdrawal amount"
+        currency:
+          type: varchar
+          length: 8
+          nullable: false
+          default: "MYR"
+          description: "ISO 4217 currency code"
+        status:
+          type: varchar
+          length: 32
+          nullable: false
+          default: "requested"
+          description: "Lifecycle: requested | approved | rejected | processing | completed | failed"
+        reject_reason_code:
+          type: varchar
+          length: 64
+          nullable: true
+          description: "Rejection reason code set when status = rejected"
+        meta_json:
+          type: json
+          nullable: true
+          description: "Arbitrary metadata"
+        requested_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Time the request was submitted"
+        decided_at:
+          type: datetime
+          nullable: true
+          description: "Time admin approved or rejected"
+        created_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Row creation timestamp"
+        updated_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Last update timestamp"
+      constraints:
+        primary_key: ["id"]
+        unique_keys: {}
+        indexes:
+          idx_wwr_wallet_status:
+            columns: ["wallet_id", "status"]
+          idx_wwr_account:
+            columns: ["account_id"]
+          idx_wwr_bank:
+            columns: ["bank_profile_id"]
+          idx_wwr_requested:
+            columns: ["requested_at"]
+        foreign_keys:
+          fk_wwr_wallet:
+            columns: ["wallet_id"]
+            references: "wallet(id)"
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+          fk_wwr_account:
+            columns: ["account_id"]
+            references: "account(id)"
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+          fk_wwr_bank_profile:
+            columns: ["bank_profile_id"]
+            references: "bank_profile(id)"
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+
+    wallet_hold:
+      description: >
+        Places a hold on a portion of wallet balance. Held funds are reserved
+        and cannot be spent until released or captured.
+        Lifecycle: active → captured | released | expired.
+        UNIQUE(idempotency_key) prevents duplicate holds.
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Surrogate primary key"
+        wallet_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "Target wallet; FK → wallet.id CASCADE"
+        reason_code:
+          type: varchar
+          length: 32
+          nullable: false
+          description: "Why the hold was placed (e.g. claim_pending, premium_due)"
+        amount:
+          type: decimal
+          precision: [18, 2]
+          nullable: false
+          description: "Amount held"
+        currency:
+          type: varchar
+          length: 8
+          nullable: false
+          default: "MYR"
+          description: "ISO 4217 currency code"
+        status:
+          type: varchar
+          length: 16
+          nullable: false
+          default: "active"
+          description: "Lifecycle: active | captured | released | expired"
+        ref_type:
+          type: varchar
+          length: 64
+          nullable: true
+          description: "Polymorphic reference type"
+        ref_id:
+          type: varchar
+          length: 128
+          nullable: true
+          description: "Polymorphic reference ID"
+        idempotency_key:
+          type: varchar
+          length: 128
+          nullable: true
+          description: "Caller-supplied idempotency key; UNIQUE"
+        request_id:
+          type: varchar
+          length: 128
+          nullable: true
+          description: "Upstream request correlation ID"
+        expires_at:
+          type: datetime
+          nullable: true
+          description: "Auto-expiry time for the hold"
+        captured_at:
+          type: datetime
+          nullable: true
+          description: "When the hold was captured (converted to debit)"
+        released_at:
+          type: datetime
+          nullable: true
+          description: "When the hold was released"
+        created_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Row creation timestamp"
+        updated_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Last update timestamp"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          uk_wallet_hold_idempotency:
+            columns: ["idempotency_key"]
+        indexes:
+          idx_wh_wallet_status:
+            columns: ["wallet_id", "status"]
+          idx_wh_reason:
+            columns: ["reason_code"]
+          idx_wh_ref:
+            columns: ["ref_type", "ref_id"]
+          idx_wh_expires:
+            columns: ["expires_at"]
+          idx_wallet_hold_ref:
+            columns: ["ref_type", "ref_id"]
+          idx_wallet_hold_wallet_status:
+            columns: ["wallet_id", "status"]
+          idx_wallet_hold_expires:
+            columns: ["status", "expires_at"]
+        foreign_keys:
+          fk_wh_wallet:
+            columns: ["wallet_id"]
+            references: "wallet(id)"
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+
+    wallet_payout_attempt:
+      description: >
+        Execution attempt for a withdrawal request via a payout provider.
+        One withdrawal request may have multiple attempts (retry on failure).
+        Append-only — no update after insert (immutable attempt log).
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Surrogate primary key"
+        withdrawal_request_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "Parent withdrawal; FK → wallet_withdrawal_request.id CASCADE"
+        provider:
+          type: varchar
+          length: 64
+          nullable: false
+          description: "Payout provider name (e.g. fpx, maybank, cimb)"
+        provider_ref:
+          type: varchar
+          length: 128
+          nullable: true
+          description: "Provider's transaction reference"
+        status:
+          type: varchar
+          length: 16
+          nullable: false
+          default: "initiated"
+          description: "Attempt status: initiated | succeeded | failed"
+        failure_code:
+          type: varchar
+          length: 64
+          nullable: true
+          description: "Provider failure code if status = failed"
+        request_json:
+          type: json
+          nullable: true
+          description: "Payload sent to the provider"
+        response_json:
+          type: json
+          nullable: true
+          description: "Response received from the provider"
+        attempted_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "When the attempt was made"
+        created_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Row creation timestamp"
+      constraints:
+        primary_key: ["id"]
+        unique_keys: {}
+        indexes:
+          idx_wpa_withdrawal:
+            columns: ["withdrawal_request_id"]
+          idx_wpa_status:
+            columns: ["status"]
+          idx_wpa_provider_ref:
+            columns: ["provider", "provider_ref"]
+        foreign_keys:
+          fk_wpa_withdrawal:
+            columns: ["withdrawal_request_id"]
+            references: "wallet_withdrawal_request(id)"
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+
+    wallet_batch:
+      description: >
+        Groups multiple wallet operations into a single batch (e.g. commission payouts, bulk credits).
+        Tracks aggregate progress (total_items, success_items, failed_items).
+        Lifecycle: created → processing → completed | partial | failed.
+        No FK — batch references are polymorphic via ref_type/ref_id.
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Surrogate primary key"
+        batch_type:
+          type: varchar
+          length: 32
+          nullable: false
+          description: "Type of batch (e.g. commission_payout, bulk_credit)"
+        status:
+          type: varchar
+          length: 32
+          nullable: false
+          default: "created"
+          description: "Lifecycle: created | processing | completed | partial | failed"
+        ref_type:
+          type: varchar
+          length: 64
+          nullable: true
+          description: "Polymorphic reference type (e.g. commission_payout_batch)"
+        ref_id:
+          type: varchar
+          length: 128
+          nullable: true
+          description: "Polymorphic reference ID"
+        idempotency_key:
+          type: varchar
+          length: 128
+          nullable: true
+          description: "Caller-supplied idempotency key; UNIQUE"
+        total_items:
+          type: int
+          unsigned: true
+          nullable: false
+          default: 0
+          description: "Total number of items in this batch"
+        success_items:
+          type: int
+          unsigned: true
+          nullable: false
+          default: 0
+          description: "Number of successfully processed items"
+        failed_items:
+          type: int
+          unsigned: true
+          nullable: false
+          default: 0
+          description: "Number of failed items"
+        attempts:
+          type: int
+          unsigned: true
+          nullable: false
+          default: 0
+          description: "Number of processing attempts"
+        meta_json:
+          type: json
+          nullable: true
+          description: "Arbitrary metadata"
+        started_at:
+          type: datetime
+          nullable: true
+          description: "When processing began"
+        completed_at:
+          type: datetime
+          nullable: true
+          description: "When processing finished"
+        created_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Row creation timestamp"
+        updated_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Last update timestamp"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          uk_wb_idempotency:
+            columns: ["idempotency_key"]
+        indexes:
+          idx_wb_type_status:
+            columns: ["batch_type", "status"]
+          idx_wb_ref:
+            columns: ["ref_type", "ref_id"]
+          idx_wb_created:
+            columns: ["created_at"]
+        foreign_keys: {}
+
+    wallet_batch_item:
+      description: >
+        Individual item within a wallet batch. Each item targets one wallet.
+        Lifecycle: created → processing → completed | failed.
+        UNIQUE(idempotency_key) prevents duplicate items.
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Surrogate primary key"
+        batch_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "Parent batch; FK → wallet_batch.id CASCADE"
+        wallet_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "Target wallet; FK → wallet.id RESTRICT"
+        account_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "Owning account; FK → account.id RESTRICT"
+        item_type:
+          type: varchar
+          length: 32
+          nullable: false
+          description: "Item operation type (e.g. credit, debit)"
+        amount:
+          type: decimal
+          precision: [18, 2]
+          nullable: false
+          description: "Item amount"
+        currency:
+          type: varchar
+          length: 8
+          nullable: false
+          default: "MYR"
+          description: "ISO 4217 currency code"
+        status:
+          type: varchar
+          length: 32
+          nullable: false
+          default: "created"
+          description: "Lifecycle: created | processing | completed | failed"
+        failure_code:
+          type: varchar
+          length: 64
+          nullable: true
+          description: "Failure reason code if status = failed"
+        ref_type:
+          type: varchar
+          length: 64
+          nullable: true
+          description: "Polymorphic reference type"
+        ref_id:
+          type: varchar
+          length: 128
+          nullable: true
+          description: "Polymorphic reference ID"
+        idempotency_key:
+          type: varchar
+          length: 128
+          nullable: true
+          description: "Caller-supplied idempotency key; UNIQUE"
+        meta_json:
+          type: json
+          nullable: true
+          description: "Arbitrary metadata"
+        created_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Row creation timestamp"
+        updated_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Last update timestamp"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          uk_wbi_idempotency:
+            columns: ["idempotency_key"]
+        indexes:
+          idx_wbi_batch_status:
+            columns: ["batch_id", "status"]
+          idx_wbi_wallet:
+            columns: ["wallet_id"]
+          idx_wbi_account:
+            columns: ["account_id"]
+          idx_wbi_ref:
+            columns: ["ref_type", "ref_id"]
+        foreign_keys:
+          fk_wbi_batch:
+            columns: ["batch_id"]
+            references: "wallet_batch(id)"
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+          fk_wbi_wallet:
+            columns: ["wallet_id"]
+            references: "wallet(id)"
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+          fk_wbi_account:
+            columns: ["account_id"]
+            references: "account(id)"
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+
+    wallet_rule_set:
+      description: >
+        A versioned set of spending rules for a wallet.
+        One active rule set per wallet at a time (enforced by application logic, not DB).
+        Lifecycle: active | inactive | superseded.
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Surrogate primary key"
+        wallet_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "Target wallet; FK → wallet.id CASCADE"
+        status:
+          type: varchar
+          length: 16
+          nullable: false
+          default: "active"
+          description: "Lifecycle: active | inactive | superseded"
+        version:
+          type: varchar
+          length: 32
+          nullable: false
+          default: "v1"
+          description: "Rule set version label"
+        effective_from:
+          type: datetime
+          nullable: true
+          description: "When this rule set becomes effective"
+        effective_to:
+          type: datetime
+          nullable: true
+          description: "When this rule set expires"
+        meta_json:
+          type: json
+          nullable: true
+          description: "Arbitrary metadata"
+        created_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Row creation timestamp"
+      constraints:
+        primary_key: ["id"]
+        unique_keys: {}
+        indexes:
+          idx_wrs_wallet_status:
+            columns: ["wallet_id", "status"]
+          idx_wrs_effective:
+            columns: ["effective_from", "effective_to"]
+        foreign_keys:
+          fk_wrs_wallet:
+            columns: ["wallet_id"]
+            references: "wallet(id)"
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+
+    wallet_rule:
+      description: >
+        An individual rule within a wallet rule set.
+        Supports equality, comparison, and JSON-based conditions.
+        UNIQUE(rule_set_id, rule_code) prevents duplicate rules per set.
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Surrogate primary key"
+        rule_set_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "Parent rule set; FK → wallet_rule_set.id CASCADE"
+        rule_code:
+          type: varchar
+          length: 64
+          nullable: false
+          description: "Rule identifier (e.g. max_daily_spend, min_balance)"
+        operator:
+          type: varchar
+          length: 16
+          nullable: false
+          default: "eq"
+          description: "Comparison operator: eq | lt | lte | gt | gte | in"
+        value_str:
+          type: varchar
+          length: 255
+          nullable: true
+          description: "String rule value"
+        value_num:
+          type: decimal
+          precision: [18, 6]
+          nullable: true
+          description: "Numeric rule value"
+        value_json:
+          type: json
+          nullable: true
+          description: "JSON rule value (for complex conditions)"
+        status:
+          type: varchar
+          length: 16
+          nullable: false
+          default: "active"
+          description: "Rule status: active | inactive"
+        created_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Row creation timestamp"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          uk_wr_ruleset_code:
+            columns: ["rule_set_id", "rule_code"]
+        indexes:
+          idx_wr_code:
+            columns: ["rule_code"]
+          idx_wr_status:
+            columns: ["status"]
+        foreign_keys:
+          fk_wr_ruleset:
+            columns: ["rule_set_id"]
+            references: "wallet_rule_set(id)"
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+
+    wallet_threshold_rule:
+      description: >
+        Alert threshold configuration per wallet.
+        When wallet balance breaches threshold_amount, a wallet_threshold_event is recorded.
+        UNIQUE(wallet_id, threshold_code) — one rule per code per wallet.
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Surrogate primary key"
+        wallet_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "Target wallet; FK → wallet.id CASCADE"
+        threshold_code:
+          type: varchar
+          length: 32
+          nullable: false
+          description: "Alert code (e.g. low_balance, critical_balance)"
+        threshold_amount:
+          type: decimal
+          precision: [18, 2]
+          nullable: false
+          description: "Balance level that triggers the alert"
+        currency:
+          type: varchar
+          length: 8
+          nullable: false
+          default: "MYR"
+          description: "ISO 4217 currency code"
+        status:
+          type: varchar
+          length: 16
+          nullable: false
+          default: "active"
+          description: "Rule status: active | inactive"
+        meta_json:
+          type: json
+          nullable: true
+          description: "Arbitrary metadata"
+        created_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Row creation timestamp"
+        updated_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Last update timestamp"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          uk_wtr_wallet_code:
+            columns: ["wallet_id", "threshold_code"]
+        indexes:
+          idx_wtr_status:
+            columns: ["status"]
+        foreign_keys:
+          fk_wtr_wallet:
+            columns: ["wallet_id"]
+            references: "wallet(id)"
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+
+    wallet_threshold_event:
+      description: >
+        Records a balance threshold breach event.
+        Append-only audit log — one row per detected breach.
+        UNIQUE(idempotency_key) prevents duplicate breach records for the same evaluation.
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Surrogate primary key"
+        wallet_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "Target wallet; FK → wallet.id CASCADE"
+        threshold_code:
+          type: varchar
+          length: 32
+          nullable: false
+          description: "Which threshold was breached"
+        current_balance:
+          type: decimal
+          precision: [18, 2]
+          nullable: false
+          description: "Wallet balance at time of breach"
+        threshold_amount:
+          type: decimal
+          precision: [18, 2]
+          nullable: false
+          description: "Threshold value that was breached"
+        currency:
+          type: varchar
+          length: 8
+          nullable: false
+          default: "MYR"
+          description: "ISO 4217 currency code"
+        status:
+          type: varchar
+          length: 16
+          nullable: false
+          default: "breached"
+          description: "Breach status: breached | notified | resolved"
+        idempotency_key:
+          type: varchar
+          length: 128
+          nullable: true
+          description: "Caller-supplied idempotency key; UNIQUE"
+        payload_json:
+          type: json
+          nullable: true
+          description: "Additional breach context"
+        occurred_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "When the breach was detected"
+        created_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Row creation timestamp"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          uk_wte_idempotency:
+            columns: ["idempotency_key"]
+        indexes:
+          idx_wte_wallet_time:
+            columns: ["wallet_id", "occurred_at"]
+          idx_wte_code_status:
+            columns: ["threshold_code", "status"]
+        foreign_keys:
+          fk_wte_wallet:
+            columns: ["wallet_id"]
+            references: "wallet(id)"
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+
+    wallet_policy_gate:
+      description: >
+        Feature flag / policy gate per wallet. Controls whether a wallet feature
+        (e.g. withdrawal, spend, deposit) is enabled or disabled.
+        UNIQUE(wallet_id, gate_code) — one gate per code per wallet.
+        status: 'on' | 'off' (varchar(8) per DDL).
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Surrogate primary key"
+        wallet_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "Target wallet; FK → wallet.id CASCADE"
+        gate_code:
+          type: varchar
+          length: 64
+          nullable: false
+          description: "Feature gate identifier (e.g. withdrawal_enabled, spend_enabled)"
+        status:
+          type: varchar
+          length: 8
+          nullable: false
+          default: "on"
+          description: "Gate state: on | off"
+        meta_json:
+          type: json
+          nullable: true
+          description: "Arbitrary metadata"
+        updated_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Last update timestamp"
+        created_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Row creation timestamp"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          uk_wpg_wallet_gate:
+            columns: ["wallet_id", "gate_code"]
+        indexes:
+          idx_wpg_status:
+            columns: ["gate_code", "status"]
+        foreign_keys:
+          fk_wpg_wallet:
+            columns: ["wallet_id"]
+            references: "wallet(id)"
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# RESOURCES
+# ──────────────────────────────────────────────────────────────────────────────
+
+resources:
+  - name: DepositIntent
+    kind: aggregate
+    table: wallet_deposit_intent
+    primary_key: id
+    statuses: [created, pending, completed, failed, cancelled]
+    api_surface:
+      - "POST /api/v1/wallet-advanced/deposit-intents"
+      - "POST /api/v1/wallet-advanced/deposit-intents/:depositIntentId/complete"
+      - "POST /api/v1/wallet-advanced/deposit-intents/:depositIntentId/fail"
+      - "POST /api/v1/wallet-advanced/deposit-intents/:depositIntentId/cancel"
+
+  - name: SpendIntent
+    kind: aggregate
+    table: wallet_spend_intent
+    primary_key: id
+    statuses: [created, pending, completed, failed, cancelled]
+    api_surface:
+      - "POST /api/v1/wallet-advanced/spend-intents"
+      - "POST /api/v1/wallet-advanced/spend-intents/:spendIntentId/complete"
+      - "POST /api/v1/wallet-advanced/spend-intents/:spendIntentId/fail"
+      - "POST /api/v1/wallet-advanced/spend-intents/:spendIntentId/cancel"
+
+  - name: WithdrawalRequest
+    kind: aggregate
+    table: wallet_withdrawal_request
+    primary_key: id
+    statuses: [requested, approved, rejected, processing, completed, failed]
+    api_surface:
+      - "POST /api/v1/wallet-advanced/withdrawal-requests"
+      - "POST /api/v1/wallet-advanced/withdrawal-requests/:withdrawalRequestId/approve"
+      - "POST /api/v1/wallet-advanced/withdrawal-requests/:withdrawalRequestId/reject"
+      - "POST /api/v1/wallet-advanced/withdrawal-requests/:withdrawalRequestId/payout-attempts"
+      - "POST /api/v1/wallet-advanced/withdrawal-requests/:withdrawalRequestId/complete"
+      - "POST /api/v1/wallet-advanced/withdrawal-requests/:withdrawalRequestId/fail"
+
+  - name: WalletHold
+    kind: aggregate
+    table: wallet_hold
+    primary_key: id
+    statuses: [active, captured, released, expired]
+    api_surface:
+      - "POST /api/v1/wallet-advanced/holds"
+      - "POST /api/v1/wallet-advanced/holds/:holdId/release"
+      - "POST /api/v1/wallet-advanced/holds/:holdId/capture"
+      - "POST /api/v1/wallet-advanced/holds/:holdId/expire"
+
+  - name: WalletBatch
+    kind: aggregate
+    table: wallet_batch
+    primary_key: id
+    statuses: [created, processing, completed, partial, failed]
+    api_surface:
+      - "POST /api/v1/wallet-advanced/batches"
+      - "POST /api/v1/wallet-advanced/batches/:batchId/items"
+      - "POST /api/v1/wallet-advanced/batches/:batchId/process"
+      - "POST /api/v1/wallet-advanced/batches/:batchId/items/:batchItemId/complete"
+      - "POST /api/v1/wallet-advanced/batches/:batchId/items/:batchItemId/fail"
+      - "POST /api/v1/wallet-advanced/batches/:batchId/finalize"
+
+  - name: WalletRuleSet
+    kind: aggregate
+    table: wallet_rule_set
+    primary_key: id
+    statuses: [active, inactive, superseded]
+    api_surface:
+      - "POST /api/v1/wallet-advanced/rule-sets"
+      - "POST /api/v1/wallet-advanced/rule-sets/:ruleSetId/rules"
+      - "POST /api/v1/wallet-advanced/rule-sets/:ruleSetId/deactivate"
+
+  - name: WalletThresholdRule
+    kind: resource
+    table: wallet_threshold_rule
+    primary_key: id
+    api_surface:
+      - "POST /api/v1/wallet-advanced/threshold-rules"
+
+  - name: WalletThresholdEvent
+    kind: resource
+    table: wallet_threshold_event
+    primary_key: id
+    api_surface:
+      - "POST /api/v1/wallet-advanced/threshold-events"
+
+  - name: WalletPolicyGate
+    kind: resource
+    table: wallet_policy_gate
+    primary_key: id
+    api_surface:
+      - "POST /api/v1/wallet-advanced/policy-gates"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# AGGREGATES
+# ──────────────────────────────────────────────────────────────────────────────
+
+aggregates:
+  DEPOSIT_INTENT:
+    root_table: "wallet_deposit_intent"
+    primary_key: "id"
+    statuses: [created, pending, completed, failed, cancelled]
+
+  SPEND_INTENT:
+    root_table: "wallet_spend_intent"
+    primary_key: "id"
+    statuses: [created, pending, completed, failed, cancelled]
+
+  WITHDRAWAL_REQUEST:
+    root_table: "wallet_withdrawal_request"
+    primary_key: "id"
+    statuses: [requested, approved, rejected, processing, completed, failed]
+
+  WALLET_HOLD:
+    root_table: "wallet_hold"
+    primary_key: "id"
+    statuses: [active, captured, released, expired]
+
+  WALLET_BATCH:
+    root_table: "wallet_batch"
+    primary_key: "id"
+    statuses: [created, processing, completed, partial, failed]
+
+  WALLET_RULE_SET:
+    root_table: "wallet_rule_set"
+    primary_key: "id"
+    statuses: [active, inactive, superseded]
+
+  WALLET_THRESHOLD_EVENT:
+    root_table: "wallet_threshold_event"
+    primary_key: "id"
+    statuses: [breached, notified, resolved]
+    note: "Append-only event log. Status may be updated to 'notified' or 'resolved' externally."
+
+  WALLET_POLICY_GATE:
+    root_table: "wallet_policy_gate"
+    primary_key: "id"
+    statuses: [on, off]
+    note: "Upserted via UpsertPolicyGate. Gate state is either on or off."
+
+# ──────────────────────────────────────────────────────────────────────────────
+# TYPES
+# ──────────────────────────────────────────────────────────────────────────────
+
+types:
+  Actor:
+    fields:
+      actor_user_id: string
+      actor_role: string
+      correlation_id: "string | undefined"
+      causation_id: "string | undefined"
+
+  DepositIntentSummary:
+    fields:
+      id: number
+      wallet_id: number
+      account_id: number
+      amount: string
+      currency: string
+      status: string
+      ref_type: "string | null"
+      ref_id: "string | null"
+      created_at: Date
+
+  SpendIntentSummary:
+    fields:
+      id: number
+      wallet_id: number
+      account_id: number
+      amount: string
+      currency: string
+      status: string
+      ref_type: "string | null"
+      ref_id: "string | null"
+      created_at: Date
+
+  WithdrawalRequestSummary:
+    fields:
+      id: number
+      wallet_id: number
+      account_id: number
+      bank_profile_id: number
+      amount: string
+      currency: string
+      status: string
+      reject_reason_code: "string | null"
+      requested_at: Date
+      decided_at: "Date | null"
+
+  WalletHoldSummary:
+    fields:
+      id: number
+      wallet_id: number
+      reason_code: string
+      amount: string
+      currency: string
+      status: string
+      expires_at: "Date | null"
+      created_at: Date
+
+  WalletBatchSummary:
+    fields:
+      id: number
+      batch_type: string
+      status: string
+      total_items: number
+      success_items: number
+      failed_items: number
+      created_at: Date
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DTOs
+# ──────────────────────────────────────────────────────────────────────────────
+
+dtos:
+  DepositIntentCreateDto:
+    description: "Create a deposit intent for a wallet"
+    fields:
+      wallet_id: { type: number, required: true }
+      account_id: { type: number, required: true }
+      amount: { type: string, required: true, description: "Decimal string e.g. '100.00'" }
+      currency: { type: string, required: false, max_len: 8, default: "MYR" }
+      ref_type: { type: string, required: false, max_len: 64 }
+      ref_id: { type: string, required: false, max_len: 128 }
+      idempotency_key: { type: string, required: false, max_len: 128 }
+      meta_json: { type: object, required: false }
+
+  SpendIntentCreateDto:
+    description: "Create a spend intent for a wallet"
+    fields:
+      wallet_id: { type: number, required: true }
+      account_id: { type: number, required: true }
+      amount: { type: string, required: true, description: "Decimal string e.g. '50.00'" }
+      currency: { type: string, required: false, max_len: 8, default: "MYR" }
+      ref_type: { type: string, required: false, max_len: 64 }
+      ref_id: { type: string, required: false, max_len: 128 }
+      idempotency_key: { type: string, required: false, max_len: 128 }
+      meta_json: { type: object, required: false }
+
+  WithdrawalRequestCreateDto:
+    description: "Request a withdrawal from wallet to a bank profile"
+    fields:
+      wallet_id: { type: number, required: true }
+      account_id: { type: number, required: true }
+      bank_profile_id: { type: number, required: true }
+      amount: { type: string, required: true }
+      currency: { type: string, required: false, max_len: 8, default: "MYR" }
+      meta_json: { type: object, required: false }
+
+  WithdrawalRejectDto:
+    description: "Reject a withdrawal request with a reason code"
+    fields:
+      reject_reason_code: { type: string, required: true, max_len: 64 }
+
+  WalletHoldCreateDto:
+    description: "Place a hold on wallet balance"
+    fields:
+      wallet_id: { type: number, required: true }
+      reason_code: { type: string, required: true, max_len: 32 }
+      amount: { type: string, required: true }
+      currency: { type: string, required: false, max_len: 8, default: "MYR" }
+      ref_type: { type: string, required: false, max_len: 64 }
+      ref_id: { type: string, required: false, max_len: 128 }
+      idempotency_key: { type: string, required: false, max_len: 128 }
+      request_id: { type: string, required: false, max_len: 128 }
+      expires_at: { type: string, required: false, description: "ISO 8601 expiry datetime" }
+
+  PayoutAttemptRecordDto:
+    description: "Record a payout attempt for a withdrawal request"
+    fields:
+      provider: { type: string, required: true, max_len: 64 }
+      provider_ref: { type: string, required: false, max_len: 128 }
+      status: { type: string, required: true, max_len: 16, description: "initiated | succeeded | failed" }
+      failure_code: { type: string, required: false, max_len: 64 }
+      request_json: { type: object, required: false }
+      response_json: { type: object, required: false }
+
+  WalletBatchCreateDto:
+    description: "Create a new wallet batch"
+    fields:
+      batch_type: { type: string, required: true, max_len: 32 }
+      ref_type: { type: string, required: false, max_len: 64 }
+      ref_id: { type: string, required: false, max_len: 128 }
+      idempotency_key: { type: string, required: false, max_len: 128 }
+      meta_json: { type: object, required: false }
+
+  WalletBatchItemAddDto:
+    description: "Add an item to a wallet batch"
+    fields:
+      wallet_id: { type: number, required: true }
+      account_id: { type: number, required: true }
+      item_type: { type: string, required: true, max_len: 32 }
+      amount: { type: string, required: true }
+      currency: { type: string, required: false, max_len: 8, default: "MYR" }
+      ref_type: { type: string, required: false, max_len: 64 }
+      ref_id: { type: string, required: false, max_len: 128 }
+      idempotency_key: { type: string, required: false, max_len: 128 }
+      meta_json: { type: object, required: false }
+
+  BatchItemFailDto:
+    description: "Mark a batch item as failed with a reason code"
+    fields:
+      failure_code: { type: string, required: true, max_len: 64 }
+
+  RuleSetCreateDto:
+    description: "Create a wallet rule set"
+    fields:
+      wallet_id: { type: number, required: true }
+      version: { type: string, required: false, max_len: 32, default: "v1" }
+      effective_from: { type: string, required: false, description: "ISO 8601 datetime" }
+      effective_to: { type: string, required: false, description: "ISO 8601 datetime" }
+      meta_json: { type: object, required: false }
+
+  RuleAddDto:
+    description: "Add a rule to a rule set"
+    fields:
+      rule_code: { type: string, required: true, max_len: 64 }
+      operator: { type: string, required: false, max_len: 16, default: "eq" }
+      value_str: { type: string, required: false, max_len: 255 }
+      value_num: { type: number, required: false }
+      value_json: { type: object, required: false }
+
+  ThresholdRuleUpsertDto:
+    description: "Upsert a threshold alert rule for a wallet"
+    fields:
+      wallet_id: { type: number, required: true }
+      threshold_code: { type: string, required: true, max_len: 32 }
+      threshold_amount: { type: string, required: true }
+      currency: { type: string, required: false, max_len: 8, default: "MYR" }
+      meta_json: { type: object, required: false }
+
+  ThresholdEventRecordDto:
+    description: "Record a threshold breach event"
+    fields:
+      wallet_id: { type: number, required: true }
+      threshold_code: { type: string, required: true, max_len: 32 }
+      current_balance: { type: string, required: true }
+      threshold_amount: { type: string, required: true }
+      currency: { type: string, required: false, max_len: 8, default: "MYR" }
+      idempotency_key: { type: string, required: false, max_len: 128 }
+      payload_json: { type: object, required: false }
+
+  PolicyGateUpsertDto:
+    description: "Upsert a policy gate for a wallet (enable/disable a feature)"
+    fields:
+      wallet_id: { type: number, required: true }
+      gate_code: { type: string, required: true, max_len: 64 }
+      status: { type: string, required: true, max_len: 8, description: "on | off" }
+      meta_json: { type: object, required: false }
+
+# ──────────────────────────────────────────────────────────────────────────────
+# EVENTS
+# ──────────────────────────────────────────────────────────────────────────────
+
+events:
+  - name: DEPOSIT_INTENT_CREATED
+    version: 1
+    aggregate_type: DEPOSIT_INTENT
+    description: "A deposit intent was created for a wallet"
+
+  - name: DEPOSIT_INTENT_COMPLETED
+    version: 1
+    aggregate_type: DEPOSIT_INTENT
+    description: "A deposit intent was completed — funds credited to wallet"
+
+  - name: DEPOSIT_INTENT_FAILED
+    version: 1
+    aggregate_type: DEPOSIT_INTENT
+    description: "A deposit intent failed"
+
+  - name: DEPOSIT_INTENT_CANCELLED
+    version: 1
+    aggregate_type: DEPOSIT_INTENT
+    description: "A deposit intent was cancelled before processing"
+
+  - name: SPEND_INTENT_CREATED
+    version: 1
+    aggregate_type: SPEND_INTENT
+    description: "A spend intent was created for a wallet"
+
+  - name: SPEND_INTENT_COMPLETED
+    version: 1
+    aggregate_type: SPEND_INTENT
+    description: "A spend intent was completed — funds debited from wallet"
+
+  - name: SPEND_INTENT_FAILED
+    version: 1
+    aggregate_type: SPEND_INTENT
+    description: "A spend intent failed"
+
+  - name: SPEND_INTENT_CANCELLED
+    version: 1
+    aggregate_type: SPEND_INTENT
+    description: "A spend intent was cancelled"
+
+  - name: WITHDRAWAL_REQUESTED
+    version: 1
+    aggregate_type: WITHDRAWAL_REQUEST
+    description: "A withdrawal request was submitted by an account holder"
+
+  - name: WITHDRAWAL_APPROVED
+    version: 1
+    aggregate_type: WITHDRAWAL_REQUEST
+    description: "A withdrawal request was approved by admin"
+
+  - name: WITHDRAWAL_REJECTED
+    version: 1
+    aggregate_type: WITHDRAWAL_REQUEST
+    description: "A withdrawal request was rejected by admin"
+
+  - name: WITHDRAWAL_COMPLETED
+    version: 1
+    aggregate_type: WITHDRAWAL_REQUEST
+    description: "A withdrawal was successfully paid out"
+
+  - name: WITHDRAWAL_FAILED
+    version: 1
+    aggregate_type: WITHDRAWAL_REQUEST
+    description: "A withdrawal payout failed after all attempts"
+
+  - name: WALLET_HOLD_PLACED
+    version: 1
+    aggregate_type: WALLET_HOLD
+    description: "A hold was placed on wallet balance"
+
+  - name: WALLET_HOLD_RELEASED
+    version: 1
+    aggregate_type: WALLET_HOLD
+    description: "A hold was released — funds returned to available balance"
+
+  - name: WALLET_HOLD_CAPTURED
+    version: 1
+    aggregate_type: WALLET_HOLD
+    description: "A hold was captured — funds converted to a debit"
+
+  - name: WALLET_HOLD_EXPIRED
+    version: 1
+    aggregate_type: WALLET_HOLD
+    description: "A hold expired without being captured or released"
+
+  - name: WALLET_BATCH_CREATED
+    version: 1
+    aggregate_type: WALLET_BATCH
+    description: "A wallet batch was created"
+
+  - name: WALLET_BATCH_PROCESSING
+    version: 1
+    aggregate_type: WALLET_BATCH
+    description: "A wallet batch started processing"
+
+  - name: WALLET_BATCH_FINALIZED
+    version: 1
+    aggregate_type: WALLET_BATCH
+    description: "A wallet batch was finalized (completed | partial | failed)"
+
+  - name: WALLET_THRESHOLD_BREACHED
+    version: 1
+    aggregate_type: WALLET_THRESHOLD_EVENT
+    description: "A wallet balance threshold was breached"
+
+  - name: WALLET_POLICY_GATE_UPDATED
+    version: 1
+    aggregate_type: WALLET_POLICY_GATE
+    description: "A wallet policy gate was turned on or off"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# COMMANDS
+# ──────────────────────────────────────────────────────────────────────────────
+
+commands:
+
+  # ── DEPOSIT INTENT ────────────────────────────────────────────────────────────
+
+  CreateDepositIntent:
+    description: "Create a deposit intent. Idempotent via UNIQUE(idempotency_key)."
+    path: "/api/v1/wallet-advanced/deposit-intents"
+    method: POST
+    idempotent: true
+    permissions: ["wallet-advanced:admin"]
+    input:
+      dto: DepositIntentCreateDto
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: insert
+        table: wallet_deposit_intent
+        data:
+          wallet_id: "dto.wallet_id"
+          account_id: "dto.account_id"
+          amount: "dto.amount"
+          currency: "dto.currency ?? 'MYR'"
+          status: "created"
+          ref_type: "dto.ref_type"
+          ref_id: "dto.ref_id"
+          idempotency_key: "dto.idempotency_key ?? idempotencyKey"
+          meta_json: "dto.meta_json"
+        assign: result
+        on_duplicate: "orIgnore + findOne(idempotency_key)"
+      - kind: outbox_emit
+        event: DEPOSIT_INTENT_CREATED
+        aggregate_type: DEPOSIT_INTENT
+        aggregate_id: "result.id"
+        payload: { wallet_id: "result.wallet_id", amount: "result.amount", currency: "result.currency" }
+    response: { http_status: 201, body: DepositIntentSummary }
+
+  CompleteDepositIntent:
+    description: "Mark a deposit intent as completed. Triggers wallet credit in consuming service."
+    path: "/api/v1/wallet-advanced/deposit-intents/:depositIntentId/complete"
+    method: POST
+    idempotent: true
+    permissions: ["wallet-advanced:admin"]
+    input:
+      path_params: [depositIntentId: number]
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: read
+        table: wallet_deposit_intent
+        filter: "id = depositIntentId"
+        assign: intent
+      - kind: guard
+        expression: "intent != null"
+        error: "DEPOSIT_INTENT_NOT_FOUND"
+      - kind: guard
+        expression: "intent.status == 'created' OR intent.status == 'pending'"
+        error: "DEPOSIT_INTENT_NOT_PROCESSABLE"
+      - kind: update
+        table: wallet_deposit_intent
+        filter: "id = depositIntentId"
+        data: { status: "completed" }
+      - kind: outbox_emit
+        event: DEPOSIT_INTENT_COMPLETED
+        aggregate_type: DEPOSIT_INTENT
+        aggregate_id: "depositIntentId"
+        payload: { wallet_id: "intent.wallet_id", amount: "intent.amount", currency: "intent.currency" }
+    response: { http_status: 200, body: DepositIntentSummary }
+
+  FailDepositIntent:
+    description: "Mark a deposit intent as failed."
+    path: "/api/v1/wallet-advanced/deposit-intents/:depositIntentId/fail"
+    method: POST
+    idempotent: true
+    permissions: ["wallet-advanced:admin"]
+    input:
+      path_params: [depositIntentId: number]
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: read
+        table: wallet_deposit_intent
+        filter: "id = depositIntentId"
+        assign: intent
+      - kind: guard
+        expression: "intent != null"
+        error: "DEPOSIT_INTENT_NOT_FOUND"
+      - kind: guard
+        expression: "intent.status != 'completed' AND intent.status != 'failed' AND intent.status != 'cancelled'"
+        error: "DEPOSIT_INTENT_ALREADY_TERMINAL"
+      - kind: update
+        table: wallet_deposit_intent
+        filter: "id = depositIntentId"
+        data: { status: "failed" }
+      - kind: outbox_emit
+        event: DEPOSIT_INTENT_FAILED
+        aggregate_type: DEPOSIT_INTENT
+        aggregate_id: "depositIntentId"
+        payload: { wallet_id: "intent.wallet_id", amount: "intent.amount" }
+    response: { http_status: 200, body: DepositIntentSummary }
+
+  CancelDepositIntent:
+    description: "Cancel a deposit intent before it is processed."
+    path: "/api/v1/wallet-advanced/deposit-intents/:depositIntentId/cancel"
+    method: POST
+    idempotent: true
+    permissions: ["wallet-advanced:admin"]
+    input:
+      path_params: [depositIntentId: number]
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: read
+        table: wallet_deposit_intent
+        filter: "id = depositIntentId"
+        assign: intent
+      - kind: guard
+        expression: "intent != null"
+        error: "DEPOSIT_INTENT_NOT_FOUND"
+      - kind: guard
+        expression: "intent.status == 'created'"
+        error: "DEPOSIT_INTENT_NOT_CANCELLABLE"
+      - kind: update
+        table: wallet_deposit_intent
+        filter: "id = depositIntentId"
+        data: { status: "cancelled" }
+      - kind: outbox_emit
+        event: DEPOSIT_INTENT_CANCELLED
+        aggregate_type: DEPOSIT_INTENT
+        aggregate_id: "depositIntentId"
+        payload: { wallet_id: "intent.wallet_id", amount: "intent.amount" }
+    response: { http_status: 200, body: DepositIntentSummary }
+
+  # ── SPEND INTENT ──────────────────────────────────────────────────────────────
+
+  CreateSpendIntent:
+    description: "Create a spend intent. Idempotent via UNIQUE(idempotency_key)."
+    path: "/api/v1/wallet-advanced/spend-intents"
+    method: POST
+    idempotent: true
+    permissions: ["wallet-advanced:admin"]
+    input:
+      dto: SpendIntentCreateDto
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: insert
+        table: wallet_spend_intent
+        data:
+          wallet_id: "dto.wallet_id"
+          account_id: "dto.account_id"
+          amount: "dto.amount"
+          currency: "dto.currency ?? 'MYR'"
+          status: "created"
+          ref_type: "dto.ref_type"
+          ref_id: "dto.ref_id"
+          idempotency_key: "dto.idempotency_key ?? idempotencyKey"
+          meta_json: "dto.meta_json"
+        assign: result
+        on_duplicate: "orIgnore + findOne(idempotency_key)"
+      - kind: outbox_emit
+        event: SPEND_INTENT_CREATED
+        aggregate_type: SPEND_INTENT
+        aggregate_id: "result.id"
+        payload: { wallet_id: "result.wallet_id", amount: "result.amount", currency: "result.currency" }
+    response: { http_status: 201, body: SpendIntentSummary }
+
+  CompleteSpendIntent:
+    description: "Mark a spend intent as completed — funds debited."
+    path: "/api/v1/wallet-advanced/spend-intents/:spendIntentId/complete"
+    method: POST
+    idempotent: true
+    permissions: ["wallet-advanced:admin"]
+    input:
+      path_params: [spendIntentId: number]
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: read
+        table: wallet_spend_intent
+        filter: "id = spendIntentId"
+        assign: intent
+      - kind: guard
+        expression: "intent != null"
+        error: "SPEND_INTENT_NOT_FOUND"
+      - kind: guard
+        expression: "intent.status == 'created' OR intent.status == 'pending'"
+        error: "SPEND_INTENT_NOT_PROCESSABLE"
+      - kind: update
+        table: wallet_spend_intent
+        filter: "id = spendIntentId"
+        data: { status: "completed" }
+      - kind: outbox_emit
+        event: SPEND_INTENT_COMPLETED
+        aggregate_type: SPEND_INTENT
+        aggregate_id: "spendIntentId"
+        payload: { wallet_id: "intent.wallet_id", amount: "intent.amount", currency: "intent.currency" }
+    response: { http_status: 200, body: SpendIntentSummary }
+
+  FailSpendIntent:
+    description: "Mark a spend intent as failed."
+    path: "/api/v1/wallet-advanced/spend-intents/:spendIntentId/fail"
+    method: POST
+    idempotent: true
+    permissions: ["wallet-advanced:admin"]
+    input:
+      path_params: [spendIntentId: number]
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: read
+        table: wallet_spend_intent
+        filter: "id = spendIntentId"
+        assign: intent
+      - kind: guard
+        expression: "intent != null"
+        error: "SPEND_INTENT_NOT_FOUND"
+      - kind: guard
+        expression: "intent.status != 'completed' AND intent.status != 'failed' AND intent.status != 'cancelled'"
+        error: "SPEND_INTENT_ALREADY_TERMINAL"
+      - kind: update
+        table: wallet_spend_intent
+        filter: "id = spendIntentId"
+        data: { status: "failed" }
+      - kind: outbox_emit
+        event: SPEND_INTENT_FAILED
+        aggregate_type: SPEND_INTENT
+        aggregate_id: "spendIntentId"
+        payload: { wallet_id: "intent.wallet_id", amount: "intent.amount" }
+    response: { http_status: 200, body: SpendIntentSummary }
+
+  CancelSpendIntent:
+    description: "Cancel a spend intent before processing."
+    path: "/api/v1/wallet-advanced/spend-intents/:spendIntentId/cancel"
+    method: POST
+    idempotent: true
+    permissions: ["wallet-advanced:admin"]
+    input:
+      path_params: [spendIntentId: number]
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: read
+        table: wallet_spend_intent
+        filter: "id = spendIntentId"
+        assign: intent
+      - kind: guard
+        expression: "intent != null"
+        error: "SPEND_INTENT_NOT_FOUND"
+      - kind: guard
+        expression: "intent.status == 'created'"
+        error: "SPEND_INTENT_NOT_CANCELLABLE"
+      - kind: update
+        table: wallet_spend_intent
+        filter: "id = spendIntentId"
+        data: { status: "cancelled" }
+      - kind: outbox_emit
+        event: SPEND_INTENT_CANCELLED
+        aggregate_type: SPEND_INTENT
+        aggregate_id: "spendIntentId"
+        payload: { wallet_id: "intent.wallet_id", amount: "intent.amount" }
+    response: { http_status: 200, body: SpendIntentSummary }
+
+  # ── WITHDRAWAL REQUEST ────────────────────────────────────────────────────────
+
+  RequestWithdrawal:
+    description: "Submit a withdrawal request. No idempotency_key on this table — caller must avoid duplicate submission."
+    path: "/api/v1/wallet-advanced/withdrawal-requests"
+    method: POST
+    idempotent: false
+    permissions: ["wallet-advanced:admin"]
+    input:
+      dto: WithdrawalRequestCreateDto
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: insert
+        table: wallet_withdrawal_request
+        data:
+          wallet_id: "dto.wallet_id"
+          account_id: "dto.account_id"
+          bank_profile_id: "dto.bank_profile_id"
+          amount: "dto.amount"
+          currency: "dto.currency ?? 'MYR'"
+          status: "requested"
+          requested_at: "now()"
+          meta_json: "dto.meta_json"
+        assign: result
+      - kind: outbox_emit
+        event: WITHDRAWAL_REQUESTED
+        aggregate_type: WITHDRAWAL_REQUEST
+        aggregate_id: "result.id"
+        payload: { wallet_id: "result.wallet_id", amount: "result.amount", bank_profile_id: "result.bank_profile_id" }
+    response: { http_status: 201, body: WithdrawalRequestSummary }
+
+  ApproveWithdrawal:
+    description: "Admin approves a withdrawal request."
+    path: "/api/v1/wallet-advanced/withdrawal-requests/:withdrawalRequestId/approve"
+    method: POST
+    idempotent: true
+    permissions: ["wallet-advanced:admin"]
+    input:
+      path_params: [withdrawalRequestId: number]
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: read
+        table: wallet_withdrawal_request
+        filter: "id = withdrawalRequestId"
+        assign: wr
+      - kind: guard
+        expression: "wr != null"
+        error: "WITHDRAWAL_REQUEST_NOT_FOUND"
+      - kind: guard
+        expression: "wr.status == 'requested'"
+        error: "WITHDRAWAL_REQUEST_NOT_PENDING"
+      - kind: update
+        table: wallet_withdrawal_request
+        filter: "id = withdrawalRequestId"
+        data: { status: "approved", decided_at: "now()" }
+      - kind: outbox_emit
+        event: WITHDRAWAL_APPROVED
+        aggregate_type: WITHDRAWAL_REQUEST
+        aggregate_id: "withdrawalRequestId"
+        payload: { wallet_id: "wr.wallet_id", amount: "wr.amount" }
+    response: { http_status: 200, body: WithdrawalRequestSummary }
+
+  RejectWithdrawal:
+    description: "Admin rejects a withdrawal request with a reason code."
+    path: "/api/v1/wallet-advanced/withdrawal-requests/:withdrawalRequestId/reject"
+    method: POST
+    idempotent: true
+    permissions: ["wallet-advanced:admin"]
+    input:
+      dto: WithdrawalRejectDto
+      path_params: [withdrawalRequestId: number]
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: read
+        table: wallet_withdrawal_request
+        filter: "id = withdrawalRequestId"
+        assign: wr
+      - kind: guard
+        expression: "wr != null"
+        error: "WITHDRAWAL_REQUEST_NOT_FOUND"
+      - kind: guard
+        expression: "wr.status == 'requested'"
+        error: "WITHDRAWAL_REQUEST_NOT_PENDING"
+      - kind: update
+        table: wallet_withdrawal_request
+        filter: "id = withdrawalRequestId"
+        data: { status: "rejected", reject_reason_code: "dto.reject_reason_code", decided_at: "now()" }
+      - kind: outbox_emit
+        event: WITHDRAWAL_REJECTED
+        aggregate_type: WITHDRAWAL_REQUEST
+        aggregate_id: "withdrawalRequestId"
+        payload: { wallet_id: "wr.wallet_id", amount: "wr.amount", reject_reason_code: "dto.reject_reason_code" }
+    response: { http_status: 200, body: WithdrawalRequestSummary }
+
+  RecordPayoutAttempt:
+    description: "Log a payout attempt for an approved withdrawal request."
+    path: "/api/v1/wallet-advanced/withdrawal-requests/:withdrawalRequestId/payout-attempts"
+    method: POST
+    idempotent: false
+    permissions: ["wallet-advanced:admin"]
+    input:
+      dto: PayoutAttemptRecordDto
+      path_params: [withdrawalRequestId: number]
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: read
+        table: wallet_withdrawal_request
+        filter: "id = withdrawalRequestId"
+        assign: wr
+      - kind: guard
+        expression: "wr != null"
+        error: "WITHDRAWAL_REQUEST_NOT_FOUND"
+      - kind: guard
+        expression: "wr.status == 'approved' OR wr.status == 'processing'"
+        error: "WITHDRAWAL_REQUEST_NOT_APPROVABLE"
+      - kind: insert
+        table: wallet_payout_attempt
+        data:
+          withdrawal_request_id: "withdrawalRequestId"
+          provider: "dto.provider"
+          provider_ref: "dto.provider_ref"
+          status: "dto.status"
+          failure_code: "dto.failure_code"
+          request_json: "dto.request_json"
+          response_json: "dto.response_json"
+          attempted_at: "now()"
+    response: { http_status: 201, body: { id: number, status: string } }
+
+  CompleteWithdrawal:
+    description: "Mark a withdrawal as completed after successful payout."
+    path: "/api/v1/wallet-advanced/withdrawal-requests/:withdrawalRequestId/complete"
+    method: POST
+    idempotent: true
+    permissions: ["wallet-advanced:admin"]
+    input:
+      path_params: [withdrawalRequestId: number]
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: read
+        table: wallet_withdrawal_request
+        filter: "id = withdrawalRequestId"
+        assign: wr
+      - kind: guard
+        expression: "wr != null"
+        error: "WITHDRAWAL_REQUEST_NOT_FOUND"
+      - kind: guard
+        expression: "wr.status == 'approved' OR wr.status == 'processing'"
+        error: "WITHDRAWAL_REQUEST_NOT_PROCESSABLE"
+      - kind: update
+        table: wallet_withdrawal_request
+        filter: "id = withdrawalRequestId"
+        data: { status: "completed" }
+      - kind: outbox_emit
+        event: WITHDRAWAL_COMPLETED
+        aggregate_type: WITHDRAWAL_REQUEST
+        aggregate_id: "withdrawalRequestId"
+        payload: { wallet_id: "wr.wallet_id", amount: "wr.amount", bank_profile_id: "wr.bank_profile_id" }
+    response: { http_status: 200, body: WithdrawalRequestSummary }
+
+  FailWithdrawal:
+    description: "Mark a withdrawal as failed after exhausting payout attempts."
+    path: "/api/v1/wallet-advanced/withdrawal-requests/:withdrawalRequestId/fail"
+    method: POST
+    idempotent: true
+    permissions: ["wallet-advanced:admin"]
+    input:
+      path_params: [withdrawalRequestId: number]
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: read
+        table: wallet_withdrawal_request
+        filter: "id = withdrawalRequestId"
+        assign: wr
+      - kind: guard
+        expression: "wr != null"
+        error: "WITHDRAWAL_REQUEST_NOT_FOUND"
+      - kind: guard
+        expression: "wr.status == 'approved' OR wr.status == 'processing'"
+        error: "WITHDRAWAL_REQUEST_NOT_PROCESSABLE"
+      - kind: update
+        table: wallet_withdrawal_request
+        filter: "id = withdrawalRequestId"
+        data: { status: "failed" }
+      - kind: outbox_emit
+        event: WITHDRAWAL_FAILED
+        aggregate_type: WITHDRAWAL_REQUEST
+        aggregate_id: "withdrawalRequestId"
+        payload: { wallet_id: "wr.wallet_id", amount: "wr.amount" }
+    response: { http_status: 200, body: WithdrawalRequestSummary }
+
+  # ── WALLET HOLD ───────────────────────────────────────────────────────────────
+
+  PlaceHold:
+    description: "Place a hold on wallet balance. Idempotent via UNIQUE(idempotency_key)."
+    path: "/api/v1/wallet-advanced/holds"
+    method: POST
+    idempotent: true
+    permissions: ["wallet-advanced:admin"]
+    input:
+      dto: WalletHoldCreateDto
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: insert
+        table: wallet_hold
+        data:
+          wallet_id: "dto.wallet_id"
+          reason_code: "dto.reason_code"
+          amount: "dto.amount"
+          currency: "dto.currency ?? 'MYR'"
+          status: "active"
+          ref_type: "dto.ref_type"
+          ref_id: "dto.ref_id"
+          idempotency_key: "dto.idempotency_key ?? idempotencyKey"
+          request_id: "dto.request_id"
+          expires_at: "dto.expires_at"
+        assign: result
+        on_duplicate: "orIgnore + findOne(idempotency_key)"
+      - kind: outbox_emit
+        event: WALLET_HOLD_PLACED
+        aggregate_type: WALLET_HOLD
+        aggregate_id: "result.id"
+        payload: { wallet_id: "result.wallet_id", reason_code: "result.reason_code", amount: "result.amount" }
+    response: { http_status: 201, body: WalletHoldSummary }
+
+  ReleaseHold:
+    description: "Release a wallet hold — returns funds to available balance."
+    path: "/api/v1/wallet-advanced/holds/:holdId/release"
+    method: POST
+    idempotent: true
+    permissions: ["wallet-advanced:admin"]
+    input:
+      path_params: [holdId: number]
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: read
+        table: wallet_hold
+        filter: "id = holdId"
+        assign: hold
+      - kind: guard
+        expression: "hold != null"
+        error: "WALLET_HOLD_NOT_FOUND"
+      - kind: guard
+        expression: "hold.status == 'active'"
+        error: "WALLET_HOLD_NOT_ACTIVE"
+      - kind: update
+        table: wallet_hold
+        filter: "id = holdId"
+        data: { status: "released", released_at: "now()" }
+      - kind: outbox_emit
+        event: WALLET_HOLD_RELEASED
+        aggregate_type: WALLET_HOLD
+        aggregate_id: "holdId"
+        payload: { wallet_id: "hold.wallet_id", amount: "hold.amount", reason_code: "hold.reason_code" }
+    response: { http_status: 200, body: WalletHoldSummary }
+
+  CaptureHold:
+    description: "Capture a wallet hold — converts reserved funds into a debit."
+    path: "/api/v1/wallet-advanced/holds/:holdId/capture"
+    method: POST
+    idempotent: true
+    permissions: ["wallet-advanced:admin"]
+    input:
+      path_params: [holdId: number]
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: read
+        table: wallet_hold
+        filter: "id = holdId"
+        assign: hold
+      - kind: guard
+        expression: "hold != null"
+        error: "WALLET_HOLD_NOT_FOUND"
+      - kind: guard
+        expression: "hold.status == 'active'"
+        error: "WALLET_HOLD_NOT_ACTIVE"
+      - kind: update
+        table: wallet_hold
+        filter: "id = holdId"
+        data: { status: "captured", captured_at: "now()" }
+      - kind: outbox_emit
+        event: WALLET_HOLD_CAPTURED
+        aggregate_type: WALLET_HOLD
+        aggregate_id: "holdId"
+        payload: { wallet_id: "hold.wallet_id", amount: "hold.amount", reason_code: "hold.reason_code" }
+    response: { http_status: 200, body: WalletHoldSummary }
+
+  ExpireHold:
+    description: "Force-expire a wallet hold that has passed its expiry time."
+    path: "/api/v1/wallet-advanced/holds/:holdId/expire"
+    method: POST
+    idempotent: true
+    permissions: ["wallet-advanced:admin"]
+    input:
+      path_params: [holdId: number]
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: read
+        table: wallet_hold
+        filter: "id = holdId"
+        assign: hold
+      - kind: guard
+        expression: "hold != null"
+        error: "WALLET_HOLD_NOT_FOUND"
+      - kind: guard
+        expression: "hold.status == 'active'"
+        error: "WALLET_HOLD_NOT_ACTIVE"
+      - kind: update
+        table: wallet_hold
+        filter: "id = holdId"
+        data: { status: "expired" }
+      - kind: outbox_emit
+        event: WALLET_HOLD_EXPIRED
+        aggregate_type: WALLET_HOLD
+        aggregate_id: "holdId"
+        payload: { wallet_id: "hold.wallet_id", amount: "hold.amount", reason_code: "hold.reason_code" }
+    response: { http_status: 200, body: WalletHoldSummary }
+
+  # ── WALLET BATCH ──────────────────────────────────────────────────────────────
+
+  CreateBatch:
+    description: "Create a wallet batch. Idempotent via UNIQUE(idempotency_key)."
+    path: "/api/v1/wallet-advanced/batches"
+    method: POST
+    idempotent: true
+    permissions: ["wallet-advanced:admin"]
+    input:
+      dto: WalletBatchCreateDto
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: insert
+        table: wallet_batch
+        data:
+          batch_type: "dto.batch_type"
+          status: "created"
+          ref_type: "dto.ref_type"
+          ref_id: "dto.ref_id"
+          idempotency_key: "dto.idempotency_key ?? idempotencyKey"
+          total_items: 0
+          success_items: 0
+          failed_items: 0
+          attempts: 0
+          meta_json: "dto.meta_json"
+        assign: result
+        on_duplicate: "orIgnore + findOne(idempotency_key)"
+      - kind: outbox_emit
+        event: WALLET_BATCH_CREATED
+        aggregate_type: WALLET_BATCH
+        aggregate_id: "result.id"
+        payload: { batch_type: "result.batch_type" }
+    response: { http_status: 201, body: WalletBatchSummary }
+
+  AddBatchItem:
+    description: "Add an item to a wallet batch. Idempotent via UNIQUE(idempotency_key)."
+    path: "/api/v1/wallet-advanced/batches/:batchId/items"
+    method: POST
+    idempotent: true
+    permissions: ["wallet-advanced:admin"]
+    input:
+      dto: WalletBatchItemAddDto
+      path_params: [batchId: number]
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: read
+        table: wallet_batch
+        filter: "id = batchId"
+        assign: batch
+      - kind: guard
+        expression: "batch != null"
+        error: "WALLET_BATCH_NOT_FOUND"
+      - kind: guard
+        expression: "batch.status == 'created'"
+        error: "WALLET_BATCH_NOT_OPEN"
+      - kind: insert
+        table: wallet_batch_item
+        data:
+          batch_id: "batchId"
+          wallet_id: "dto.wallet_id"
+          account_id: "dto.account_id"
+          item_type: "dto.item_type"
+          amount: "dto.amount"
+          currency: "dto.currency ?? 'MYR'"
+          status: "created"
+          ref_type: "dto.ref_type"
+          ref_id: "dto.ref_id"
+          idempotency_key: "dto.idempotency_key ?? idempotencyKey"
+          meta_json: "dto.meta_json"
+        on_duplicate: "orIgnore + findOne(idempotency_key)"
+      - kind: update
+        table: wallet_batch
+        filter: "id = batchId"
+        data: { total_items: "batch.total_items + 1" }
+    response: { http_status: 201, body: { id: number, batch_id: number, status: string } }
+
+  ProcessBatch:
+    description: "Start processing a batch — transitions to 'processing' and increments attempts."
+    path: "/api/v1/wallet-advanced/batches/:batchId/process"
+    method: POST
+    idempotent: false
+    permissions: ["wallet-advanced:admin"]
+    input:
+      path_params: [batchId: number]
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: read
+        table: wallet_batch
+        filter: "id = batchId"
+        assign: batch
+      - kind: guard
+        expression: "batch != null"
+        error: "WALLET_BATCH_NOT_FOUND"
+      - kind: guard
+        expression: "batch.status == 'created' OR batch.status == 'partial'"
+        error: "WALLET_BATCH_NOT_PROCESSABLE"
+      - kind: update
+        table: wallet_batch
+        filter: "id = batchId"
+        data: { status: "processing", started_at: "now()", attempts: "batch.attempts + 1" }
+      - kind: outbox_emit
+        event: WALLET_BATCH_PROCESSING
+        aggregate_type: WALLET_BATCH
+        aggregate_id: "batchId"
+        payload: { batch_type: "batch.batch_type", total_items: "batch.total_items" }
+    response: { http_status: 200, body: WalletBatchSummary }
+
+  CompleteBatchItem:
+    description: "Mark a batch item as completed and increment batch success counter."
+    path: "/api/v1/wallet-advanced/batches/:batchId/items/:batchItemId/complete"
+    method: POST
+    idempotent: true
+    permissions: ["wallet-advanced:admin"]
+    input:
+      path_params: [batchId: number, batchItemId: number]
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: read
+        table: wallet_batch_item
+        filter: "id = batchItemId AND batch_id = batchId"
+        assign: item
+      - kind: guard
+        expression: "item != null"
+        error: "WALLET_BATCH_ITEM_NOT_FOUND"
+      - kind: guard
+        expression: "item.status == 'created' OR item.status == 'processing'"
+        error: "WALLET_BATCH_ITEM_NOT_PROCESSABLE"
+      - kind: update
+        table: wallet_batch_item
+        filter: "id = batchItemId"
+        data: { status: "completed" }
+      - kind: update
+        table: wallet_batch
+        filter: "id = batchId"
+        data: { success_items: "batch.success_items + 1" }
+    response: { http_status: 200, body: { id: number, status: string } }
+
+  FailBatchItem:
+    description: "Mark a batch item as failed with a reason code."
+    path: "/api/v1/wallet-advanced/batches/:batchId/items/:batchItemId/fail"
+    method: POST
+    idempotent: true
+    permissions: ["wallet-advanced:admin"]
+    input:
+      dto: BatchItemFailDto
+      path_params: [batchId: number, batchItemId: number]
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: read
+        table: wallet_batch_item
+        filter: "id = batchItemId AND batch_id = batchId"
+        assign: item
+      - kind: guard
+        expression: "item != null"
+        error: "WALLET_BATCH_ITEM_NOT_FOUND"
+      - kind: guard
+        expression: "item.status == 'created' OR item.status == 'processing'"
+        error: "WALLET_BATCH_ITEM_NOT_PROCESSABLE"
+      - kind: update
+        table: wallet_batch_item
+        filter: "id = batchItemId"
+        data: { status: "failed", failure_code: "dto.failure_code" }
+      - kind: update
+        table: wallet_batch
+        filter: "id = batchId"
+        data: { failed_items: "batch.failed_items + 1" }
+    response: { http_status: 200, body: { id: number, status: string } }
+
+  FinalizeBatch:
+    description: >
+      Finalize a batch after all items processed.
+      Status = completed if failed_items == 0, partial if 0 < failed_items < total_items, failed if all failed.
+    path: "/api/v1/wallet-advanced/batches/:batchId/finalize"
+    method: POST
+    idempotent: true
+    permissions: ["wallet-advanced:admin"]
+    input:
+      path_params: [batchId: number]
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: read
+        table: wallet_batch
+        filter: "id = batchId"
+        assign: batch
+      - kind: guard
+        expression: "batch != null"
+        error: "WALLET_BATCH_NOT_FOUND"
+      - kind: guard
+        expression: "batch.status == 'processing'"
+        error: "WALLET_BATCH_NOT_PROCESSING"
+      - kind: when
+        condition: "batch.failed_items == 0"
+        then:
+          - kind: update
+            table: wallet_batch
+            filter: "id = batchId"
+            data: { status: "completed", completed_at: "now()" }
+      - kind: when
+        condition: "batch.failed_items > 0 AND batch.failed_items < batch.total_items"
+        then:
+          - kind: update
+            table: wallet_batch
+            filter: "id = batchId"
+            data: { status: "partial", completed_at: "now()" }
+      - kind: when
+        condition: "batch.failed_items == batch.total_items"
+        then:
+          - kind: update
+            table: wallet_batch
+            filter: "id = batchId"
+            data: { status: "failed", completed_at: "now()" }
+      - kind: outbox_emit
+        event: WALLET_BATCH_FINALIZED
+        aggregate_type: WALLET_BATCH
+        aggregate_id: "batchId"
+        payload:
+          batch_type: "batch.batch_type"
+          status: "derived"
+          total_items: "batch.total_items"
+          success_items: "batch.success_items"
+          failed_items: "batch.failed_items"
+    response: { http_status: 200, body: WalletBatchSummary }
+
+  # ── RULE SET ──────────────────────────────────────────────────────────────────
+
+  CreateRuleSet:
+    description: "Create a versioned spending rule set for a wallet."
+    path: "/api/v1/wallet-advanced/rule-sets"
+    method: POST
+    idempotent: false
+    permissions: ["wallet-advanced:admin"]
+    input:
+      dto: RuleSetCreateDto
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: insert
+        table: wallet_rule_set
+        data:
+          wallet_id: "dto.wallet_id"
+          status: "active"
+          version: "dto.version ?? 'v1'"
+          effective_from: "dto.effective_from"
+          effective_to: "dto.effective_to"
+          meta_json: "dto.meta_json"
+        assign: result
+    response: { http_status: 201, body: { id: number, wallet_id: number, status: string, version: string } }
+
+  AddRule:
+    description: "Add a rule to a rule set. Idempotent via UNIQUE(rule_set_id, rule_code)."
+    path: "/api/v1/wallet-advanced/rule-sets/:ruleSetId/rules"
+    method: POST
+    idempotent: true
+    permissions: ["wallet-advanced:admin"]
+    input:
+      dto: RuleAddDto
+      path_params: [ruleSetId: number]
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: read
+        table: wallet_rule_set
+        filter: "id = ruleSetId"
+        assign: ruleSet
+      - kind: guard
+        expression: "ruleSet != null"
+        error: "WALLET_RULE_SET_NOT_FOUND"
+      - kind: upsert
+        table: wallet_rule
+        unique_by: ["rule_set_id", "rule_code"]
+        data:
+          rule_set_id: "ruleSetId"
+          rule_code: "dto.rule_code"
+          operator: "dto.operator ?? 'eq'"
+          value_str: "dto.value_str"
+          value_num: "dto.value_num"
+          value_json: "dto.value_json"
+          status: "active"
+        assign: result
+    response: { http_status: 201, body: { id: number, rule_set_id: number, rule_code: string, status: string } }
+
+  DeactivateRuleSet:
+    description: "Deactivate a wallet rule set."
+    path: "/api/v1/wallet-advanced/rule-sets/:ruleSetId/deactivate"
+    method: POST
+    idempotent: true
+    permissions: ["wallet-advanced:admin"]
+    input:
+      path_params: [ruleSetId: number]
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: read
+        table: wallet_rule_set
+        filter: "id = ruleSetId"
+        assign: ruleSet
+      - kind: guard
+        expression: "ruleSet != null"
+        error: "WALLET_RULE_SET_NOT_FOUND"
+      - kind: guard
+        expression: "ruleSet.status == 'active'"
+        error: "WALLET_RULE_SET_NOT_ACTIVE"
+      - kind: update
+        table: wallet_rule_set
+        filter: "id = ruleSetId"
+        data: { status: "inactive" }
+    response: { http_status: 200, body: { id: number, status: string } }
+
+  # ── THRESHOLD RULES & EVENTS ──────────────────────────────────────────────────
+
+  UpsertThresholdRule:
+    description: "Upsert a balance threshold alert rule for a wallet. Idempotent via UNIQUE(wallet_id, threshold_code)."
+    path: "/api/v1/wallet-advanced/threshold-rules"
+    method: POST
+    idempotent: true
+    permissions: ["wallet-advanced:admin"]
+    input:
+      dto: ThresholdRuleUpsertDto
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: upsert
+        table: wallet_threshold_rule
+        unique_by: ["wallet_id", "threshold_code"]
+        data:
+          wallet_id: "dto.wallet_id"
+          threshold_code: "dto.threshold_code"
+          threshold_amount: "dto.threshold_amount"
+          currency: "dto.currency ?? 'MYR'"
+          status: "active"
+          meta_json: "dto.meta_json"
+        assign: result
+    response: { http_status: 200, body: { id: number, wallet_id: number, threshold_code: string, threshold_amount: string, status: string } }
+
+  RecordThresholdBreach:
+    description: "Record a wallet balance threshold breach event. Idempotent via UNIQUE(idempotency_key)."
+    path: "/api/v1/wallet-advanced/threshold-events"
+    method: POST
+    idempotent: true
+    permissions: ["wallet-advanced:admin"]
+    input:
+      dto: ThresholdEventRecordDto
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: insert
+        table: wallet_threshold_event
+        data:
+          wallet_id: "dto.wallet_id"
+          threshold_code: "dto.threshold_code"
+          current_balance: "dto.current_balance"
+          threshold_amount: "dto.threshold_amount"
+          currency: "dto.currency ?? 'MYR'"
+          status: "breached"
+          idempotency_key: "dto.idempotency_key ?? idempotencyKey"
+          payload_json: "dto.payload_json"
+          occurred_at: "now()"
+        assign: result
+        on_duplicate: "orIgnore + findOne(idempotency_key)"
+      - kind: outbox_emit
+        event: WALLET_THRESHOLD_BREACHED
+        aggregate_type: WALLET_THRESHOLD_EVENT
+        aggregate_id: "result.id"
+        payload:
+          wallet_id: "result.wallet_id"
+          threshold_code: "result.threshold_code"
+          current_balance: "result.current_balance"
+          threshold_amount: "result.threshold_amount"
+    response: { http_status: 201, body: { id: number, wallet_id: number, threshold_code: string, status: string } }
+
+  # ── POLICY GATE ───────────────────────────────────────────────────────────────
+
+  UpsertPolicyGate:
+    description: "Enable or disable a wallet feature gate. Idempotent via UNIQUE(wallet_id, gate_code)."
+    path: "/api/v1/wallet-advanced/policy-gates"
+    method: POST
+    idempotent: true
+    permissions: ["wallet-advanced:admin"]
+    input:
+      dto: PolicyGateUpsertDto
+      headers: ["Idempotency-Key"]
+    steps:
+      - kind: upsert
+        table: wallet_policy_gate
+        unique_by: ["wallet_id", "gate_code"]
+        data:
+          wallet_id: "dto.wallet_id"
+          gate_code: "dto.gate_code"
+          status: "dto.status"
+          meta_json: "dto.meta_json"
+        assign: result
+      - kind: outbox_emit
+        event: WALLET_POLICY_GATE_UPDATED
+        aggregate_type: WALLET_POLICY_GATE
+        aggregate_id: "result.id"
+        payload: { wallet_id: "result.wallet_id", gate_code: "result.gate_code", status: "result.status" }
+    response: { http_status: 200, body: { id: number, wallet_id: number, gate_code: string, status: string } }
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CHANGELOG
+# ──────────────────────────────────────────────────────────────────────────────
+
+changelog:
+  - version: "2.0.0"
+    date: "2026-03-23"
+    author: "system"
+    description: "Initial wallet-advanced pillar spec covering 12 advanced wallet tables"
+    changes:
+      - "Defined schema for all 12 tables: deposit_intent, spend_intent, withdrawal_request, hold, payout_attempt, batch, batch_item, rule_set, rule, threshold_rule, threshold_event, policy_gate"
+      - "Defined 6 aggregates: DEPOSIT_INTENT, SPEND_INTENT, WITHDRAWAL_REQUEST, WALLET_HOLD, WALLET_BATCH, WALLET_RULE_SET"
+      - "Defined 25 commands covering full lifecycle of all aggregates"
+      - "Defined 22 events"
+      - "Idempotency via UNIQUE(idempotency_key) on 6 tables; orIgnore pattern for at-most-once inserts"
+    breaking_changes: []
+    migrations_required: false
+
+# ──────────────────────────────────────────────────────────────────────────────
+# COVERAGE
+# ──────────────────────────────────────────────────────────────────────────────
+
+coverage:
+  tables:
+    wallet_deposit_intent:
+      touched_by: [CreateDepositIntent, CompleteDepositIntent, FailDepositIntent, CancelDepositIntent]
+    wallet_spend_intent:
+      touched_by: [CreateSpendIntent, CompleteSpendIntent, FailSpendIntent, CancelSpendIntent]
+    wallet_withdrawal_request:
+      touched_by: [RequestWithdrawal, ApproveWithdrawal, RejectWithdrawal, CompleteWithdrawal, FailWithdrawal, RecordPayoutAttempt]
+    wallet_hold:
+      touched_by: [PlaceHold, ReleaseHold, CaptureHold, ExpireHold]
+    wallet_payout_attempt:
+      touched_by: [RecordPayoutAttempt]
+    wallet_batch:
+      touched_by: [CreateBatch, AddBatchItem, ProcessBatch, CompleteBatchItem, FailBatchItem, FinalizeBatch]
+    wallet_batch_item:
+      touched_by: [AddBatchItem, CompleteBatchItem, FailBatchItem]
+    wallet_rule_set:
+      touched_by: [CreateRuleSet, DeactivateRuleSet]
+    wallet_rule:
+      touched_by: [AddRule]
+    wallet_threshold_rule:
+      touched_by: [UpsertThresholdRule]
+    wallet_threshold_event:
+      touched_by: [RecordThresholdBreach]
+    wallet_policy_gate:
+      touched_by: [UpsertPolicyGate]
+
+  events:
+    DEPOSIT_INTENT_CREATED: { emitted_by: [CreateDepositIntent] }
+    DEPOSIT_INTENT_COMPLETED: { emitted_by: [CompleteDepositIntent] }
+    DEPOSIT_INTENT_FAILED: { emitted_by: [FailDepositIntent] }
+    DEPOSIT_INTENT_CANCELLED: { emitted_by: [CancelDepositIntent] }
+    SPEND_INTENT_CREATED: { emitted_by: [CreateSpendIntent] }
+    SPEND_INTENT_COMPLETED: { emitted_by: [CompleteSpendIntent] }
+    SPEND_INTENT_FAILED: { emitted_by: [FailSpendIntent] }
+    SPEND_INTENT_CANCELLED: { emitted_by: [CancelSpendIntent] }
+    WITHDRAWAL_REQUESTED: { emitted_by: [RequestWithdrawal] }
+    WITHDRAWAL_APPROVED: { emitted_by: [ApproveWithdrawal] }
+    WITHDRAWAL_REJECTED: { emitted_by: [RejectWithdrawal] }
+    WITHDRAWAL_COMPLETED: { emitted_by: [CompleteWithdrawal] }
+    WITHDRAWAL_FAILED: { emitted_by: [FailWithdrawal] }
+    WALLET_HOLD_PLACED: { emitted_by: [PlaceHold] }
+    WALLET_HOLD_RELEASED: { emitted_by: [ReleaseHold] }
+    WALLET_HOLD_CAPTURED: { emitted_by: [CaptureHold] }
+    WALLET_HOLD_EXPIRED: { emitted_by: [ExpireHold] }
+    WALLET_BATCH_CREATED: { emitted_by: [CreateBatch] }
+    WALLET_BATCH_PROCESSING: { emitted_by: [ProcessBatch] }
+    WALLET_BATCH_FINALIZED: { emitted_by: [FinalizeBatch] }
+    WALLET_THRESHOLD_BREACHED: { emitted_by: [RecordThresholdBreach] }
+    WALLET_POLICY_GATE_UPDATED: { emitted_by: [UpsertPolicyGate] }
+
+  aggregate_transitions:
+    DEPOSIT_INTENT:
+      CreateDepositIntent: "∅ → created"
+      CompleteDepositIntent: "created | pending → completed"
+      FailDepositIntent: "created | pending → failed"
+      CancelDepositIntent: "created → cancelled"
+    SPEND_INTENT:
+      CreateSpendIntent: "∅ → created"
+      CompleteSpendIntent: "created | pending → completed"
+      FailSpendIntent: "created | pending → failed"
+      CancelSpendIntent: "created → cancelled"
+    WITHDRAWAL_REQUEST:
+      RequestWithdrawal: "∅ → requested"
+      ApproveWithdrawal: "requested → approved"
+      RejectWithdrawal: "requested → rejected"
+      CompleteWithdrawal: "approved | processing → completed"
+      FailWithdrawal: "approved | processing → failed"
+    WALLET_HOLD:
+      PlaceHold: "∅ → active"
+      ReleaseHold: "active → released"
+      CaptureHold: "active → captured"
+      ExpireHold: "active → expired"
+    WALLET_BATCH:
+      CreateBatch: "∅ → created"
+      ProcessBatch: "created | partial → processing"
+      FinalizeBatch: "processing → completed | partial | failed"
+    WALLET_RULE_SET:
+      CreateRuleSet: "∅ → active"
+      DeactivateRuleSet: "active → inactive"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# INTEGRATION
+# ──────────────────────────────────────────────────────────────────────────────
+
+integration:
+  consumes:
+    - event: "POLICY_ACTIVATED"
+      source_plugin: "policy"
+      aggregate_type: "POLICY"
+      consumer: "src/plugins/wallet/consumers/policy-activated.consumer.ts"
+      handler: "src/plugins/wallet/handlers/policy-activated.handler.ts"
+      condition: "always"
+      action: "Create WalletSpendIntent for policy premium deduction"
+      idempotency: "UNIQUE(idempotency_key) = 'policy_premium_spend_{policy_id}'"

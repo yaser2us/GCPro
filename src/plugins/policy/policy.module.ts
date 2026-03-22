@@ -27,6 +27,10 @@ import { PolicyPackageRateRepository } from './repositories/policy-package-rate.
 import { PolicyRemediationCaseRepository } from './repositories/policy-remediation-case.repo';
 import { PolicyStatusEventRepository } from './repositories/policy-status-event.repo';
 import { PolicyWorkflowService } from './services/policy.workflow.service';
+import { PolicyPaymentSucceededHandler } from './handlers/policy-payment-succeeded.handler';
+import { PolicyPaymentSucceededConsumer } from './consumers/policy-payment-succeeded.consumer';
+import { ClaimSettledHandler } from './handlers/claim-settled.handler';
+import { ClaimSettledConsumer } from './consumers/claim-settled.consumer';
 import { PolicyController } from './controllers/policy.controller';
 import { PolicyAdminController } from './controllers/policy-admin.controller';
 
@@ -68,6 +72,10 @@ import { PolicyAdminController } from './controllers/policy-admin.controller';
     PolicyRemediationCaseRepository,
     PolicyStatusEventRepository,
     PolicyWorkflowService,
+    PolicyPaymentSucceededHandler,
+    PolicyPaymentSucceededConsumer,
+    ClaimSettledHandler,
+    ClaimSettledConsumer,
   ],
   controllers: [PolicyController, PolicyAdminController],
   exports: [PolicyWorkflowService],

@@ -1,0 +1,33 @@
+$kind: http-request
+url: "{{base_url}}/api/v1/wallet-advanced/holds"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "wallet_id": {{target_wallet_id}},
+      "reason_code": "claim_pending",
+      "amount": "75.00",
+      "currency": "MYR",
+      "ref_type": "claim",
+      "ref_id": "clm_002"
+    }
+scripts:
+  - type: beforeRequest
+    code: "pm.request.headers.add({ key: 'Idempotency-Key', value:
+      pm.variables.replaceIn('{{$guid}}') });"
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Status is 201', () => pm.response.to.have.status(201));
+      const json = pm.response.json();
+      if (json && json.id) {
+        pm.collectionVariables.set('hold_capture_id', json.id);
+        console.log('hold_capture_id set to', json.id);
+      }
+    language: text/javascript
+order: 3000

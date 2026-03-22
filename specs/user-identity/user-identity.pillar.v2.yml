@@ -1238,3 +1238,74 @@ integration:
       1. Publish KYC_VERIFIED event with missing subject_id
       2. Assert consumer logs error and does NOT crash
       3. Assert outbox_event_consumer row marked as failed/dead-lettered
+
+# ──────────────────────────────────────────────────────────────────────────────
+# INTEGRATION
+# ──────────────────────────────────────────────────────────────────────────────
+
+integration:
+  description: "UserIdentity pillar consumes cross-pillar events from Foundation to keep verification status and onboarding progress in sync"
+
+  outbox_pattern:
+    how_it_works:
+      - "Foundation plugin emits events (KYC_VERIFIED, GUIDELINE_ACCEPTED) to outbox table"
+      - "Outbox processor polls and publishes events to the EventBus"
+      - "UserIdentity consumers register on module init and process events asynchronously"
+      - "Each consumer delegates to a dedicated handler containing all business logic"
+    benefits:
+      - "Guaranteed at-least-once delivery"
+      - "Decoupled pillar communication — Foundation does not import UserIdentity"
+      - "Idempotent upserts prevent duplicate rows on retry"
+
+  consumers:
+    - event: "KYC_VERIFIED"
+      source_pillar: "foundation"
+      consumer_name: "KycVerifiedConsumer"
+      consumer_location: "src/plugins/user-identity/consumers/kyc-verified.consumer.ts"
+      handler_name: "KycVerifiedHandler"
+      handler_location: "src/plugins/user-identity/handlers/kyc-verified.handler.ts"
+      status: "IMPLEMENTED"
+      purpose: "Upsert verification_status row with type='kyc', status='verified' when KYC is completed"
+      payload_fields:
+        - kyc_id: "ID of the KYC record in Foundation"
+        - subject_type: "'person' or 'account'"
+        - subject_id: "Treated as account_id regardless of subject_type"
+        - provider: "KYC provider name (stored in meta_json)"
+      idempotency_strategy:
+        - "VerificationStatusRepository.upsert uses ON DUPLICATE KEY UPDATE on (account_id, type)"
+        - "Repeated events result in an in-place update, not duplicate rows"
+      target_table: "verification_status"
+      target_fields:
+        account_id: "event.subject_id"
+        type: "'kyc'"
+        status: "'verified'"
+        meta_json: "{ provider, kyc_id }"
+
+    - event: "GUIDELINE_ACCEPTED"
+      source_pillar: "foundation"
+      consumer_name: "GuidelineAcceptedConsumer"
+      consumer_location: "src/plugins/user-identity/consumers/guideline-accepted.consumer.ts"
+      handler_name: "GuidelineAcceptedHandler"
+      handler_location: "src/plugins/user-identity/handlers/guideline-accepted.handler.ts"
+      status: "IMPLEMENTED"
+      purpose: "Upsert onboarding_progress row with step_code='guideline_accepted', state='completed'"
+      skip_condition: "event.user_id is null — log and return without processing"
+      payload_fields:
+        - acceptance_id: "ID of the acceptance record"
+        - version_id: "ID of the guideline version accepted"
+        - account_id: "Account ID (optional)"
+        - person_id: "Person ID (optional)"
+        - user_id: "User ID who accepted (required — skip if null)"
+        - acceptance_status: "Status of the acceptance"
+        - channel: "Acceptance channel"
+        - source: "Source system"
+      idempotency_strategy:
+        - "OnboardingProgressRepository.upsert uses orUpdate on (user_id, step_code) conflict"
+        - "Repeated events update state and meta_json in place"
+      target_table: "onboarding_progress"
+      target_fields:
+        user_id: "Number(event.user_id)"
+        step_code: "'guideline_accepted'"
+        state: "'completed'"
+        meta_json: "{ version_id, acceptance_id }"
+

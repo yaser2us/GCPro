@@ -1,0 +1,33 @@
+$kind: http-request
+url: "{{base_url}}/api/v1/wallet-advanced/spend-intents"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "wallet_id": {{target_wallet_id}},
+      "account_id": {{target_account_id}},
+      "amount": "50.00",
+      "currency": "MYR",
+      "ref_type": "policy_id",
+      "ref_id": "pol_001"
+    }
+scripts:
+  - type: beforeRequest
+    code: "pm.request.headers.add({ key: 'Idempotency-Key', value:
+      pm.variables.replaceIn('{{$guid}}') });"
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Status is 201', () => pm.response.to.have.status(201));
+      const json = pm.response.json();
+      if (json && json.id) {
+        pm.collectionVariables.set('spend_intent_id', json.id);
+        console.log('spend_intent_id set to', json.id);
+      }
+    language: text/javascript
+order: 1000

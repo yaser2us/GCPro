@@ -1,0 +1,28 @@
+$kind: collection
+description: >-
+  Postman collection for the Wallet Advanced pillar — deposit intents, spend
+  intents, withdrawal requests, wallet holds, wallet batches, rule sets,
+  threshold rules, and policy gates.
+
+  Based on the wallet plugin using prefix /api/v1/wallet-advanced
+variables:
+  base_url: http://localhost:3000
+  admin_user_id: "1"
+  admin_user_role: admin
+  target_wallet_id: "1"
+  target_account_id: "1"
+  target_bank_profile_id: "1"
+  deposit_intent_id: ""
+  deposit_intent_fail_id: ""
+  deposit_intent_cancel_id: ""
+  spend_intent_id: ""
+  spend_intent_fail_id: ""
+  spend_intent_cancel_id: ""
+  withdrawal_request_id: ""
+  withdrawal_reject_id: ""
+  hold_id: ""
+  hold_capture_id: ""
+  hold_expire_id: ""
+  batch_id: ""
+  batch_item_id: ""
+  rule_set_id: ""

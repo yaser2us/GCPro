@@ -1,0 +1,26 @@
+$kind: http-request
+url: "{{base_url}}/api/v1/wallet-advanced/withdrawal-requests/{{withdrawal_requ\
+  est_id}}/complete"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: "{}"
+scripts:
+  - type: beforeRequest
+    code: "pm.request.headers.add({ key: 'Idempotency-Key', value:
+      pm.variables.replaceIn('{{$guid}}') });"
+    language: text/javascript
+  - type: afterResponse
+    code: >-
+      pm.test('Status is 200', () => pm.response.to.have.status(200));
+
+      const json = pm.response.json();
+
+      pm.test('Status is completed', () =>
+      pm.expect(json.status).to.eql('completed'));
+    language: text/javascript
+order: 4000

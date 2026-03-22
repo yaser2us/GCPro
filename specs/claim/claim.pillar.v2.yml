@@ -2640,8 +2640,8 @@ integration:
       - "Audit trail of all cross-pillar interactions"
 
   policy:
-    description: "Claims reads policy data for validation and calls Policy commands for benefit management"
-    pattern: "synchronous_read_and_command_call"
+    description: "Claims reads policy data for validation. Benefit usage on settlement is now recorded via the event-driven CLAIM_SETTLED → ClaimSettledConsumer path in the policy plugin."
+    pattern: "synchronous_read_and_event_driven"
 
     synchronous_reads:
       - table: "policy"
@@ -2656,14 +2656,30 @@ integration:
         when: "GuaranteeLetter.Issue"
         purpose: "Reserve benefit amount for GL period"
         sync: true
-      - command: "Policy.BenefitUsage.Confirm"
-        when: "Claim.Settle"
-        purpose: "Confirm benefit usage and update policy_benefit_usage"
-        sync: true
       - command: "Policy.BenefitUsage.Release"
         when: "GuaranteeLetter.Cancel"
         purpose: "Release reserved benefit amount"
         sync: true
+
+    event_driven:
+      - event: "CLAIM_SETTLED"
+        consumer_name: "ClaimSettledConsumer"
+        consumer_location: "src/plugins/policy/consumers/claim-settled.consumer.ts"
+        handler_location: "src/plugins/policy/handlers/claim-settled.handler.ts"
+        status: "IMPLEMENTED"
+        purpose: "Record or increment policy_benefit_usage when a claim is settled"
+        trigger_condition: "event.policy_id must be non-null; item_code defaults to 'general' if absent"
+        payload_fields:
+          - claim_id: "ID of the settled claim"
+          - claim_number: "Human-readable claim number"
+          - approved_amount: "Approved settlement amount"
+          - period_key: "Billing/benefit period key"
+          - policy_id: "Associated policy ID (optional — skip if null)"
+          - item_code: "Benefit item code (optional — defaults to 'general')"
+        idempotency_strategy:
+          - "SELECT existing row by (policy_id, period_key, item_code)"
+          - "If exists: UPDATE used_amount + approved_amount, used_count + 1"
+          - "If not exists: INSERT new row with used_count = 1"
 
   wallet:
     description: "Wallet consumes claim settlement events to create payout transactions"

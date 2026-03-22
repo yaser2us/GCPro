@@ -2250,3 +2250,18 @@ coverage:
       - transition: "in_progress → cleared"
         command: "RemediationCase.Clear"
         event: "REMEDIATION_CASE_CLEARED"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# INTEGRATION
+# ──────────────────────────────────────────────────────────────────────────────
+
+integration:
+  consumes:
+    - event: "PAYMENT_SUCCEEDED"
+      source_plugin: "payment"
+      aggregate_type: "PAYMENT_INTENT"
+      consumer: "src/plugins/policy/consumers/policy-payment-succeeded.consumer.ts"
+      handler: "src/plugins/policy/handlers/policy-payment-succeeded.handler.ts"
+      condition: "purpose_code == 'premium' AND ref_type == 'policy'"
+      action: "Activate policy (pending → active), emit POLICY_ACTIVATED"
+      idempotency: "Skip if policy.status already == 'active'"

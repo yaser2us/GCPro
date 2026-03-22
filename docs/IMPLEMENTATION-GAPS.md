@@ -1,6 +1,6 @@
 # Implementation Gaps & Remaining Work
 
-> Last updated: 2026-03-22 (Foundation complete, Quick Wins in progress)
+> Last updated: 2026-03-23 (Foundation ✅, Quick Wins ✅, User Identity ✅, Wallet Advanced ✅, Cross-Pillar Integrations ✅)
 > Based on: `docs/database/FULL-DDL.md` cross-referenced with `src/plugins/`
 
 ---
@@ -21,8 +21,9 @@
 | Payment | 7/7 tables | ✅ Complete |
 | Referral | 8/8 tables | ✅ Complete |
 | Person | 3/3 tables | ✅ Complete (address owned by Foundation) |
-| User | 4/8 tables | ⚠️ 50% |
-| Wallet | 7/18 tables | 🔴 39% |
+| User | 4/4 tables | ✅ Complete (device_token, registration_token, verification_status, onboarding_progress → user-identity plugin) |
+| Wallet | 7/7 tables | ✅ Complete (core) |
+| Wallet Advanced | 12/12 tables | ✅ Complete |
 | Foundation | 15/15 tables | ✅ Complete |
 
 ---
@@ -50,49 +51,33 @@ Small structural gaps: entity or repo was missing but the rest of the plugin was
 
 ---
 
-## Option 2 — User Identity Completion (1 day)
+## ~~Option 2 — User Identity Completion~~ ✅ DONE
 
-Needed for full registration / onboarding flow.
-
-| Table | Purpose |
-|-------|---------|
-| `device_token` | Push notification device tokens |
-| `registration_token` | Email/phone verification tokens |
-| `verification_status` | Tracks email/phone/KYC verification state |
-| `onboarding_progress` | Step-by-step onboarding tracker |
+4 tables built as a new `user-identity` plugin, reviewed, Postman collection created.
+- Spec: `specs/user-identity/user-identity.pillar.v2.yml`
+- Plugin: `src/plugins/user-identity/`
+- Postman: `postman/user-identity-api.postman_collection.json`
+- Permissions: `scripts/user-identity-permissions.sql`
 
 ---
 
-## Option 4 — Wallet Advanced Features (2–3 days) 🔴 Critical
+## ~~Option 4 — Wallet Advanced Features~~ ✅ DONE
 
-Unlocks deposit, spending rules, holds, batch payouts, and withdrawals.
-
-| Table | Purpose |
-|-------|---------|
-| `wallet_deposit_intent` | Initiate a deposit into wallet |
-| `wallet_spend_intent` | Initiate a spend from wallet |
-| `wallet_withdrawal_request` | Request a withdrawal to bank |
-| `wallet_hold` | Place a hold on wallet balance |
-| `wallet_payout_attempt` | Track payout attempts |
-| `wallet_batch` | Group payouts into a batch |
-| `wallet_batch_item` | Individual items in a payout batch |
-| `wallet_rule_set` | Configurable spending rule sets |
-| `wallet_rule` | Individual rules within a rule set |
-| `wallet_threshold_rule` | Alert thresholds for wallet balance |
-| `wallet_threshold_event` | Triggered threshold alert records |
-| `wallet_policy_gate` | Policy-based wallet access controls |
+12 tables built as a new `wallet-advanced` plugin.
+- Spec: `specs/wallet-advanced/wallet-advanced.pillar.v2.yml`
+- Plugin: `src/plugins/wallet-advanced/`
 
 ---
 
-## Missing Cross-Pillar Integrations
+## ~~Missing Cross-Pillar Integrations~~ ✅ ALL DONE
 
-| Integration | Status | Notes |
-|-------------|--------|-------|
-| Payment → Policy activation | ❌ Missing | payment_completed event should activate policy |
-| Policy → Wallet premium deduction | ❌ Missing | Policy activation should debit wallet |
-| Claim → Policy benefit usage | ❌ Missing | Claim settlement should update policy_benefit_usage |
-| KYC verified → User verification status | ⚠️ Event emitted | Foundation emits KYC_VERIFIED; user plugin listener not wired |
-| Guideline accepted → Onboarding progress | ⚠️ Event emitted | Foundation emits GUIDELINE_ACCEPTED; user plugin listener not wired |
+| Integration | Status | Implementation |
+|-------------|--------|----------------|
+| Payment → Policy activation | ✅ Done | `PAYMENT_SUCCEEDED` → `PolicyPaymentSucceededConsumer` → activates policy |
+| Policy → Wallet premium deduction | ✅ Done | `POLICY_ACTIVATED` → `PolicyActivatedConsumer` → creates `WalletSpendIntent` |
+| Claim → Policy benefit usage | ✅ Done | `CLAIM_SETTLED` → `ClaimSettledConsumer` → upserts `policy_benefit_usage` |
+| KYC verified → User verification status | ✅ Done | `KYC_VERIFIED` → `KycVerifiedConsumer` → upserts `verification_status` |
+| Guideline accepted → Onboarding progress | ✅ Done | `GUIDELINE_ACCEPTED` → `GuidelineAcceptedConsumer` → upserts `onboarding_progress` |
 
 ---
 
@@ -100,6 +85,6 @@ Unlocks deposit, spending rules, holds, batch payouts, and withdrawals.
 
 1. ~~**Foundation Pillar**~~ ✅ Done
 2. ~~**Quick Wins**~~ ✅ Done
-3. **User Identity** ← Next (4 tables, 1 day)
-4. **Wallet Advanced** (12 tables, 2–3 days)
-5. **Cross-pillar integrations** (Payment→Policy, Policy→Wallet, Claim→Policy)
+3. ~~**User Identity**~~ ✅ Done
+4. ~~**Wallet Advanced**~~ ✅ Done
+5. ~~**Cross-pillar integrations**~~ ✅ Done

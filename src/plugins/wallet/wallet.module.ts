@@ -6,29 +6,65 @@ import { Wallet } from './entities/wallet.entity';
 import { WalletBalanceSnapshot } from './entities/wallet-balance-snapshot.entity';
 import { LedgerTxn } from './entities/ledger-txn.entity';
 import { LedgerEntry } from './entities/ledger-entry.entity';
+import { WalletDepositIntent } from './entities/wallet-deposit-intent.entity';
+import { WalletSpendIntent } from './entities/wallet-spend-intent.entity';
+import { WalletWithdrawalRequest } from './entities/wallet-withdrawal-request.entity';
+import { WalletHold } from './entities/wallet-hold.entity';
+import { WalletPayoutAttempt } from './entities/wallet-payout-attempt.entity';
+import { WalletBatch } from './entities/wallet-batch.entity';
+import { WalletBatchItem } from './entities/wallet-batch-item.entity';
+import { WalletRuleSet } from './entities/wallet-rule-set.entity';
+import { WalletRule } from './entities/wallet-rule.entity';
+import { WalletThresholdRule } from './entities/wallet-threshold-rule.entity';
+import { WalletThresholdEvent } from './entities/wallet-threshold-event.entity';
+import { WalletPolicyGate } from './entities/wallet-policy-gate.entity';
 import { AccountRepository } from './repositories/account.repo';
 import { AccountPersonRepository } from './repositories/account-person.repo';
 import { WalletRepository } from './repositories/wallet.repo';
 import { WalletBalanceSnapshotRepository } from './repositories/wallet-balance-snapshot.repo';
 import { LedgerTxnRepository } from './repositories/ledger-txn.repo';
 import { LedgerEntryRepository } from './repositories/ledger-entry.repo';
+import { WalletDepositIntentRepository } from './repositories/wallet-deposit-intent.repo';
+import { WalletSpendIntentRepository } from './repositories/wallet-spend-intent.repo';
+import { WalletWithdrawalRequestRepository } from './repositories/wallet-withdrawal-request.repo';
+import { WalletHoldRepository } from './repositories/wallet-hold.repo';
+import { WalletPayoutAttemptRepository } from './repositories/wallet-payout-attempt.repo';
+import { WalletBatchRepository } from './repositories/wallet-batch.repo';
+import { WalletBatchItemRepository } from './repositories/wallet-batch-item.repo';
+import { WalletRuleSetRepository } from './repositories/wallet-rule-set.repo';
+import { WalletRuleRepository } from './repositories/wallet-rule.repo';
+import { WalletThresholdRuleRepository } from './repositories/wallet-threshold-rule.repo';
+import { WalletThresholdEventRepository } from './repositories/wallet-threshold-event.repo';
+import { WalletPolicyGateRepository } from './repositories/wallet-policy-gate.repo';
 
 // Shared Services (used by multiple handlers)
 import { WalletService } from './services/wallet.service';
 import { LedgerService } from './services/ledger.service';
 import { BalanceService } from './services/balance.service';
 import { WalletWorkflowService } from './services/wallet.workflow.service';
+import { WalletAdvancedWorkflowService } from './services/wallet-advanced.workflow.service';
 
 // Event Handlers (one per event type)
 import { MissionRewardHandler } from './handlers/mission-reward.handler';
 import { CommissionAccrualHandler } from './handlers/commission-accrual.handler';
+import { PolicyActivatedHandler } from './handlers/policy-activated.handler';
 
 // Event Consumers (one per event source)
 import { MissionRewardConsumer } from './consumers/mission-reward.consumer';
 import { CommissionAccrualConsumer } from './consumers/commission-accrual.consumer';
+import { PolicyActivatedConsumer } from './consumers/policy-activated.consumer';
 
 // Controllers
 import { WalletController } from './controllers/wallet.controller';
+import { DepositIntentController } from './controllers/deposit-intent.controller';
+import { SpendIntentController } from './controllers/spend-intent.controller';
+import { WithdrawalRequestController } from './controllers/withdrawal-request.controller';
+import { WalletHoldController } from './controllers/wallet-hold.controller';
+import { WalletBatchController } from './controllers/wallet-batch.controller';
+import { WalletRuleSetController } from './controllers/wallet-rule-set.controller';
+import { ThresholdRuleController } from './controllers/threshold-rule.controller';
+import { ThresholdEventController } from './controllers/threshold-event.controller';
+import { PolicyGateController } from './controllers/policy-gate.controller';
 
 /**
  * Wallet Module
@@ -59,11 +95,32 @@ import { WalletController } from './controllers/wallet.controller';
       WalletBalanceSnapshot,
       LedgerTxn,
       LedgerEntry,
+      WalletDepositIntent,
+      WalletSpendIntent,
+      WalletWithdrawalRequest,
+      WalletHold,
+      WalletPayoutAttempt,
+      WalletBatch,
+      WalletBatchItem,
+      WalletRuleSet,
+      WalletRule,
+      WalletThresholdRule,
+      WalletThresholdEvent,
+      WalletPolicyGate,
     ]),
   ],
   controllers: [
     // HTTP controllers
     WalletController,
+    DepositIntentController,
+    SpendIntentController,
+    WithdrawalRequestController,
+    WalletHoldController,
+    WalletBatchController,
+    WalletRuleSetController,
+    ThresholdRuleController,
+    ThresholdEventController,
+    PolicyGateController,
   ],
   providers: [
     // Repositories (data access layer)
@@ -73,6 +130,18 @@ import { WalletController } from './controllers/wallet.controller';
     WalletBalanceSnapshotRepository,
     LedgerTxnRepository,
     LedgerEntryRepository,
+    WalletDepositIntentRepository,
+    WalletSpendIntentRepository,
+    WalletWithdrawalRequestRepository,
+    WalletHoldRepository,
+    WalletPayoutAttemptRepository,
+    WalletBatchRepository,
+    WalletBatchItemRepository,
+    WalletRuleSetRepository,
+    WalletRuleRepository,
+    WalletThresholdRuleRepository,
+    WalletThresholdEventRepository,
+    WalletPolicyGateRepository,
 
     // Shared Services (reusable across handlers)
     WalletService,
@@ -83,14 +152,19 @@ import { WalletController } from './controllers/wallet.controller';
     // TODO: Refactor HTTP endpoints to use handlers too
     WalletWorkflowService,
 
+    // Advanced workflow service
+    WalletAdvancedWorkflowService,
+
     // Event Handlers (one per event type)
     MissionRewardHandler,
     CommissionAccrualHandler,
+    PolicyActivatedHandler,
     // Future: ClaimPayoutHandler, etc.
 
     // Event Consumers (one per event source)
     MissionRewardConsumer,
     CommissionAccrualConsumer,
+    PolicyActivatedConsumer,
     // Future: ClaimPayoutConsumer, etc.
   ],
   exports: [
@@ -101,6 +175,9 @@ import { WalletController } from './controllers/wallet.controller';
 
     // Legacy exports
     WalletWorkflowService,
+
+    // Advanced workflow service
+    WalletAdvancedWorkflowService,
   ],
 })
 export class WalletModule {}

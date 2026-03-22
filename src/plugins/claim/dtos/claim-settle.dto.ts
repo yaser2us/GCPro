@@ -1,4 +1,4 @@
-import { IsNumber, IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import { IsNumber, IsNotEmpty, IsString, IsOptional, MaxLength } from 'class-validator';
 
 /**
  * ClaimSettle DTO
@@ -16,4 +16,13 @@ export class ClaimSettleDto {
   @IsNotEmpty()
   @MaxLength(7)
   periodKey: string;
+
+  @IsNumber()
+  @IsOptional()
+  policy_id?: number;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(64)
+  item_code?: string;
 }

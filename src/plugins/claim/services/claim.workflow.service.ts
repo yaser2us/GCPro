@@ -804,6 +804,8 @@ export class ClaimWorkflowService {
             claim_number: claim.claim_number,
             approved_amount: claim.approved_amount ? parseFloat(claim.approved_amount) : 0,
             period_key: request.periodKey,
+            policy_id: request.policy_id ?? null,
+            item_code: request.item_code ?? null,
           },
           dedupe_key: idempotencyKey,
         },
