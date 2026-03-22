@@ -1,0 +1,34 @@
+$kind: http-request
+url: "{{base_url}}/api/v1/user-identity/onboarding-progress"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "user_id": {{target_user_id}},
+      "step_code": "guideline_accepted",
+      "state": "completed",
+      "meta_json": {
+        "source_event": "GUIDELINE_ACCEPTED",
+        "version_id": 1
+      }
+    }
+scripts:
+  - type: beforeRequest
+    code: "pm.request.headers.add({ key: 'Idempotency-Key', value:
+      pm.variables.replaceIn('{{$guid}}') });"
+    language: text/javascript
+  - type: afterResponse
+    code: >-
+      pm.test('Status is 200', () => pm.response.to.have.status(200));
+
+      const json = pm.response.json();
+
+      pm.test('Step is guideline_accepted', () =>
+      pm.expect(json.step_code).to.eql('guideline_accepted'));
+    language: text/javascript
+order: 3000

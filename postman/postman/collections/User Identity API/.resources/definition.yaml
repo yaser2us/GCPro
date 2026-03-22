@@ -1,0 +1,16 @@
+$kind: collection
+name: User Identity API
+description: >-
+  Postman collection for the User Identity pillar — device tokens, registration
+  tokens, verification status, onboarding progress.
+
+  Based on specs/user-identity/user-identity.pillar.v2.yml
+variables:
+  base_url: http://localhost:3000
+  admin_user_id: "1"
+  admin_user_role: admin
+  target_user_id: "2"
+  target_account_id: "2"
+  device_token_id: ""
+  registration_token_id: ""
+  expire_token_id: ""

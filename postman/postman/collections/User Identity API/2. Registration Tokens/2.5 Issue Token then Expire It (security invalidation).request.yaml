@@ -1,0 +1,32 @@
+$kind: http-request
+url: "{{base_url}}/api/v1/user-identity/registration-tokens"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "purpose": "phone_verify",
+      "channel_type": "sms",
+      "channel_value": "+60123456789",
+      "otp_hash": "$2b$10$examplehashexamplehashexamplehash",
+      "expires_at": "2026-12-31T23:59:59Z"
+    }
+scripts:
+  - type: beforeRequest
+    code: "pm.request.headers.add({ key: 'Idempotency-Key', value:
+      pm.variables.replaceIn('{{$guid}}') });"
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Status is 201', () => pm.response.to.have.status(201));
+      const json = pm.response.json();
+      if (json && json.id) {
+        pm.collectionVariables.set('expire_token_id', json.id);
+        console.log('expire_token_id set to', json.id);
+      }
+    language: text/javascript
+order: 5000

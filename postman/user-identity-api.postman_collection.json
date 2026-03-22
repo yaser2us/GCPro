@@ -1,0 +1,670 @@
+{
+  "info": {
+    "name": "User Identity API",
+    "description": "Postman collection for the User Identity pillar — device tokens, registration tokens, verification status, onboarding progress.\nBased on specs/user-identity/user-identity.pillar.v2.yml",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3000" },
+    { "key": "admin_user_id", "value": "1" },
+    { "key": "admin_user_role", "value": "admin" },
+    { "key": "target_user_id", "value": "2" },
+    { "key": "target_account_id", "value": "2" },
+    { "key": "device_token_id", "value": "" },
+    { "key": "registration_token_id", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1. Device Tokens",
+      "item": [
+        {
+          "name": "1.1 Register Device Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": {{target_user_id}},\n  \"platform\": \"fcm\",\n  \"token\": \"eXaMpLeToKeN_FcM_0001\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/user-identity/device-tokens",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "user-identity", "device-tokens"]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "if (json && json.id) {",
+                  "  pm.collectionVariables.set('device_token_id', json.id);",
+                  "  console.log('device_token_id set to', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.2 Register Device Token (apns — second device)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": {{target_user_id}},\n  \"platform\": \"apns\",\n  \"token\": \"eXaMpLeToKeN_ApNs_0001\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/user-identity/device-tokens",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "user-identity", "device-tokens"]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.3 Revoke Device Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": { "mode": "raw", "raw": "" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/user-identity/device-tokens/{{device_token_id}}/revoke",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "user-identity", "device-tokens", "{{device_token_id}}", "revoke"]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Status is revoked', () => pm.expect(json.status).to.eql('revoked'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Registration Tokens",
+      "item": [
+        {
+          "name": "2.1 Issue Registration Token (email OTP)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purpose\": \"email_verify\",\n  \"channel_type\": \"email\",\n  \"channel_value\": \"user@example.com\",\n  \"otp_hash\": \"$2b$10$examplehashexamplehashexamplehash\",\n  \"expires_at\": \"2026-12-31T23:59:59Z\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/user-identity/registration-tokens",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "user-identity", "registration-tokens"]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "if (json && json.id) {",
+                  "  pm.collectionVariables.set('registration_token_id', json.id);",
+                  "  console.log('registration_token_id set to', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.2 Issue Registration Token (magic-link)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purpose\": \"registration\",\n  \"channel_type\": \"email\",\n  \"channel_value\": \"newuser@example.com\",\n  \"token\": \"magic-link-token-abc123\",\n  \"invite_code\": \"INVITE2026\",\n  \"expires_at\": \"2026-12-31T23:59:59Z\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/user-identity/registration-tokens",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "user-identity", "registration-tokens"]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.3 Verify Registration Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"otp_plain\": \"123456\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/user-identity/registration-tokens/{{registration_token_id}}/verify",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "user-identity", "registration-tokens", "{{registration_token_id}}", "verify"]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Status is verified', () => pm.expect(json.status).to.eql('verified'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.4 Consume Registration Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": { "mode": "raw", "raw": "" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/user-identity/registration-tokens/{{registration_token_id}}/consume",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "user-identity", "registration-tokens", "{{registration_token_id}}", "consume"]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Status is consumed', () => pm.expect(json.status).to.eql('consumed'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.5 Issue Token then Expire It (security invalidation)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purpose\": \"phone_verify\",\n  \"channel_type\": \"sms\",\n  \"channel_value\": \"+60123456789\",\n  \"otp_hash\": \"$2b$10$examplehashexamplehashexamplehash\",\n  \"expires_at\": \"2026-12-31T23:59:59Z\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/user-identity/registration-tokens",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "user-identity", "registration-tokens"]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "if (json && json.id) {",
+                  "  pm.collectionVariables.set('expire_token_id', json.id);",
+                  "  console.log('expire_token_id set to', json.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.6 Expire Registration Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": { "mode": "raw", "raw": "" },
+            "url": {
+              "raw": "{{base_url}}/api/v1/user-identity/registration-tokens/{{expire_token_id}}/expire",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "user-identity", "registration-tokens", "{{expire_token_id}}", "expire"]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Status is expired', () => pm.expect(json.status).to.eql('expired'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Verification Status",
+      "item": [
+        {
+          "name": "3.1 Upsert Verification Status (email verified)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"account_id\": {{target_account_id}},\n  \"type\": \"email\",\n  \"status\": \"verified\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/user-identity/verification-status",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "user-identity", "verification-status"]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Type is email', () => pm.expect(json.type).to.eql('email'));",
+                  "pm.test('Status is verified', () => pm.expect(json.status).to.eql('verified'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.2 Upsert Verification Status (kyc verified)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"account_id\": {{target_account_id}},\n  \"type\": \"kyc\",\n  \"status\": \"verified\",\n  \"meta_json\": {\n    \"provider\": \"ekyc_provider\",\n    \"reference\": \"KYC-2026-0001\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/user-identity/verification-status",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "user-identity", "verification-status"]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Type is kyc', () => pm.expect(json.type).to.eql('kyc'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.3 Upsert Verification Status (phone pending)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"account_id\": {{target_account_id}},\n  \"type\": \"phone\",\n  \"status\": \"pending\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/user-identity/verification-status",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "user-identity", "verification-status"]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Onboarding Progress",
+      "item": [
+        {
+          "name": "4.1 Upsert Onboarding Step (profile_complete)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": {{target_user_id}},\n  \"step_code\": \"profile_complete\",\n  \"state\": \"completed\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/user-identity/onboarding-progress",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "user-identity", "onboarding-progress"]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Step is profile_complete', () => pm.expect(json.step_code).to.eql('profile_complete'));",
+                  "pm.test('State is completed', () => pm.expect(json.state).to.eql('completed'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.2 Upsert Onboarding Step (kyc_verified)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": {{target_user_id}},\n  \"step_code\": \"kyc_verified\",\n  \"state\": \"completed\",\n  \"meta_json\": {\n    \"source_event\": \"KYC_VERIFIED\",\n    \"kyc_id\": 1\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/user-identity/onboarding-progress",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "user-identity", "onboarding-progress"]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.3 Upsert Onboarding Step (guideline_accepted)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": {{target_user_id}},\n  \"step_code\": \"guideline_accepted\",\n  \"state\": \"completed\",\n  \"meta_json\": {\n    \"source_event\": \"GUIDELINE_ACCEPTED\",\n    \"version_id\": 1\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/user-identity/onboarding-progress",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "user-identity", "onboarding-progress"]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Step is guideline_accepted', () => pm.expect(json.step_code).to.eql('guideline_accepted'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.4 Upsert Onboarding Step (device_registered)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": {{target_user_id}},\n  \"step_code\": \"device_registered\",\n  \"state\": \"completed\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/user-identity/onboarding-progress",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "user-identity", "onboarding-progress"]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

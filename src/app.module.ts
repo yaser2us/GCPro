@@ -19,6 +19,7 @@ import { ClaimModule } from './plugins/claim/claim.module';
 import { PaymentModule } from './plugins/payment/payment.module';
 import { CrowdModule } from './plugins/crowd/crowd.module';
 import { FoundationModule } from './plugins/foundation/foundation.module';
+import { UserIdentityModule } from './plugins/user-identity/user-identity.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { FoundationModule } from './plugins/foundation/foundation.module';
     PaymentModule,
     CrowdModule,
     FoundationModule,
+    UserIdentityModule,
   ],
   controllers: [AppController],
   providers: [AppService],

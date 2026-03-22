@@ -1,0 +1,30 @@
+$kind: http-request
+url: "{{base_url}}/api/v1/user-identity/device-tokens"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "user_id": {{target_user_id}},
+      "platform": "fcm",
+      "token": "eXaMpLeToKeN_FcM_0001"
+    }
+scripts:
+  - type: beforeRequest
+    code: "pm.request.headers.add({ key: 'Idempotency-Key', value:
+      pm.variables.replaceIn('{{$guid}}') });"
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Status is 201', () => pm.response.to.have.status(201));
+      const json = pm.response.json();
+      if (json && json.id) {
+        pm.collectionVariables.set('device_token_id', json.id);
+        console.log('device_token_id set to', json.id);
+      }
+    language: text/javascript
+order: 1000
