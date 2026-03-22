@@ -1,0 +1,34 @@
+$kind: http-request
+description: Rejects the claim (use instead of approve for negative outcomes)
+url: "{{base_url}}/api/v1/claim/{{claim_id}}/reject"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "rejectionReason": "pre_existing_condition",
+      "decisionNote": "Condition existed prior to policy effective date"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Status code is 200', function () {
+          pm.response.to.have.status(200);
+      });
+
+      if (pm.response.code === 200) {
+          console.log('✅ Claim Rejected');
+      }
+    language: text/javascript
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+order: 6000

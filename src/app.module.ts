@@ -15,6 +15,7 @@ import { ReferralModule } from './plugins/referral/referral.module';
 import { ReferralV2Module } from './plugins/referral/referral-v2.module';
 import { CommissionModule } from './plugins/commission/commission.module';
 import { PolicyModule } from './plugins/policy/policy.module';
+import { ClaimModule } from './plugins/claim/claim.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { PolicyModule } from './plugins/policy/policy.module';
     ReferralV2Module, // V2: Multi-level referrals (/v2/referral/*)
     CommissionModule,
     PolicyModule,
+    ClaimModule,
   ],
   controllers: [AppController],
   providers: [AppService],

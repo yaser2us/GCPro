@@ -1,0 +1,57 @@
+$kind: http-request
+description: Submits a new claim with medical details and supporting documents
+url: "{{base_url}}/api/v1/claim/submit"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "accountId": "1",
+      "claimantPersonId": "1000",
+      "insurantPersonId": "1001",
+      "claimType": "hospitalization",
+      "hospitalName": "General Hospital KL",
+      "admissionDate": "2024-03-15T08:00:00Z",
+      "dischargeDate": "2024-03-18T14:00:00Z",
+      "diagnosis": "Acute appendicitis",
+      "treatmentType": "surgery",
+      "requestedAmount": 12500.00,
+      "documents": [
+        {
+          "fileUploadId": "1",
+          "documentType": "medical_report"
+        },
+        {
+          "fileUploadId": "2",
+          "documentType": "invoice"
+        }
+      ]
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      if (pm.response.code === 201) {
+          const response = pm.response.json();
+          if (response.claim_id) {
+              pm.collectionVariables.set('claim_id', response.claim_id);
+              console.log('✅ Claim Submitted:', response.claim_id);
+              console.log('📋 Claim Number:', response.claim_number);
+          }
+      }
+
+      pm.test('Status code is 201', function () {
+          pm.response.to.have.status(201);
+      });
+    language: text/javascript
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+order: 1000

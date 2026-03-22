@@ -1,0 +1,21 @@
+$kind: collection
+description: |-
+  Complete test suite for Claim Pillar
+
+  Based on: specs/claim/claim.pillar.v2.yml
+
+  Covers:
+  - Claim submission, review, approval, rejection, and settlement
+  - Guarantee letter issuance and cancellation
+  - Medical case management
+  - Medical underwriting decision recording and evidence collection
+  - Fraud signal recording
+  - Document management
+variables:
+  base_url: http://localhost:3000
+  user_id: admin-123
+  user_role: ADMIN
+  claim_id: ""
+  gl_id: ""
+  medical_case_id: ""
+  underwriting_case_id: ""

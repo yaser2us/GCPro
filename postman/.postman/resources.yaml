@@ -25,3 +25,4 @@ localResources:
 cloudResources:
   collections:
     ../postman/collections/Policy API - Complete Workflow: e57f9a4c-efde-46b8-8bf0-09246fac0463
+    ../postman/collections/Claim API - Complete Workflow: 47f8425d-29fe-435c-bccc-68ca428e47a9

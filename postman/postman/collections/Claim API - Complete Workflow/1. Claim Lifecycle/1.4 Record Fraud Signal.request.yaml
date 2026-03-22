@@ -1,0 +1,41 @@
+$kind: http-request
+description: Records a fraud detection signal for the claim
+url: "{{base_url}}/api/v1/claim/{{claim_id}}/fraud-signal/record"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "signalType": "duplicate_claim",
+      "signalScore": 0.75,
+      "signalPayload": {
+        "similar_claims": [
+          "CL-2024-00123",
+          "CL-2024-00089"
+        ],
+        "match_confidence": "high"
+      }
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Status code is 201', function () {
+          pm.response.to.have.status(201);
+      });
+
+      if (pm.response.code === 201) {
+          console.log('✅ Fraud Signal Recorded');
+      }
+    language: text/javascript
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+order: 4000

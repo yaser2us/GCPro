@@ -1,0 +1,47 @@
+$kind: http-request
+description: Issues a guarantee letter for pre-approved medical treatment
+url: "{{base_url}}/api/v1/guarantee-letter/issue"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "medicalCaseId": "{{medical_case_id}}",
+      "approvedLimitAmount": 25000.00,
+      "currency": "MYR",
+      "validFrom": "2024-03-20T00:00:00Z",
+      "validUntil": "2024-04-20T23:59:59Z",
+      "coverageSnapshot": {
+        "policy_number": "POL-2024-00001",
+        "member_name": "John Doe",
+        "coverage_type": "hospitalization"
+      }
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      if (pm.response.code === 201) {
+          const response = pm.response.json();
+          if (response.gl_id) {
+              pm.collectionVariables.set('gl_id', response.gl_id);
+              console.log('✅ Guarantee Letter Issued:', response.gl_id);
+              console.log('📋 GL Number:', response.gl_number);
+          }
+      }
+
+      pm.test('Status code is 201', function () {
+          pm.response.to.have.status(201);
+      });
+    language: text/javascript
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+order: 1000

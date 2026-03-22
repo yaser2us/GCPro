@@ -1,0 +1,65 @@
+$kind: http-request
+description: Records underwriting decision with terms, exclusions, and loadings
+url: "{{base_url}}/api/v1/underwriting/1/record-decision"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+body:
+  type: text
+  content: >-
+    {
+      "decision": "approved_with_terms",
+      "riskLevel": "moderate",
+      "overallLoadingFactor": 1.25,
+      "decisionReasonJson": {
+        "pre_existing_conditions": ["hypertension"],
+        "risk_factors": ["family_history"]
+      },
+      "decisionNotes": "Approved with 25% loading due to pre-existing hypertension",
+      "terms": [
+        {
+          "termType": "loading",
+          "code": "HYPERTENSION_LOAD",
+          "name": "Hypertension Loading",
+          "valueFactor": 0.25
+        },
+        {
+          "termType": "exclusion",
+          "code": "CARDIO_EXCLUDE",
+          "name": "Cardiovascular Condition Exclusion",
+          "valueText": "All cardiovascular-related conditions excluded for 24 months"
+        },
+        {
+          "termType": "waiting_period",
+          "code": "CARDIAC_WAIT",
+          "name": "Cardiac Waiting Period",
+          "valueDays": 365
+        }
+      ]
+    }
+scripts:
+  - type: afterResponse
+    code: >-
+      if (pm.response.code === 201) {
+          const response = pm.response.json();
+          if (response.underwriting_case_id) {
+              pm.collectionVariables.set('underwriting_case_id', response.underwriting_case_id);
+              console.log('✅ Underwriting Decision Recorded:', response.underwriting_case_id);
+          }
+      }
+
+
+      pm.test('Status code is 201', function () {
+          pm.response.to.have.status(201);
+      });
+    language: text/javascript
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+order: 1000
