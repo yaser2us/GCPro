@@ -17,6 +17,7 @@ import { CommissionModule } from './plugins/commission/commission.module';
 import { PolicyModule } from './plugins/policy/policy.module';
 import { ClaimModule } from './plugins/claim/claim.module';
 import { PaymentModule } from './plugins/payment/payment.module';
+import { CrowdModule } from './plugins/crowd/crowd.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { PaymentModule } from './plugins/payment/payment.module';
     PolicyModule,
     ClaimModule,
     PaymentModule,
+    CrowdModule,
   ],
   controllers: [AppController],
   providers: [AppService],

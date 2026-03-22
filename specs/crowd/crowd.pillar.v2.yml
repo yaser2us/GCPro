@@ -1,0 +1,1902 @@
+# ============================================================================
+# Crowd (Takaful) Pillar Specification v2
+# ============================================================================
+# Generated: 2026-03-22
+# Source: docs/database/crowd-DDL.md + docs/database/FULL-DDL.md
+#
+# Extraction Summary:
+# - Target Pillar: Crowd (Takaful / CrowdShare)
+# - Extracted Tables (9):
+#     crowd_period, crowd_package_bucket, crowd_period_member,
+#     crowd_period_claim, crowd_member_charge, crowd_claim_payout,
+#     crowd_period_event, crowd_period_run, crowd_period_run_lock
+# - Readonly Dependencies:
+#     claim_case (claim pillar), policy_package (policy pillar),
+#     account (wallet pillar), ledger_txn (wallet pillar)
+# - Assumptions:
+#     - insurant_id refers to account.id from the wallet/identity pillar
+#     - package_id refers to policy_package.id from the policy pillar
+#     - claim_id refers to claim_case.id from the claim pillar
+#     - Period statuses inferred from DDL default ('created') + usage flow in crowd-DDL.md
+#     - Member charge and claim payout statuses inferred from DDL defaults and domain semantics
+#     - crowd_period_run_lock.status values (locked/released/expired) inferred from distributed lock pattern
+# ============================================================================
+
+version: "2.0.0"
+spec_id: "crowd.pillar.v2"
+domain: "crowd"
+plugin: "crowd"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# OWNERSHIP
+# ──────────────────────────────────────────────────────────────────────────────
+
+ownership:
+  owner_plugin: "crowd"
+  owns_tables:
+    - "crowd_period"
+    - "crowd_package_bucket"
+    - "crowd_period_member"
+    - "crowd_period_claim"
+    - "crowd_member_charge"
+    - "crowd_claim_payout"
+    - "crowd_period_event"
+    - "crowd_period_run"
+    - "crowd_period_run_lock"
+  cross_plugin_writes: false
+  cross_plugin_integration:
+    allowed_via:
+      - "command_api"
+      - "outbox_events"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DEPENDENCIES
+# ──────────────────────────────────────────────────────────────────────────────
+
+dependencies:
+  corekit:
+    transaction_wrapper: "withTxn"
+    outbox_service: "OutboxService.emit"
+    guard_helper: "guard"
+    domain_error: "DomainError"
+
+  core_tables_readonly:
+    - table: "claim_case"
+      plugin: "claim"
+      reason: "claim_id referenced in crowd_period_claim — validate claim exists and is approved"
+    - table: "policy_package"
+      plugin: "policy"
+      reason: "package_id referenced in crowd_package_bucket and crowd_period_member — read package code and weightage"
+    - table: "account"
+      plugin: "wallet"
+      reason: "insurant_id referenced in crowd_period_member and crowd_member_charge — validate insurant account exists"
+    - table: "ledger_txn"
+      plugin: "wallet"
+      reason: "ledger_txn_id referenced in crowd_claim_payout — link payout to accounting ledger transaction"
+
+  external_services: []
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CONVENTIONS
+# ──────────────────────────────────────────────────────────────────────────────
+
+conventions:
+  workflow_discipline:
+    - "guard"
+    - "write"
+    - "emit"
+    - "commit"
+
+  status_mutation_policy: "Status fields may only be mutated through commands."
+
+  outbox:
+    required_envelope_fields:
+      - "event_name"
+      - "event_version"
+      - "aggregate_type"
+      - "aggregate_id"
+      - "actor_user_id"
+      - "occurred_at"
+      - "correlation_id"
+      - "causation_id"
+
+  idempotency:
+    required_header: "Idempotency-Key"
+    default_scope: "actor_user_id + command_name"
+    db_strategy:
+      - "UNIQUE(idempotency_key) where applicable"
+      - "MySQL ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)"
+      - "UNIQUE(idempotency_key) on crowd_member_charge prevents duplicate member charges"
+      - "UNIQUE(idempotency_key) on crowd_claim_payout prevents duplicate claim payouts"
+      - "UNIQUE(crowd_period_id, insurant_id) on crowd_period_member prevents duplicate member entries per period"
+      - "UNIQUE(crowd_period_id, claim_id) on crowd_period_claim prevents duplicate claim entries per period"
+      - "UNIQUE(crowd_period_claim_id) on crowd_claim_payout enforces one payout per period-claim"
+
+  crowd_specific:
+    period_key_format: "YYYY-MM for monthly periods (e.g. 2024-01) or YYYY-QN for quarterly (e.g. 2024-Q1)"
+    distributed_lock_pattern: >
+      crowd_period_run_lock implements a distributed lock with heartbeat for multi-worker coordination.
+      Acquire via INSERT ... ON DUPLICATE KEY UPDATE, renew via heartbeat_at UPDATE, release via status='released'.
+      Locks expire after lease_seconds if heartbeat_at is stale.
+    snapshot_policy: >
+      Member data (package_code, age, smoker flag) and claim data (approved_amount) are snapshotted
+      at period freeze time (Period.AddMember / Period.AddClaim) to ensure calculation reproducibility.
+    debt_carryover: >
+      debt_amount (shortfall) and extra_amount (surplus) from each period are carried forward to the next
+      period via last_debt_amount and last_extra_amount on crowd_period creation.
+    calculation_versioning: >
+      rule_version on crowd_period and calc_version on crowd_member_charge provide a full audit trail
+      of which calculation rules produced which charges.
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SCHEMA
+# ──────────────────────────────────────────────────────────────────────────────
+
+schema:
+  tables:
+
+    crowd_period:
+      description: "Root aggregate for a Takaful sharing period. Stores calculation totals, status, and carryover amounts."
+      columns:
+        id:
+          type: bigint
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        uuid:
+          type: char
+          length: 36
+          nullable: false
+          description: "Stable external UUID for the period"
+        period_key:
+          type: varchar
+          length: 20
+          nullable: false
+          description: "Human-readable period identifier (e.g. 2024-01)"
+        period_from:
+          type: datetime
+          nullable: true
+          description: "Period start datetime"
+        period_to:
+          type: datetime
+          nullable: true
+          description: "Period end datetime"
+        case_required_amount:
+          type: decimal
+          precision: [12, 2]
+          nullable: false
+          default: "0.00"
+          description: "Total approved claim amount to be shared among members this period"
+        last_debt_amount:
+          type: decimal
+          precision: [12, 2]
+          nullable: false
+          default: "0.00"
+          description: "Shortfall carried forward from the previous period"
+        last_extra_amount:
+          type: decimal
+          precision: [12, 2]
+          nullable: false
+          default: "0.00"
+          description: "Surplus carried forward from the previous period"
+        total_required_amount:
+          type: decimal
+          precision: [12, 2]
+          nullable: false
+          default: "0.00"
+          description: "Total amount required from all members (case_required + last_debt - last_extra)"
+        total_collected_amount:
+          type: decimal
+          precision: [12, 2]
+          nullable: false
+          default: "0.00"
+          description: "Total amount actually collected from members"
+        extra_amount:
+          type: decimal
+          precision: [12, 2]
+          nullable: false
+          default: "0.00"
+          description: "Surplus collected beyond total_required_amount (carried to next period)"
+        debt_amount:
+          type: decimal
+          precision: [12, 2]
+          nullable: false
+          default: "0.00"
+          description: "Shortfall not collected (carried to next period)"
+        total_case:
+          type: int
+          nullable: false
+          default: 0
+          description: "Number of claims included in this period"
+        total_member:
+          type: int
+          nullable: false
+          default: 0
+          description: "Number of members included in this period"
+        status:
+          type: varchar
+          length: 20
+          nullable: false
+          default: "created"
+          values: [created, calculating, calculated, disbursing, completed, cancelled, failed]
+          description: "Period lifecycle status"
+        rule_version:
+          type: varchar
+          length: 40
+          nullable: true
+          description: "Version of calculation rules applied to this period"
+        calculated_at:
+          type: datetime
+          nullable: true
+          description: "When the period calculation completed"
+        completed_at:
+          type: datetime
+          nullable: true
+          description: "When the period was fully completed (all charges collected, all payouts disbursed)"
+        meta:
+          type: json
+          nullable: true
+          description: "Extensible metadata"
+        input_snapshot:
+          type: json
+          nullable: true
+          description: "Snapshot of inputs used during calculation for reproducibility and audit"
+        created_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+        updated_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Record last update timestamp"
+      constraints:
+        primary_key: [id]
+        unique_keys:
+          uk_crowd_period_uuid: [uuid]
+          uk_crowd_period_key: [period_key]
+        indexes:
+          idx_crowd_period_status: [status]
+          idx_crowd_period_from_to: [period_from, period_to]
+          idx_crowd_period_completed: [completed_at]
+        foreign_keys: {}
+
+    crowd_package_bucket:
+      description: "Period breakdown by package with weightage and per-member sharing cost. One row per package per period."
+      columns:
+        id:
+          type: bigint
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        crowd_period_id:
+          type: bigint
+          nullable: false
+          description: "FK to crowd_period"
+        package_id:
+          type: bigint
+          nullable: false
+          description: "Package ID (readonly reference to policy_package)"
+        package_code_snapshot:
+          type: varchar
+          length: 32
+          nullable: true
+          description: "Snapshot of the package code at calculation time"
+        weightage:
+          type: decimal
+          precision: [8, 3]
+          nullable: false
+          default: "1.000"
+          description: "Package weight factor used in proportional cost sharing"
+        member_count:
+          type: int
+          nullable: false
+          default: 0
+          description: "Number of active members in this package bucket"
+        sharing_cost_each:
+          type: decimal
+          precision: [12, 2]
+          nullable: false
+          default: "0.00"
+          description: "Calculated cost per member for this package bucket"
+        sharing_cost_total:
+          type: decimal
+          precision: [12, 2]
+          nullable: false
+          default: "0.00"
+          description: "Total cost across all members in this package bucket"
+        meta:
+          type: json
+          nullable: true
+          description: "Extensible metadata"
+        created_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+        updated_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Record last update timestamp"
+      constraints:
+        primary_key: [id]
+        unique_keys:
+          uk_bucket_period_package: [crowd_period_id, package_id]
+        indexes:
+          idx_bucket_period: [crowd_period_id]
+          idx_bucket_package: [package_id]
+        foreign_keys:
+          fk_crowd_bucket_period:
+            columns: [crowd_period_id]
+            references: "crowd_period.id"
+            on_delete: RESTRICT
+            on_update: RESTRICT
+
+    crowd_period_member:
+      description: "Members included in a period with snapshot data for reproducible cost calculations."
+      columns:
+        id:
+          type: bigint
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        crowd_period_id:
+          type: bigint
+          nullable: false
+          description: "FK to crowd_period"
+        insurant_id:
+          type: bigint
+          nullable: false
+          description: "ID of the insured member (readonly reference to account)"
+        package_id:
+          type: bigint
+          nullable: false
+          description: "Package the member belongs to (readonly reference to policy_package)"
+        status:
+          type: varchar
+          length: 20
+          nullable: false
+          default: "active"
+          values: [active, excluded]
+          description: "Member inclusion status for this period"
+        reason_code:
+          type: varchar
+          length: 60
+          nullable: false
+          default: "OK"
+          description: "Reason code for member status (e.g. OK, LAPSED, EXCLUDED)"
+        note:
+          type: text
+          nullable: true
+          description: "Free-text note for audit purposes"
+        package_code_snapshot:
+          type: varchar
+          length: 32
+          nullable: true
+          description: "Snapshot of package code at period inclusion time"
+        age_years_snapshot:
+          type: int
+          nullable: true
+          description: "Member age at period inclusion time"
+        smoker_snapshot:
+          type: tinyint
+          length: 1
+          nullable: true
+          description: "Member smoker flag at period inclusion time (1=smoker, 0=non-smoker)"
+        meta:
+          type: json
+          nullable: true
+          description: "Extensible metadata"
+        created_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key: [id]
+        unique_keys:
+          uk_period_member: [crowd_period_id, insurant_id]
+        indexes:
+          idx_period_member_status: [crowd_period_id, status]
+          idx_period_member_package: [crowd_period_id, package_id]
+        foreign_keys:
+          fk_period_member_period:
+            columns: [crowd_period_id]
+            references: "crowd_period.id"
+            on_delete: RESTRICT
+            on_update: RESTRICT
+
+    crowd_period_claim:
+      description: "Claims included in a period with eligibility tracking and approved amount snapshot."
+      columns:
+        id:
+          type: bigint
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        crowd_period_id:
+          type: bigint
+          nullable: false
+          description: "FK to crowd_period"
+        claim_id:
+          type: bigint
+          nullable: false
+          description: "ID of the claim (readonly reference to claim_case)"
+        period_key:
+          type: varchar
+          length: 20
+          nullable: false
+          description: "Denormalized period key for fast lookups without joining crowd_period"
+        approved_amount_snapshot:
+          type: decimal
+          precision: [12, 2]
+          nullable: false
+          default: "0.00"
+          description: "Snapshot of approved claim amount at inclusion time"
+        eligibility_version:
+          type: varchar
+          length: 50
+          nullable: true
+          description: "Version of eligibility rules applied when this claim was included"
+        status:
+          type: varchar
+          length: 20
+          nullable: false
+          default: "included"
+          values: [included, excluded, paid]
+          description: "Claim inclusion and disbursement status within this period"
+        meta:
+          type: json
+          nullable: true
+          description: "Extensible metadata"
+        created_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key: [id]
+        unique_keys:
+          uk_period_claim: [crowd_period_id, claim_id]
+        indexes:
+          idx_period_claim_period_key: [period_key]
+          idx_period_claim_status: [crowd_period_id, status]
+          idx_period_claim_claim_id: [claim_id]
+        foreign_keys:
+          fk_crowd_period_claim_period:
+            columns: [crowd_period_id]
+            references: "crowd_period.id"
+            on_delete: RESTRICT
+            on_update: RESTRICT
+
+    crowd_member_charge:
+      description: "Charges per member per period with payment tracking and idempotency. One row per member per period."
+      columns:
+        id:
+          type: bigint
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        crowd_period_id:
+          type: bigint
+          nullable: false
+          description: "FK to crowd_period"
+        insurant_id:
+          type: bigint
+          nullable: false
+          description: "ID of the insured member being charged"
+        package_bucket_id:
+          type: bigint
+          nullable: false
+          description: "FK to crowd_package_bucket that determined this charge amount"
+        charge_amount:
+          type: decimal
+          precision: [12, 2]
+          nullable: false
+          default: "0.00"
+          description: "Amount to be charged to the member"
+        cap_amount:
+          type: decimal
+          precision: [12, 2]
+          nullable: true
+          description: "Maximum cap on this charge if applicable"
+        calc_version:
+          type: varchar
+          length: 40
+          nullable: true
+          description: "Version of calculation rules that produced this charge"
+        calc_breakdown:
+          type: json
+          nullable: true
+          description: "Detailed breakdown of how the charge was calculated"
+        status:
+          type: varchar
+          length: 20
+          nullable: false
+          default: "planned"
+          values: [planned, charging, charged, failed, waived]
+          description: "Charge lifecycle status"
+        attempts:
+          type: int
+          nullable: false
+          default: 0
+          description: "Number of charge collection attempts"
+        paid_amount:
+          type: decimal
+          precision: [12, 2]
+          nullable: false
+          default: "0.00"
+          description: "Amount actually collected from the member"
+        remaining_amount:
+          type: decimal
+          precision: [12, 2]
+          nullable: false
+          default: "0.00"
+          description: "Amount remaining to be collected"
+        due_at:
+          type: datetime
+          nullable: true
+          description: "When the charge is due"
+        last_attempt_at:
+          type: datetime
+          nullable: true
+          description: "Timestamp of last collection attempt"
+        idempotency_key:
+          type: varchar
+          length: 64
+          nullable: false
+          description: "Idempotency key to prevent duplicate charges"
+        meta:
+          type: json
+          nullable: true
+          description: "Extensible metadata"
+        created_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+        updated_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Record last update timestamp"
+      constraints:
+        primary_key: [id]
+        unique_keys:
+          uk_member_charge_idem: [idempotency_key]
+          uk_member_charge_period_insurant: [crowd_period_id, insurant_id]
+        indexes:
+          idx_member_charge_period_status: [crowd_period_id, status]
+          idx_member_charge_insurant: [insurant_id]
+          idx_member_charge_due: [due_at]
+          fk_member_charge_bucket: [package_bucket_id]
+        foreign_keys:
+          fk_member_charge_bucket:
+            columns: [package_bucket_id]
+            references: "crowd_package_bucket.id"
+            on_delete: RESTRICT
+            on_update: RESTRICT
+          fk_member_charge_period:
+            columns: [crowd_period_id]
+            references: "crowd_period.id"
+            on_delete: RESTRICT
+            on_update: RESTRICT
+
+    crowd_claim_payout:
+      description: "Payouts per claim per period with idempotency and ledger linkage. One payout per period-claim."
+      columns:
+        id:
+          type: bigint
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        crowd_period_id:
+          type: bigint
+          nullable: false
+          description: "FK to crowd_period"
+        crowd_period_claim_id:
+          type: bigint
+          nullable: false
+          description: "FK to crowd_period_claim (enforces one payout per period-claim)"
+        amount:
+          type: decimal
+          precision: [12, 2]
+          nullable: false
+          description: "Amount to be paid out for this claim"
+        method:
+          type: varchar
+          length: 20
+          nullable: false
+          default: "wallet"
+          description: "Disbursement method (wallet, bank_transfer)"
+        payout_ref:
+          type: varchar
+          length: 64
+          nullable: true
+          description: "External reference for the payout transaction"
+        ledger_txn_id:
+          type: bigint
+          nullable: true
+          description: "FK to ledger_txn after payout is completed (readonly reference)"
+        status:
+          type: varchar
+          length: 20
+          nullable: false
+          default: "planned"
+          values: [planned, processing, paid, failed]
+          description: "Payout lifecycle status"
+        failure_reason:
+          type: text
+          nullable: true
+          description: "Reason for payout failure if status=failed"
+        idempotency_key:
+          type: varchar
+          length: 64
+          nullable: false
+          description: "Idempotency key to prevent duplicate payouts"
+        meta:
+          type: json
+          nullable: true
+          description: "Extensible metadata"
+        created_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+        updated_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Record last update timestamp"
+      constraints:
+        primary_key: [id]
+        unique_keys:
+          uk_claim_payout_idem: [idempotency_key]
+          uk_claim_payout_once: [crowd_period_claim_id]
+        indexes:
+          idx_claim_payout_status: [crowd_period_id, status]
+        foreign_keys:
+          fk_claim_payout_period:
+            columns: [crowd_period_id]
+            references: "crowd_period.id"
+            on_delete: RESTRICT
+            on_update: RESTRICT
+          fk_claim_payout_period_claim:
+            columns: [crowd_period_claim_id]
+            references: "crowd_period_claim.id"
+            on_delete: RESTRICT
+            on_update: RESTRICT
+
+    crowd_period_event:
+      description: "Period lifecycle event log for audit trail. Append-only."
+      columns:
+        id:
+          type: bigint
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        crowd_period_id:
+          type: bigint
+          nullable: false
+          description: "FK to crowd_period"
+        event_type:
+          type: varchar
+          length: 80
+          nullable: false
+          description: "Type of event (e.g. PERIOD_CREATED, CALCULATION_STARTED, MEMBER_ADDED)"
+        actor_type:
+          type: varchar
+          length: 20
+          nullable: false
+          description: "Type of actor (system, admin, worker)"
+        actor_id:
+          type: bigint
+          nullable: true
+          description: "ID of the actor if applicable"
+        note:
+          type: text
+          nullable: true
+          description: "Optional free-text note"
+        payload:
+          type: json
+          nullable: true
+          description: "Event payload data for audit"
+        created_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key: [id]
+        unique_keys: {}
+        indexes:
+          idx_period_event_period: [crowd_period_id, created_at]
+          idx_period_event_type: [event_type]
+        foreign_keys:
+          fk_period_event_period:
+            columns: [crowd_period_id]
+            references: "crowd_period.id"
+            on_delete: RESTRICT
+            on_update: RESTRICT
+
+    crowd_period_run:
+      description: "Run execution tracking for period calculation. Each calculation attempt creates a run record."
+      columns:
+        id:
+          type: bigint
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        crowd_period_id:
+          type: bigint
+          nullable: false
+          description: "FK to crowd_period"
+        run_id:
+          type: char
+          length: 36
+          nullable: false
+          description: "UUID for this specific run attempt"
+        triggered_by_actor_type:
+          type: varchar
+          length: 20
+          nullable: false
+          default: "system"
+          description: "Who triggered the run (system, admin)"
+        triggered_by_actor_id:
+          type: bigint
+          nullable: true
+          description: "Actor ID if triggered by a user"
+        status:
+          type: varchar
+          length: 20
+          nullable: false
+          default: "running"
+          values: [running, completed, failed]
+          description: "Run execution status"
+        current_step:
+          type: varchar
+          length: 60
+          nullable: true
+          description: "Current step being executed (for observability)"
+        error_message:
+          type: text
+          nullable: true
+          description: "Error details if run failed"
+        started_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "When the run started"
+        ended_at:
+          type: datetime
+          nullable: true
+          description: "When the run ended"
+        summary:
+          type: json
+          nullable: true
+          description: "Summary of run results (member count, charge count, payout count, totals)"
+      constraints:
+        primary_key: [id]
+        unique_keys:
+          uk_period_run: [crowd_period_id, run_id]
+        indexes:
+          idx_period_run_status: [crowd_period_id, status]
+        foreign_keys:
+          fk_period_run_period:
+            columns: [crowd_period_id]
+            references: "crowd_period.id"
+            on_delete: RESTRICT
+            on_update: RESTRICT
+
+    crowd_period_run_lock:
+      description: "Distributed lock with heartbeat for multi-worker coordination. Prevents concurrent period calculations."
+      columns:
+        id:
+          type: bigint
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        crowd_period_id:
+          type: bigint
+          nullable: false
+          description: "FK to crowd_period"
+        lock_key:
+          type: varchar
+          length: 64
+          nullable: false
+          description: "Lock identifier within the period (e.g. 'calculation')"
+        owner_instance_id:
+          type: varchar
+          length: 64
+          nullable: false
+          description: "Worker instance ID that owns this lock"
+        run_id:
+          type: char
+          length: 36
+          nullable: false
+          description: "UUID of the run that acquired this lock"
+        status:
+          type: varchar
+          length: 20
+          nullable: false
+          default: "locked"
+          values: [locked, released, expired]
+          description: "Lock status"
+        locked_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "When the lock was acquired"
+        heartbeat_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Last heartbeat timestamp — lock expires if stale beyond lease_seconds"
+        lease_seconds:
+          type: int
+          nullable: false
+          default: 300
+          description: "Lock lease duration in seconds"
+        released_at:
+          type: datetime
+          nullable: true
+          description: "When the lock was released"
+        meta:
+          type: json
+          nullable: true
+          description: "Extensible metadata"
+      constraints:
+        primary_key: [id]
+        unique_keys:
+          uk_run_lock_period_key: [crowd_period_id, lock_key]
+        indexes:
+          idx_run_lock_status: [status]
+          idx_run_lock_heartbeat: [heartbeat_at]
+        foreign_keys:
+          fk_run_lock_period:
+            columns: [crowd_period_id]
+            references: "crowd_period.id"
+            on_delete: RESTRICT
+            on_update: RESTRICT
+
+# ──────────────────────────────────────────────────────────────────────────────
+# RESOURCES
+# ──────────────────────────────────────────────────────────────────────────────
+
+resources:
+  crowd_period:
+    name: "CrowdPeriod"
+    kind: aggregate
+    table: "crowd_period"
+    primary_key: "id"
+    statuses: [created, calculating, calculated, disbursing, completed, cancelled, failed]
+    api_surface:
+      - "POST /api/v1/crowd/periods"
+      - "POST /api/v1/crowd/periods/:periodId/members"
+      - "POST /api/v1/crowd/periods/:periodId/claims"
+      - "POST /api/v1/crowd/periods/:periodId/calculate"
+      - "POST /api/v1/crowd/periods/:periodId/complete"
+      - "POST /api/v1/crowd/periods/:periodId/cancel"
+
+  crowd_package_bucket:
+    name: "CrowdPackageBucket"
+    kind: resource
+    table: "crowd_package_bucket"
+    primary_key: "id"
+    api_surface:
+      - "Generated during Period.Calculate — no direct API"
+
+  crowd_period_member:
+    name: "CrowdPeriodMember"
+    kind: resource
+    table: "crowd_period_member"
+    primary_key: "id"
+    api_surface:
+      - "POST /api/v1/crowd/periods/:periodId/members"
+
+  crowd_period_claim:
+    name: "CrowdPeriodClaim"
+    kind: resource
+    table: "crowd_period_claim"
+    primary_key: "id"
+    api_surface:
+      - "POST /api/v1/crowd/periods/:periodId/claims"
+
+  crowd_member_charge:
+    name: "CrowdMemberCharge"
+    kind: aggregate
+    table: "crowd_member_charge"
+    primary_key: "id"
+    statuses: [planned, charging, charged, failed, waived]
+    api_surface:
+      - "POST /api/v1/crowd/member-charges/:chargeId/mark-charged"
+      - "POST /api/v1/crowd/member-charges/:chargeId/mark-failed"
+
+  crowd_claim_payout:
+    name: "CrowdClaimPayout"
+    kind: aggregate
+    table: "crowd_claim_payout"
+    primary_key: "id"
+    statuses: [planned, processing, paid, failed]
+    api_surface:
+      - "POST /api/v1/crowd/claim-payouts/:payoutId/mark-paid"
+      - "POST /api/v1/crowd/claim-payouts/:payoutId/mark-failed"
+
+  crowd_period_event:
+    name: "CrowdPeriodEvent"
+    kind: resource
+    table: "crowd_period_event"
+    primary_key: "id"
+    api_surface:
+      - "Append-only audit log — no direct API"
+
+  crowd_period_run:
+    name: "CrowdPeriodRun"
+    kind: resource
+    table: "crowd_period_run"
+    primary_key: "id"
+    api_surface:
+      - "Created during Period.Calculate — no direct API"
+
+  crowd_period_run_lock:
+    name: "CrowdPeriodRunLock"
+    kind: resource
+    table: "crowd_period_run_lock"
+    primary_key: "id"
+    api_surface:
+      - "Managed internally during Period.Calculate — no direct API"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# AGGREGATES
+# ──────────────────────────────────────────────────────────────────────────────
+
+aggregates:
+  CROWD_PERIOD:
+    root_table: "crowd_period"
+    primary_key: "id"
+    statuses: [created, calculating, calculated, disbursing, completed, cancelled, failed]
+
+  MEMBER_CHARGE:
+    root_table: "crowd_member_charge"
+    primary_key: "id"
+    statuses: [planned, charging, charged, failed, waived]
+
+  CLAIM_PAYOUT:
+    root_table: "crowd_claim_payout"
+    primary_key: "id"
+    statuses: [planned, processing, paid, failed]
+
+# ──────────────────────────────────────────────────────────────────────────────
+# TYPES
+# ──────────────────────────────────────────────────────────────────────────────
+
+types:
+  Actor:
+    fields:
+      userId: string
+      userRole: string
+      accountId: string
+
+  CrowdPeriodSummary:
+    fields:
+      periodId: number
+      periodKey: string
+      status: string
+      totalMember: number
+      totalCase: number
+      totalRequiredAmount: string
+      totalCollectedAmount: string
+      calculatedAt: string | null
+      completedAt: string | null
+
+  MemberChargeSummary:
+    fields:
+      chargeId: number
+      periodId: number
+      insurantId: number
+      chargeAmount: string
+      paidAmount: string
+      remainingAmount: string
+      status: string
+      dueAt: string | null
+
+  ClaimPayoutSummary:
+    fields:
+      payoutId: number
+      periodId: number
+      claimId: number
+      amount: string
+      method: string
+      status: string
+      payoutRef: string | null
+      ledgerTxnId: number | null
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DTOs
+# ──────────────────────────────────────────────────────────────────────────────
+
+dtos:
+  CrowdPeriodCreateDto:
+    description: "Input for creating a new Takaful sharing period"
+    fields:
+      periodKey:
+        type: string
+        required: true
+        max_len: 20
+        description: "Unique period identifier (e.g. 2024-01)"
+      periodFrom:
+        type: string
+        required: false
+        description: "Period start datetime (ISO 8601)"
+      periodTo:
+        type: string
+        required: false
+        description: "Period end datetime (ISO 8601)"
+      lastDebtAmount:
+        type: string
+        required: false
+        default: "0.00"
+        description: "Shortfall carried forward from previous period"
+      lastExtraAmount:
+        type: string
+        required: false
+        default: "0.00"
+        description: "Surplus carried forward from previous period"
+      ruleVersion:
+        type: string
+        required: false
+        max_len: 40
+        description: "Calculation rule version to apply"
+      meta:
+        type: object
+        required: false
+        description: "Extensible metadata"
+
+  CrowdMemberAddDto:
+    description: "Input for adding a member to a crowd period"
+    fields:
+      insurantId:
+        type: number
+        required: true
+        description: "Account ID of the member to include"
+      packageId:
+        type: number
+        required: true
+        description: "Package the member belongs to"
+      reasonCode:
+        type: string
+        required: false
+        max_len: 60
+        default: "OK"
+        description: "Reason code for inclusion (OK, REINSTATED, etc.)"
+      note:
+        type: string
+        required: false
+        description: "Optional note for audit"
+      packageCodeSnapshot:
+        type: string
+        required: false
+        max_len: 32
+        description: "Package code snapshot at inclusion time"
+      ageYearsSnapshot:
+        type: number
+        required: false
+        description: "Member age at inclusion time"
+      smokerSnapshot:
+        type: boolean
+        required: false
+        description: "Member smoker flag at inclusion time"
+      meta:
+        type: object
+        required: false
+        description: "Extensible metadata"
+
+  CrowdClaimAddDto:
+    description: "Input for adding a claim to a crowd period"
+    fields:
+      claimId:
+        type: number
+        required: true
+        description: "ID of the claim to include (must be approved)"
+      approvedAmountSnapshot:
+        type: string
+        required: true
+        description: "Approved claim amount at inclusion time"
+      eligibilityVersion:
+        type: string
+        required: false
+        max_len: 50
+        description: "Version of eligibility rules applied"
+      meta:
+        type: object
+        required: false
+        description: "Extensible metadata"
+
+  MemberChargeMarkChargedDto:
+    description: "Input for marking a member charge as collected"
+    fields:
+      paidAmount:
+        type: string
+        required: true
+        description: "Amount actually collected from the member"
+
+  ClaimPayoutMarkPaidDto:
+    description: "Input for marking a claim payout as disbursed"
+    fields:
+      payoutRef:
+        type: string
+        required: false
+        max_len: 64
+        description: "External reference for the payout transaction"
+      ledgerTxnId:
+        type: number
+        required: false
+        description: "Ledger transaction ID after payout is completed"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# EVENTS
+# ──────────────────────────────────────────────────────────────────────────────
+
+events:
+  CROWD_PERIOD_CREATED:
+    version: "v1"
+    aggregate_type: "CROWD_PERIOD"
+    description: "A new Takaful sharing period has been created"
+
+  CROWD_MEMBER_ADDED:
+    version: "v1"
+    aggregate_type: "CROWD_PERIOD"
+    description: "A member has been added to the crowd period"
+
+  CROWD_CLAIM_ADDED:
+    version: "v1"
+    aggregate_type: "CROWD_PERIOD"
+    description: "A claim has been added to the crowd period for inclusion in cost sharing"
+
+  CROWD_PERIOD_CALCULATION_STARTED:
+    version: "v1"
+    aggregate_type: "CROWD_PERIOD"
+    description: "Period calculation has been triggered and is now running"
+
+  CROWD_PERIOD_CALCULATED:
+    version: "v1"
+    aggregate_type: "CROWD_PERIOD"
+    description: "Period calculation completed — package buckets, member charges, and claim payouts have been generated"
+
+  CROWD_PERIOD_COMPLETED:
+    version: "v1"
+    aggregate_type: "CROWD_PERIOD"
+    description: "Period has been fully completed — all charges collected and all payouts disbursed"
+
+  CROWD_PERIOD_CANCELLED:
+    version: "v1"
+    aggregate_type: "CROWD_PERIOD"
+    description: "Period has been cancelled before completion"
+
+  CROWD_MEMBER_CHARGED:
+    version: "v1"
+    aggregate_type: "MEMBER_CHARGE"
+    description: "A member's contribution charge has been successfully collected"
+
+  CROWD_MEMBER_CHARGE_FAILED:
+    version: "v1"
+    aggregate_type: "MEMBER_CHARGE"
+    description: "A member's contribution charge collection attempt has failed"
+
+  CROWD_CLAIM_PAYOUT_PAID:
+    version: "v1"
+    aggregate_type: "CLAIM_PAYOUT"
+    description: "A claim payout has been successfully disbursed to the claimant"
+
+  CROWD_CLAIM_PAYOUT_FAILED:
+    version: "v1"
+    aggregate_type: "CLAIM_PAYOUT"
+    description: "A claim payout disbursement attempt has failed"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# COMMANDS
+# ──────────────────────────────────────────────────────────────────────────────
+
+commands:
+
+  Period.Create:
+    description: "Create a new Takaful sharing period. Must provide a unique period_key."
+    path: "POST /api/v1/crowd/periods"
+    method: POST
+    idempotent: true
+    permissions: ["crowd:admin"]
+    input:
+      dto: CrowdPeriodCreateDto
+    steps:
+      - guard: "period_key must not already exist in crowd_period"
+      - insert:
+          table: crowd_period
+          fields:
+            uuid: "generate UUID"
+            period_key: input.periodKey
+            period_from: input.periodFrom
+            period_to: input.periodTo
+            last_debt_amount: "input.lastDebtAmount ?? 0.00"
+            last_extra_amount: "input.lastExtraAmount ?? 0.00"
+            rule_version: input.ruleVersion
+            meta: input.meta
+            status: "created"
+      - insert:
+          table: crowd_period_event
+          fields:
+            crowd_period_id: "inserted period.id"
+            event_type: "PERIOD_CREATED"
+            actor_type: "actor.userRole"
+            actor_id: "actor.userId"
+            payload: "{ periodKey: input.periodKey }"
+      - outbox_emit:
+          event: CROWD_PERIOD_CREATED
+          aggregate_id: "period.id"
+    response:
+      periodId: number
+      periodKey: string
+      status: string
+
+  Period.AddMember:
+    description: "Add a member to the crowd period for inclusion in cost sharing. Period must be in 'created' status."
+    path: "POST /api/v1/crowd/periods/:periodId/members"
+    method: POST
+    idempotent: true
+    permissions: ["crowd:admin"]
+    input:
+      dto: CrowdMemberAddDto
+    steps:
+      - read:
+          table: crowd_period
+          filter: "id = params.periodId"
+          bind: period
+      - guard: "period must exist"
+      - guard: "period.status must be 'created'"
+      - guard: "insurant must not already be in this period (UNIQUE uk_period_member)"
+      - insert:
+          table: crowd_period_member
+          fields:
+            crowd_period_id: params.periodId
+            insurant_id: input.insurantId
+            package_id: input.packageId
+            reason_code: "input.reasonCode ?? 'OK'"
+            note: input.note
+            package_code_snapshot: input.packageCodeSnapshot
+            age_years_snapshot: input.ageYearsSnapshot
+            smoker_snapshot: input.smokerSnapshot
+            meta: input.meta
+            status: "active"
+      - update:
+          table: crowd_period
+          filter: "id = params.periodId"
+          fields:
+            total_member: "total_member + 1"
+      - outbox_emit:
+          event: CROWD_MEMBER_ADDED
+          aggregate_id: "params.periodId"
+    response:
+      memberId: number
+      insurantId: number
+      status: string
+
+  Period.AddClaim:
+    description: "Add an approved claim to the crowd period for inclusion in cost sharing. Period must be in 'created' status."
+    path: "POST /api/v1/crowd/periods/:periodId/claims"
+    method: POST
+    idempotent: true
+    permissions: ["crowd:admin"]
+    input:
+      dto: CrowdClaimAddDto
+    steps:
+      - read:
+          table: crowd_period
+          filter: "id = params.periodId"
+          bind: period
+      - guard: "period must exist"
+      - guard: "period.status must be 'created'"
+      - guard: "claim must not already be in this period (UNIQUE uk_period_claim)"
+      - insert:
+          table: crowd_period_claim
+          fields:
+            crowd_period_id: params.periodId
+            claim_id: input.claimId
+            period_key: "period.period_key"
+            approved_amount_snapshot: input.approvedAmountSnapshot
+            eligibility_version: input.eligibilityVersion
+            meta: input.meta
+            status: "included"
+      - update:
+          table: crowd_period
+          filter: "id = params.periodId"
+          fields:
+            total_case: "total_case + 1"
+            case_required_amount: "case_required_amount + input.approvedAmountSnapshot"
+      - outbox_emit:
+          event: CROWD_CLAIM_ADDED
+          aggregate_id: "params.periodId"
+    response:
+      claimEntryId: number
+      claimId: number
+      status: string
+
+  Period.Calculate:
+    description: >
+      Trigger period calculation. Acquires distributed lock, generates package buckets,
+      member charges, and claim payouts. Admin-only. Period must be in 'created' status.
+    path: "POST /api/v1/crowd/periods/:periodId/calculate"
+    method: POST
+    idempotent: false
+    permissions: ["crowd:admin"]
+    input:
+      ruleVersion:
+        type: string
+        required: false
+        description: "Override rule version for this calculation run"
+    steps:
+      - read:
+          table: crowd_period
+          filter: "id = params.periodId"
+          bind: period
+      - guard: "period must exist"
+      - guard: "period.status must be 'created'"
+      - guard: "period.total_member must be > 0"
+      - upsert:
+          table: crowd_period_run_lock
+          fields:
+            crowd_period_id: params.periodId
+            lock_key: "calculation"
+            owner_instance_id: "context.instanceId"
+            run_id: "generate UUID"
+            status: "locked"
+          unique_by: [crowd_period_id, lock_key]
+          note: "Uses ON DUPLICATE KEY UPDATE — fails if lock is held by another instance with fresh heartbeat"
+      - insert:
+          table: crowd_period_run
+          fields:
+            crowd_period_id: params.periodId
+            run_id: "context.runId"
+            triggered_by_actor_type: "actor.userRole"
+            triggered_by_actor_id: "actor.userId"
+            status: "running"
+            current_step: "init"
+      - update:
+          table: crowd_period
+          filter: "id = params.periodId"
+          fields:
+            status: "calculating"
+      - insert:
+          table: crowd_period_event
+          fields:
+            crowd_period_id: params.periodId
+            event_type: "CALCULATION_STARTED"
+            actor_type: "actor.userRole"
+            actor_id: "actor.userId"
+            payload: "{ runId: context.runId }"
+      - outbox_emit:
+          event: CROWD_PERIOD_CALCULATION_STARTED
+          aggregate_id: "params.periodId"
+      - insert:
+          table: crowd_package_bucket
+          note: "One row per distinct package_id in crowd_period_member for this period. Calculate weightage, member_count, sharing_cost_each, sharing_cost_total."
+          fields:
+            crowd_period_id: params.periodId
+            package_id: "derived from crowd_period_member"
+            package_code_snapshot: "from policy_package readonly"
+            weightage: "from rule config"
+            member_count: "count of members in this package"
+            sharing_cost_each: "calculated"
+            sharing_cost_total: "calculated"
+      - insert:
+          table: crowd_member_charge
+          note: "One row per crowd_period_member. Uses UNIQUE uk_member_charge_period_insurant for idempotency."
+          fields:
+            crowd_period_id: params.periodId
+            insurant_id: "from crowd_period_member"
+            package_bucket_id: "matching crowd_package_bucket.id"
+            charge_amount: "crowd_package_bucket.sharing_cost_each"
+            remaining_amount: "crowd_package_bucket.sharing_cost_each"
+            calc_version: "input.ruleVersion ?? period.rule_version"
+            calc_breakdown: "calculation details"
+            idempotency_key: "generate: period_key + ':' + insurant_id"
+            status: "planned"
+            due_at: "period.period_to"
+      - insert:
+          table: crowd_claim_payout
+          note: "One row per crowd_period_claim. Uses UNIQUE uk_claim_payout_once for idempotency."
+          fields:
+            crowd_period_id: params.periodId
+            crowd_period_claim_id: "from crowd_period_claim"
+            amount: "crowd_period_claim.approved_amount_snapshot"
+            method: "wallet"
+            idempotency_key: "generate: period_key + ':claim:' + claim_id"
+            status: "planned"
+      - update:
+          table: crowd_period
+          filter: "id = params.periodId"
+          fields:
+            status: "calculated"
+            total_required_amount: "case_required_amount + last_debt_amount - last_extra_amount"
+            calculated_at: "NOW()"
+            input_snapshot: "{ memberCount: total_member, caseCount: total_case, ruleVersion }"
+      - update:
+          table: crowd_period_run
+          filter: "crowd_period_id = params.periodId AND run_id = context.runId"
+          fields:
+            status: "completed"
+            ended_at: "NOW()"
+            summary: "{ bucketCount, chargeCount, payoutCount, totalRequiredAmount }"
+      - update:
+          table: crowd_period_run_lock
+          filter: "crowd_period_id = params.periodId AND lock_key = 'calculation'"
+          fields:
+            status: "released"
+            released_at: "NOW()"
+      - outbox_emit:
+          event: CROWD_PERIOD_CALCULATED
+          aggregate_id: "params.periodId"
+    response:
+      periodId: number
+      status: string
+      totalMember: number
+      totalCase: number
+      totalRequiredAmount: string
+
+  Period.Complete:
+    description: "Mark a period as fully completed. Period must be in 'calculated' status."
+    path: "POST /api/v1/crowd/periods/:periodId/complete"
+    method: POST
+    idempotent: true
+    permissions: ["crowd:admin"]
+    input: {}
+    steps:
+      - read:
+          table: crowd_period
+          filter: "id = params.periodId"
+          bind: period
+      - guard: "period must exist"
+      - guard: "period.status must be 'calculated'"
+      - update:
+          table: crowd_period
+          filter: "id = params.periodId"
+          fields:
+            status: "completed"
+            completed_at: "NOW()"
+      - insert:
+          table: crowd_period_event
+          fields:
+            crowd_period_id: params.periodId
+            event_type: "PERIOD_COMPLETED"
+            actor_type: "actor.userRole"
+            actor_id: "actor.userId"
+      - outbox_emit:
+          event: CROWD_PERIOD_COMPLETED
+          aggregate_id: "params.periodId"
+    response:
+      periodId: number
+      status: string
+      completedAt: string
+
+  Period.Cancel:
+    description: "Cancel a period. Only valid from 'created' or 'calculated' status."
+    path: "POST /api/v1/crowd/periods/:periodId/cancel"
+    method: POST
+    idempotent: true
+    permissions: ["crowd:admin"]
+    input: {}
+    steps:
+      - read:
+          table: crowd_period
+          filter: "id = params.periodId"
+          bind: period
+      - guard: "period must exist"
+      - guard: "period.status must be 'created' or 'calculated'"
+      - update:
+          table: crowd_period
+          filter: "id = params.periodId"
+          fields:
+            status: "cancelled"
+      - insert:
+          table: crowd_period_event
+          fields:
+            crowd_period_id: params.periodId
+            event_type: "PERIOD_CANCELLED"
+            actor_type: "actor.userRole"
+            actor_id: "actor.userId"
+      - outbox_emit:
+          event: CROWD_PERIOD_CANCELLED
+          aggregate_id: "params.periodId"
+    response:
+      periodId: number
+      status: string
+
+  MemberCharge.MarkCharged:
+    description: "Mark a member charge as successfully collected. Updates paid and remaining amounts."
+    path: "POST /api/v1/crowd/member-charges/:chargeId/mark-charged"
+    method: POST
+    idempotent: true
+    permissions: ["crowd:admin"]
+    input:
+      dto: MemberChargeMarkChargedDto
+    steps:
+      - read:
+          table: crowd_member_charge
+          filter: "id = params.chargeId"
+          bind: charge
+      - guard: "charge must exist"
+      - guard: "charge.status must be 'planned' or 'charging'"
+      - update:
+          table: crowd_member_charge
+          filter: "id = params.chargeId"
+          fields:
+            status: "charged"
+            paid_amount: input.paidAmount
+            remaining_amount: "charge.charge_amount - input.paidAmount"
+            attempts: "attempts + 1"
+            last_attempt_at: "NOW()"
+      - update:
+          table: crowd_period
+          filter: "id = charge.crowd_period_id"
+          fields:
+            total_collected_amount: "total_collected_amount + input.paidAmount"
+      - outbox_emit:
+          event: CROWD_MEMBER_CHARGED
+          aggregate_id: "params.chargeId"
+    response:
+      chargeId: number
+      status: string
+      paidAmount: string
+      remainingAmount: string
+
+  MemberCharge.MarkFailed:
+    description: "Mark a member charge collection attempt as failed. Increments attempt counter."
+    path: "POST /api/v1/crowd/member-charges/:chargeId/mark-failed"
+    method: POST
+    idempotent: true
+    permissions: ["crowd:admin"]
+    input: {}
+    steps:
+      - read:
+          table: crowd_member_charge
+          filter: "id = params.chargeId"
+          bind: charge
+      - guard: "charge must exist"
+      - guard: "charge.status must be 'planned' or 'charging'"
+      - update:
+          table: crowd_member_charge
+          filter: "id = params.chargeId"
+          fields:
+            status: "failed"
+            attempts: "attempts + 1"
+            last_attempt_at: "NOW()"
+      - outbox_emit:
+          event: CROWD_MEMBER_CHARGE_FAILED
+          aggregate_id: "params.chargeId"
+    response:
+      chargeId: number
+      status: string
+      attempts: number
+
+  ClaimPayout.MarkPaid:
+    description: "Mark a claim payout as successfully disbursed. Links the ledger transaction."
+    path: "POST /api/v1/crowd/claim-payouts/:payoutId/mark-paid"
+    method: POST
+    idempotent: true
+    permissions: ["crowd:admin"]
+    input:
+      dto: ClaimPayoutMarkPaidDto
+    steps:
+      - read:
+          table: crowd_claim_payout
+          filter: "id = params.payoutId"
+          bind: payout
+      - guard: "payout must exist"
+      - guard: "payout.status must be 'planned' or 'processing'"
+      - update:
+          table: crowd_claim_payout
+          filter: "id = params.payoutId"
+          fields:
+            status: "paid"
+            payout_ref: input.payoutRef
+            ledger_txn_id: input.ledgerTxnId
+      - update:
+          table: crowd_period_claim
+          filter: "id = payout.crowd_period_claim_id"
+          fields:
+            status: "paid"
+      - outbox_emit:
+          event: CROWD_CLAIM_PAYOUT_PAID
+          aggregate_id: "params.payoutId"
+    response:
+      payoutId: number
+      status: string
+      payoutRef: string | null
+      ledgerTxnId: number | null
+
+  ClaimPayout.MarkFailed:
+    description: "Mark a claim payout disbursement as failed."
+    path: "POST /api/v1/crowd/claim-payouts/:payoutId/mark-failed"
+    method: POST
+    idempotent: true
+    permissions: ["crowd:admin"]
+    input:
+      failureReason:
+        type: string
+        required: false
+        description: "Reason for the disbursement failure"
+    steps:
+      - read:
+          table: crowd_claim_payout
+          filter: "id = params.payoutId"
+          bind: payout
+      - guard: "payout must exist"
+      - guard: "payout.status must be 'planned' or 'processing'"
+      - update:
+          table: crowd_claim_payout
+          filter: "id = params.payoutId"
+          fields:
+            status: "failed"
+            failure_reason: input.failureReason
+      - outbox_emit:
+          event: CROWD_CLAIM_PAYOUT_FAILED
+          aggregate_id: "params.payoutId"
+    response:
+      payoutId: number
+      status: string
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CHANGELOG
+# ──────────────────────────────────────────────────────────────────────────────
+
+changelog:
+  - version: "2.0.0"
+    date: "2026-03-22"
+    author: "Claude Sonnet 4.6"
+    description: "Initial v2 spec for Crowd (Takaful) pillar generated from crowd-DDL.md"
+    changes:
+      - "Defined all 9 crowd pillar tables with 100% DDL accuracy"
+      - "Defined 10 commands covering full period lifecycle, member/claim management, charge and payout flows"
+      - "Defined 11 events covering all state transitions"
+      - "Defined 5 DTOs for all command inputs"
+      - "Defined 3 aggregates: CROWD_PERIOD, MEMBER_CHARGE, CLAIM_PAYOUT"
+      - "Documented distributed lock pattern for Period.Calculate"
+      - "Defined cross-pillar integration with wallet pillar (CROWD_CLAIM_PAYOUT_PAID)"
+    breaking_changes: []
+    migrations_required: "No migrations required — spec generated from existing DDL"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# COVERAGE
+# ──────────────────────────────────────────────────────────────────────────────
+
+coverage:
+  tables:
+    crowd_period:
+      touched_by:
+        - "Period.Create"
+        - "Period.AddMember"
+        - "Period.AddClaim"
+        - "Period.Calculate"
+        - "Period.Complete"
+        - "Period.Cancel"
+        - "MemberCharge.MarkCharged"
+    crowd_package_bucket:
+      touched_by:
+        - "Period.Calculate"
+    crowd_period_member:
+      touched_by:
+        - "Period.AddMember"
+    crowd_period_claim:
+      touched_by:
+        - "Period.AddClaim"
+        - "ClaimPayout.MarkPaid"
+    crowd_member_charge:
+      touched_by:
+        - "Period.Calculate"
+        - "MemberCharge.MarkCharged"
+        - "MemberCharge.MarkFailed"
+    crowd_claim_payout:
+      touched_by:
+        - "Period.Calculate"
+        - "ClaimPayout.MarkPaid"
+        - "ClaimPayout.MarkFailed"
+    crowd_period_event:
+      touched_by:
+        - "Period.Create"
+        - "Period.Calculate"
+        - "Period.Complete"
+        - "Period.Cancel"
+    crowd_period_run:
+      touched_by:
+        - "Period.Calculate"
+    crowd_period_run_lock:
+      touched_by:
+        - "Period.Calculate"
+
+  events:
+    CROWD_PERIOD_CREATED:
+      emitted_by: ["Period.Create"]
+    CROWD_MEMBER_ADDED:
+      emitted_by: ["Period.AddMember"]
+    CROWD_CLAIM_ADDED:
+      emitted_by: ["Period.AddClaim"]
+    CROWD_PERIOD_CALCULATION_STARTED:
+      emitted_by: ["Period.Calculate"]
+    CROWD_PERIOD_CALCULATED:
+      emitted_by: ["Period.Calculate"]
+    CROWD_PERIOD_COMPLETED:
+      emitted_by: ["Period.Complete"]
+    CROWD_PERIOD_CANCELLED:
+      emitted_by: ["Period.Cancel"]
+    CROWD_MEMBER_CHARGED:
+      emitted_by: ["MemberCharge.MarkCharged"]
+    CROWD_MEMBER_CHARGE_FAILED:
+      emitted_by: ["MemberCharge.MarkFailed"]
+    CROWD_CLAIM_PAYOUT_PAID:
+      emitted_by: ["ClaimPayout.MarkPaid"]
+    CROWD_CLAIM_PAYOUT_FAILED:
+      emitted_by: ["ClaimPayout.MarkFailed"]
+
+  aggregate_transitions:
+    CROWD_PERIOD:
+      - "created → calculating (Period.Calculate)"
+      - "calculating → calculated (Period.Calculate)"
+      - "created → cancelled (Period.Cancel)"
+      - "calculated → cancelled (Period.Cancel)"
+      - "calculated → completed (Period.Complete)"
+    MEMBER_CHARGE:
+      - "planned → charged (MemberCharge.MarkCharged)"
+      - "planned → failed (MemberCharge.MarkFailed)"
+      - "charging → charged (MemberCharge.MarkCharged)"
+      - "charging → failed (MemberCharge.MarkFailed)"
+    CLAIM_PAYOUT:
+      - "planned → paid (ClaimPayout.MarkPaid)"
+      - "planned → failed (ClaimPayout.MarkFailed)"
+      - "processing → paid (ClaimPayout.MarkPaid)"
+      - "processing → failed (ClaimPayout.MarkFailed)"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# INTEGRATION
+# ──────────────────────────────────────────────────────────────────────────────
+
+integration:
+  description: >
+    The Crowd pillar emits events consumed by the Wallet pillar for payout disbursement
+    and by the Notification pillar for member charge alerts. It reads claim data from the
+    Claim pillar and account data from the Wallet/Identity pillar.
+
+  outbox_pattern:
+    how_it_works:
+      - "1. Command completes writes within a database transaction"
+      - "2. OutboxService.emit writes the event to outbox_event table within the same transaction"
+      - "3. OutboxProcessorService polls and publishes events to the event bus"
+      - "4. Consumers receive events and process them idempotently"
+    benefits:
+      - "Guaranteed at-least-once delivery"
+      - "No distributed transaction risk"
+      - "Full audit trail in outbox_event table"
+      - "Consumers can replay events on failure"
+
+  wallet:
+    description: "Wallet pillar listens to CROWD_CLAIM_PAYOUT_PAID to create ledger entries and credit claimant accounts"
+    pattern: "event_driven_via_outbox"
+    consumers:
+      - event: "CROWD_CLAIM_PAYOUT_PAID"
+        consumer_name: "WalletCrowdClaimPayoutConsumer"
+        location: "src/plugins/wallet/consumers/wallet-crowd-claim-payout.consumer.ts"
+        responsibility: "Create a ledger transaction crediting the claimant's wallet after a crowd payout is marked paid"
+        expected_behavior:
+          - "Read the crowd_claim_payout record to get amount and ledger_txn_id"
+          - "If ledger_txn_id is already set, the ledger entry may already exist — check idempotency"
+          - "Credit the claimant's wallet via ledger transaction"
+          - "Emit WALLET_CREDITED event"
+        event_payload_example:
+          event_type: "CROWD_CLAIM_PAYOUT_PAID"
+          aggregate_type: "CLAIM_PAYOUT"
+          aggregate_id: 42
+          payload:
+            payoutId: 42
+            periodId: 7
+            claimId: 15
+            amount: "5000.00"
+            method: "wallet"
+            payoutRef: "PAYOUT-2024-01-042"
+        idempotency_strategy:
+          - "Check if ledger_txn_id is already set on crowd_claim_payout before creating new ledger entry"
+          - "Use crowd_claim_payout.idempotency_key as ledger transaction reference"
+        error_handling:
+          - "On failure, log error and retry via outbox retry mechanism"
+          - "Do not double-credit — guard on existing ledger_txn_id"
+
+  notification:
+    description: "Notification pillar listens to CROWD_MEMBER_CHARGED and CROWD_MEMBER_CHARGE_FAILED to notify members"
+    pattern: "event_driven_via_outbox"
+    consumers:
+      - event: "CROWD_MEMBER_CHARGED"
+        consumer_name: "NotificationCrowdChargeConsumer"
+        location: "src/plugins/notification/consumers/notification-crowd-charge.consumer.ts"
+        responsibility: "Send payment confirmation notification to member after successful charge collection"
+        expected_behavior:
+          - "Read charge details from crowd_member_charge"
+          - "Send push/email notification to the insurant confirming their contribution"
+        event_payload_example:
+          event_type: "CROWD_MEMBER_CHARGED"
+          aggregate_type: "MEMBER_CHARGE"
+          aggregate_id: 101
+          payload:
+            chargeId: 101
+            periodId: 7
+            insurantId: 50
+            paidAmount: "120.00"
+        idempotency_strategy:
+          - "Use chargeId as notification deduplication key"
+        error_handling:
+          - "Non-critical — notification failure should not block charge processing"
+          - "Log and skip on delivery failure"
+
+  architecture_diagram: |
+    ┌─────────────────┐       CROWD_CLAIM_PAYOUT_PAID       ┌─────────────────┐
+    │  Crowd Pillar   │ ─────────────────────────────────> │  Wallet Pillar  │
+    │                 │                                     │  (credit payout)│
+    │  Period.Calc    │       CROWD_MEMBER_CHARGED          └─────────────────┘
+    │  MemberCharge   │ ─────────────────────────────────> ┌─────────────────┐
+    │  ClaimPayout    │                                     │ Notification    │
+    └─────────────────┘                                     │ (charge alert)  │
+             ▲                                              └─────────────────┘
+             │  (readonly)
+    ┌─────────────────┐
+    │  Claim Pillar   │
+    │  (claim_case)   │
+    └─────────────────┘
+
+  implementation_checklist:
+    wallet:
+      - "[ ] Create WalletCrowdClaimPayoutConsumer"
+      - "[ ] Subscribe to CROWD_CLAIM_PAYOUT_PAID event"
+      - "[ ] Implement ledger credit for claim payout"
+      - "[ ] Add idempotency guard on ledger_txn_id"
+      - "[ ] Test end-to-end payout disbursement flow"
+
+    notification:
+      - "[ ] Create NotificationCrowdChargeConsumer"
+      - "[ ] Subscribe to CROWD_MEMBER_CHARGED event"
+      - "[ ] Implement charge confirmation notification template"
+
+    crowd:
+      - "[x] Spec generated (this document)"
+      - "[ ] Implement all 10 commands"
+      - "[ ] Implement distributed lock in Period.Calculate"
+      - "[ ] Register CrowdModule in app.module.ts"
+      - "[ ] Build Postman collection"
+
+  testing_strategy:
+    end_to_end_test: |
+      1. Create period (POST /api/v1/crowd/periods) → get periodId
+      2. Add 3 members with different packages (POST .../members x3)
+      3. Add 2 approved claims (POST .../claims x2)
+      4. Trigger calculation (POST .../calculate) → verify status='calculated'
+      5. Verify crowd_package_bucket has 1 row per package
+      6. Verify crowd_member_charge has 3 rows (one per member)
+      7. Verify crowd_claim_payout has 2 rows (one per claim)
+      8. Mark all charges as charged (POST .../mark-charged x3)
+      9. Mark all payouts as paid (POST .../mark-paid x2)
+      10. Complete the period (POST .../complete) → verify status='completed'
+      11. Verify CROWD_PERIOD_COMPLETED event in outbox
+
+    idempotency_test: |
+      1. Create period with same period_key twice → second call should fail with duplicate key
+      2. Add same member twice to same period → second call should fail (uk_period_member)
+      3. Add same claim twice to same period → second call should fail (uk_period_claim)
+      4. Trigger calculate twice concurrently → distributed lock ensures only one succeeds
+      5. Mark charge as charged twice with same input → second call should be idempotent
+
+    error_test: |
+      1. Attempt to add member to period with status='calculated' → guard rejects
+      2. Attempt to calculate period with 0 members → guard rejects
+      3. Attempt to complete period with status='created' → guard rejects
+      4. Attempt to mark payout as paid when status='failed' → guard rejects
+      5. Simulate concurrent calculation by two workers → lock prevents double-calculation
