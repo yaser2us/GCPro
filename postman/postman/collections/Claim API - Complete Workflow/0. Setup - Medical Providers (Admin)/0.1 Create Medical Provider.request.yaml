@@ -1,0 +1,48 @@
+$kind: http-request
+description: Creates a medical provider (admin only)
+url: "{{base_url}}/api/v1/admin/medical-provider"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "providerCode": "PROV-TEST-001",
+      "name": "Test General Hospital",
+      "type": "hospital",
+      "panelStatus": "active",
+      "contactPhone": "+60321234567",
+      "contactEmail": "admin@testhosp.my",
+      "metaJson": {
+        "specialties": ["General Surgery", "Emergency"],
+        "beds": 300,
+        "emergency_24h": true
+      }
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      if (pm.response.code === 201) {
+          const response = pm.response.json();
+          if (response.provider_id) {
+              pm.collectionVariables.set('provider_id', response.provider_id);
+              console.log('✅ Provider Created:', response.provider_id);
+              console.log('📋 Provider Code:', response.provider_code);
+          }
+      }
+
+      pm.test('Status code is 201', function () {
+          pm.response.to.have.status(201);
+      });
+    language: text/javascript
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+order: 1000

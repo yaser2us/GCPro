@@ -1,7 +1,7 @@
 $kind: http-request
-description: Assigns a reviewer to the claim for evaluation
-url: "{{base_url}}/api/v1/claim/{{claim_id}}/assign-reviewer"
-method: POST
+description: Updates medical provider details (admin only)
+url: "{{base_url}}/api/v1/admin/medical-provider/{{provider_id}}"
+method: PUT
 headers:
   Content-Type: application/json
   X-User-Id: "{{user_id}}"
@@ -10,8 +10,13 @@ body:
   type: text
   content: |-
     {
-      "reviewerId": "1",
-      "reviewerRole": "claims_adjuster"
+      "name": "Test General Hospital Updated",
+      "contactPhone": "+60321234568",
+      "metaJson": {
+        "specialties": ["General Surgery", "Emergency", "Cardiology"],
+        "beds": 350,
+        "emergency_24h": true
+      }
     }
 scripts:
   - type: afterResponse
@@ -21,7 +26,7 @@ scripts:
       });
 
       if (pm.response.code === 200) {
-          console.log('✅ Reviewer Assigned');
+          console.log('✅ Provider Updated');
       }
     language: text/javascript
   - type: beforeRequest

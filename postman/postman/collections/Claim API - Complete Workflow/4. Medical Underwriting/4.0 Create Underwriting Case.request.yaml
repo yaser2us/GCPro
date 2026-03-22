@@ -1,6 +1,6 @@
 $kind: http-request
-description: Creates a medical case for tracking ongoing treatment
-url: "{{base_url}}/api/v1/medical-case/create"
+description: Creates a new underwriting case for medical evaluation
+url: "{{base_url}}/api/v1/underwriting/create"
 method: POST
 headers:
   Content-Type: application/json
@@ -10,23 +10,24 @@ body:
   type: text
   content: |-
     {
-      "accountId": "1",
-      "personId": "1001",
-      "policyId": "1",
-      "providerId": "100",
-      "admissionType": "emergency",
-      "diagnosisCode": "K35.80",
-      "diagnosisText": "Unspecified acute appendicitis",
-      "admittedAt": "2024-03-15T08:00:00Z"
+      "subjectRefId": 1,
+      "contextRefId": null,
+      "channel": "web",
+      "priority": "normal",
+      "assignedToUserId": 1,
+      "metaJson": {
+        "source": "new_member_application",
+        "applicant_name": "John Doe"
+      }
     }
 scripts:
   - type: afterResponse
     code: >-
       if (pm.response.code === 201) {
           const response = pm.response.json();
-          if (response.medical_case_id) {
-              pm.collectionVariables.set('medical_case_id', response.medical_case_id);
-              console.log('✅ Medical Case Created:', response.medical_case_id);
+          if (response.case_id) {
+              pm.collectionVariables.set('underwriting_case_id', response.case_id);
+              console.log('✅ Underwriting Case Created:', response.case_id, response.case_no);
           }
       }
 

@@ -125,17 +125,63 @@ ON DUPLICATE KEY UPDATE
   status = VALUES(status);
 
 -- ============================================================
--- 7. Test Medical Underwriting Cases (for underwriting endpoints)
--- Note: Requires resource_ref entries to be created first
--- Skipping for now as it depends on resource_ref system
+-- 7. Resource References (for underwriting and cross-pillar references)
 -- ============================================================
 
--- INSERT INTO `medical_underwriting_case` (id, case_no, subject_ref_id, context_ref_id, status, assigned_to_user_id, priority, created_at, updated_at)
--- VALUES
---   (1, 'UW-2024-00001', 1, NULL, 'pending', 1, 'normal', NOW(), NOW())
--- ON DUPLICATE KEY UPDATE
---   status = VALUES(status),
---   updated_at = NOW();
+INSERT INTO `resource_ref` (id, resource_type, resource_id, status, meta_json, created_at, updated_at)
+VALUES
+  (1, 'policy_member', 1, 'active', JSON_OBJECT('member_name', 'John Doe', 'role', 'holder'), NOW(), NOW()),
+  (2, 'policy_member', 2, 'active', JSON_OBJECT('member_name', 'Jane Smith', 'role', 'dependent'), NOW(), NOW()),
+  (3, 'policy_member', 3, 'active', JSON_OBJECT('member_name', 'Bob Johnson', 'role', 'dependent'), NOW(), NOW()),
+  (4, 'policy', 1, 'active', JSON_OBJECT('policy_number', 'POL-2024-00001'), NOW(), NOW()),
+  (5, 'user', 1, 'active', JSON_OBJECT('user_name', 'Admin User'), NOW(), NOW())
+ON DUPLICATE KEY UPDATE
+  status = VALUES(status),
+  updated_at = NOW();
+
+-- ============================================================
+-- 8. Survey System (for underwriting evidence)
+-- ============================================================
+
+INSERT INTO `survey` (id, code, name, description, status, created_at, updated_at)
+VALUES
+  (1, 'MEDICAL_HISTORY_V1', 'Medical History Questionnaire', 'Comprehensive medical history questionnaire for underwriting', 'active', NOW(), NOW())
+ON DUPLICATE KEY UPDATE
+  name = VALUES(name),
+  updated_at = NOW();
+
+INSERT INTO `survey_version` (id, survey_id, version, status, schema_json, published_at, created_at, updated_at)
+VALUES
+  (1, 1, 'v2.1', 'published',
+   JSON_OBJECT(
+     'questions', JSON_ARRAY(
+       JSON_OBJECT('id', 'q1', 'type', 'text', 'text', 'Do you have any pre-existing medical conditions?'),
+       JSON_OBJECT('id', 'q2', 'type', 'text', 'text', 'List any current medications'),
+       JSON_OBJECT('id', 'q3', 'type', 'text', 'text', 'Family medical history')
+     )
+   ),
+   NOW(), NOW(), NOW())
+ON DUPLICATE KEY UPDATE
+  status = VALUES(status),
+  updated_at = NOW();
+
+INSERT INTO `survey_response` (id, survey_version_id, actor_ref_id, subject_ref_id, status, submitted_at, created_by_user_id, meta_json, created_at, updated_at)
+VALUES
+  (789, 1, 5, 1, 'submitted', '2024-03-10 14:30:00', 1,
+   JSON_OBJECT(
+     'completion_date', '2024-03-10',
+     'survey_version', 'v2.1',
+     'completion_duration_seconds', 1200,
+     'answers', JSON_OBJECT(
+       'q1', 'Hypertension, managed with medication',
+       'q2', 'Amlodipine 5mg daily',
+       'q3', 'Father had heart disease at age 60'
+     )
+   ),
+   '2024-03-10 14:00:00', '2024-03-10 14:30:00')
+ON DUPLICATE KEY UPDATE
+  status = VALUES(status),
+  updated_at = NOW();
 
 -- ============================================================
 -- Verification Queries
@@ -148,6 +194,10 @@ SELECT 'Test Policy Created' AS status, COUNT(*) AS count FROM `policy` WHERE id
 SELECT 'Test Policy Members Created' AS status, COUNT(*) AS count FROM `policy_member` WHERE policy_id = 1;
 SELECT 'Medical Providers Created' AS status, COUNT(*) AS count FROM `medical_provider` WHERE id IN (100, 101, 102);
 SELECT 'Test File Uploads Created' AS status, COUNT(*) AS count FROM `file_upload` WHERE id IN (1, 2, 3, 4, 5);
+SELECT 'Resource References Created' AS status, COUNT(*) AS count FROM `resource_ref` WHERE id IN (1, 2, 3, 4, 5);
+SELECT 'Surveys Created' AS status, COUNT(*) AS count FROM `survey` WHERE id = 1;
+SELECT 'Survey Versions Created' AS status, COUNT(*) AS count FROM `survey_version` WHERE id = 1;
+SELECT 'Survey Responses Created' AS status, COUNT(*) AS count FROM `survey_response` WHERE id = 789;
 
 -- ============================================================
 -- Seed Data Summary
@@ -158,9 +208,21 @@ SELECT 'Test File Uploads Created' AS status, COUNT(*) AS count FROM `file_uploa
 -- Test Policy Members: 3 (all active)
 -- Medical Providers: 3 (IDs: 100, 101, 102)
 -- File Uploads: 5 (IDs: 1-5)
+-- Resource References: 5 (IDs: 1-5)
+--   - ID 1: policy_member #1 (John Doe, holder)
+--   - ID 2: policy_member #2 (Jane Smith, dependent)
+--   - ID 3: policy_member #3 (Bob Johnson, dependent)
+--   - ID 4: policy #1 (POL-2024-00001)
+--   - ID 5: user #1 (Admin User)
+-- Survey System:
+--   - Survey: 1 (Medical History Questionnaire)
+--   - Survey Version: 1 (v2.1, published)
+--   - Survey Response: 789 (submitted, completed by John Doe)
 --
 -- Ready for Postman Collection Testing:
 -- - Claim submission with existing policy members
 -- - Medical case creation with valid providers
 -- - Document uploads with valid file references
+-- - Underwriting case creation with valid resource references
+-- - Underwriting evidence with valid survey responses
 -- ============================================================

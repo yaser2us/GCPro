@@ -1,6 +1,7 @@
 import {
   Controller,
   Post,
+  Put,
   Param,
   Body,
   UseGuards,
@@ -9,9 +10,8 @@ import {
   Headers,
 } from '@nestjs/common';
 import { ClaimWorkflowService } from '../services/claim.workflow.service';
-import { UnderwritingCaseCreateDto } from '../dtos/underwriting-case-create.dto';
-import { UnderwritingDecisionDto } from '../dtos/underwriting-decision.dto';
-import { UnderwritingEvidenceDto } from '../dtos/underwriting-evidence.dto';
+import { MedicalProviderCreateDto } from '../dtos/medical-provider-create.dto';
+import { MedicalProviderUpdateDto } from '../dtos/medical-provider-update.dto';
 import { AuthGuard } from '../../../corekit/guards/auth.guard';
 import { PermissionsGuard } from '../../../corekit/guards/permissions.guard';
 import { RequirePermissions } from '../../../corekit/decorators/require-permissions.decorator';
@@ -19,25 +19,25 @@ import { CurrentActor } from '../../../corekit/decorators/current-actor.decorato
 import type { Actor } from '../../../corekit/types/actor.type';
 
 /**
- * Underwriting Controller
- * Handles HTTP endpoints for medical underwriting operations
+ * Medical Provider Admin Controller
+ * Handles HTTP endpoints for medical provider admin operations
  *
  * Based on specs/claim/claim.pillar.v2.yml commands section
  */
-@Controller('/api/v1/underwriting')
+@Controller('/api/v1/admin/medical-provider')
 @UseGuards(AuthGuard, PermissionsGuard)
-export class UnderwritingController {
+export class MedicalProviderAdminController {
   constructor(private readonly workflowService: ClaimWorkflowService) {}
 
   /**
-   * CREATE UNDERWRITING CASE ENDPOINT
-   * Spec: specs/claim/claim.pillar.v2.yml Underwriting.CreateCase
+   * CREATE MEDICAL PROVIDER ENDPOINT
+   * Spec: specs/claim/claim.pillar.v2.yml MedicalProvider.Create
    */
-  @Post('create')
+  @Post()
   @HttpCode(HttpStatus.CREATED)
-  @RequirePermissions()
-  async createUnderwritingCase(
-    @Body() request: UnderwritingCaseCreateDto,
+  @RequirePermissions('claim:admin')
+  async createMedicalProvider(
+    @Body() request: MedicalProviderCreateDto,
     @Headers('idempotency-key') idempotencyKey: string,
     @CurrentActor() actor: Actor,
   ) {
@@ -45,7 +45,7 @@ export class UnderwritingController {
       throw new Error('Idempotency-Key header is required');
     }
 
-    return this.workflowService.createUnderwritingCase(
+    return this.workflowService.createMedicalProvider(
       request,
       actor,
       idempotencyKey,
@@ -53,15 +53,15 @@ export class UnderwritingController {
   }
 
   /**
-   * RECORD UNDERWRITING DECISION ENDPOINT
-   * Spec: specs/claim/claim.pillar.v2.yml lines 2215-2248
+   * UPDATE MEDICAL PROVIDER ENDPOINT
+   * Spec: specs/claim/claim.pillar.v2.yml MedicalProvider.Update
    */
-  @Post(':caseId/record-decision')
-  @HttpCode(HttpStatus.CREATED)
-  @RequirePermissions('underwriting:record-decision')
-  async recordUnderwritingDecision(
-    @Param('caseId') caseId: string,
-    @Body() request: UnderwritingDecisionDto,
+  @Put(':providerId')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('claim:admin')
+  async updateMedicalProvider(
+    @Param('providerId') providerId: string,
+    @Body() request: MedicalProviderUpdateDto,
     @Headers('idempotency-key') idempotencyKey: string,
     @CurrentActor() actor: Actor,
   ) {
@@ -69,8 +69,8 @@ export class UnderwritingController {
       throw new Error('Idempotency-Key header is required');
     }
 
-    return this.workflowService.recordUnderwritingDecision(
-      Number(caseId),
+    return this.workflowService.updateMedicalProvider(
+      Number(providerId),
       request,
       actor,
       idempotencyKey,
@@ -78,15 +78,14 @@ export class UnderwritingController {
   }
 
   /**
-   * ADD UNDERWRITING EVIDENCE ENDPOINT
-   * Spec: specs/claim/claim.pillar.v2.yml lines 2249-2268
+   * DEACTIVATE MEDICAL PROVIDER ENDPOINT
+   * Spec: specs/claim/claim.pillar.v2.yml MedicalProvider.Deactivate
    */
-  @Post(':caseId/add-evidence')
-  @HttpCode(HttpStatus.CREATED)
-  @RequirePermissions('underwriting:add-evidence')
-  async addUnderwritingEvidence(
-    @Param('caseId') caseId: string,
-    @Body() request: UnderwritingEvidenceDto,
+  @Post(':providerId/deactivate')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('claim:admin')
+  async deactivateMedicalProvider(
+    @Param('providerId') providerId: string,
     @Headers('idempotency-key') idempotencyKey: string,
     @CurrentActor() actor: Actor,
   ) {
@@ -94,9 +93,8 @@ export class UnderwritingController {
       throw new Error('Idempotency-Key header is required');
     }
 
-    return this.workflowService.addUnderwritingEvidence(
-      Number(caseId),
-      request,
+    return this.workflowService.deactivateMedicalProvider(
+      Number(providerId),
       actor,
       idempotencyKey,
     );

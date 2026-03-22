@@ -39,6 +39,7 @@ import { ClaimController } from './controllers/claim.controller';
 import { GuaranteeLetterController } from './controllers/guarantee-letter.controller';
 import { MedicalCaseController } from './controllers/medical-case.controller';
 import { UnderwritingController } from './controllers/underwriting.controller';
+import { MedicalProviderAdminController } from './controllers/medical-provider-admin.controller';
 
 /**
  * ClaimModule
@@ -93,6 +94,7 @@ import { UnderwritingController } from './controllers/underwriting.controller';
     GuaranteeLetterController,
     MedicalCaseController,
     UnderwritingController,
+    MedicalProviderAdminController,
   ],
   exports: [ClaimWorkflowService],
 })

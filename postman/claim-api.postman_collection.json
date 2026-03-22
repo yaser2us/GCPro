@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "a7d4e3b8-5c9a-4f1d-8e3b-2d6c9a7f4e1b",
     "name": "Claim API - Complete Workflow",
-    "description": "Complete test suite for Claim Pillar\n\nBased on: specs/claim/claim.pillar.v2.yml\n\nCovers:\n- Claim submission, review, approval, rejection, and settlement\n- Guarantee letter issuance and cancellation\n- Medical case management\n- Medical underwriting decision recording and evidence collection\n- Fraud signal recording\n- Document management",
+    "description": "Complete test suite for Claim Pillar\n\nBased on: specs/claim/claim.pillar.v2.yml\n\nCovers:\n- Medical provider setup (admin endpoints)\n- Claim submission, review, approval, rejection, and settlement\n- Guarantee letter issuance and cancellation\n- Medical case management\n- Medical underwriting decision recording and evidence collection\n- Fraud signal recording\n- Document management",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -40,9 +40,211 @@
       "key": "underwriting_case_id",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "provider_id",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
+    {
+      "name": "0. Setup - Medical Providers (Admin)",
+      "item": [
+        {
+          "name": "0.1 Create Medical Provider",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.provider_id) {",
+                  "        pm.collectionVariables.set('provider_id', response.provider_id);",
+                  "        console.log('✅ Provider Created:', response.provider_id);",
+                  "        console.log('📋 Provider Code:', response.provider_code);",
+                  "    }",
+                  "}",
+                  "",
+                  "pm.test('Status code is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{user_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"providerCode\": \"PROV-TEST-001\",\n  \"name\": \"Test General Hospital\",\n  \"type\": \"hospital\",\n  \"panelStatus\": \"active\",\n  \"contactPhone\": \"+60321234567\",\n  \"contactEmail\": \"admin@testhosp.my\",\n  \"metaJson\": {\n    \"specialties\": [\"General Surgery\", \"Emergency\"],\n    \"beds\": 300,\n    \"emergency_24h\": true\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/medical-provider",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "medical-provider"]
+            },
+            "description": "Creates a medical provider (admin only)"
+          },
+          "response": []
+        },
+        {
+          "name": "0.2 Update Medical Provider",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    console.log('✅ Provider Updated');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{user_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test General Hospital Updated\",\n  \"contactPhone\": \"+60321234568\",\n  \"metaJson\": {\n    \"specialties\": [\"General Surgery\", \"Emergency\", \"Cardiology\"],\n    \"beds\": 350,\n    \"emergency_24h\": true\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/medical-provider/{{provider_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "medical-provider", "{{provider_id}}"]
+            },
+            "description": "Updates medical provider details (admin only)"
+          },
+          "response": []
+        },
+        {
+          "name": "0.3 Deactivate Medical Provider",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    console.log('✅ Provider Deactivated');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{user_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/admin/medical-provider/{{provider_id}}/deactivate",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "admin", "medical-provider", "{{provider_id}}", "deactivate"]
+            },
+            "description": "Deactivates a medical provider (admin only)"
+          },
+          "response": []
+        }
+      ],
+      "description": "Admin endpoints for managing medical providers (hospitals, clinics)"
+    },
     {
       "name": "1. Claim Lifecycle",
       "item": [
@@ -761,6 +963,72 @@
       "name": "4. Medical Underwriting",
       "item": [
         {
+          "name": "4.0 Create Underwriting Case",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.case_id) {",
+                  "        pm.collectionVariables.set('underwriting_case_id', response.case_id);",
+                  "        console.log('✅ Underwriting Case Created:', response.case_id, response.case_no);",
+                  "    }",
+                  "}",
+                  "",
+                  "pm.test('Status code is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{user_role}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subjectRefId\": 1,\n  \"contextRefId\": null,\n  \"channel\": \"web\",\n  \"priority\": \"normal\",\n  \"assignedToUserId\": 1,\n  \"metaJson\": {\n    \"source\": \"new_member_application\",\n    \"applicant_name\": \"John Doe\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/underwriting/create",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "underwriting", "create"]
+            },
+            "description": "Creates a new underwriting case for medical evaluation"
+          },
+          "response": []
+        },
+        {
           "name": "4.1 Record Underwriting Decision",
           "event": [
             {
@@ -818,9 +1086,9 @@
               "raw": "{\n  \"decision\": \"approved_with_terms\",\n  \"riskLevel\": \"moderate\",\n  \"overallLoadingFactor\": 1.25,\n  \"decisionReasonJson\": {\n    \"pre_existing_conditions\": [\"hypertension\"],\n    \"risk_factors\": [\"family_history\"]\n  },\n  \"decisionNotes\": \"Approved with 25% loading due to pre-existing hypertension\",\n  \"terms\": [\n    {\n      \"termType\": \"loading\",\n      \"code\": \"HYPERTENSION_LOAD\",\n      \"name\": \"Hypertension Loading\",\n      \"valueFactor\": 0.25\n    },\n    {\n      \"termType\": \"exclusion\",\n      \"code\": \"CARDIO_EXCLUDE\",\n      \"name\": \"Cardiovascular Condition Exclusion\",\n      \"valueText\": \"All cardiovascular-related conditions excluded for 24 months\"\n    },\n    {\n      \"termType\": \"waiting_period\",\n      \"code\": \"CARDIAC_WAIT\",\n      \"name\": \"Cardiac Waiting Period\",\n      \"valueDays\": 365\n    }\n  ]\n}"
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/underwriting/1/record-decision",
+              "raw": "{{base_url}}/api/v1/underwriting/{{underwriting_case_id}}/record-decision",
               "host": ["{{base_url}}"],
-              "path": ["api", "v1", "underwriting", "1", "record-decision"]
+              "path": ["api", "v1", "underwriting", "{{underwriting_case_id}}", "record-decision"]
             },
             "description": "Records underwriting decision with terms, exclusions, and loadings"
           },
@@ -880,9 +1148,9 @@
               "raw": "{\n  \"evidenceType\": \"survey\",\n  \"surveyResponseId\": \"789\",\n  \"note\": \"Medical history questionnaire completed with full disclosure\",\n  \"metaJson\": {\n    \"survey_version\": \"v2.1\",\n    \"completion_date\": \"2024-03-10\"\n  }\n}"
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/underwriting/1/add-evidence",
+              "raw": "{{base_url}}/api/v1/underwriting/{{underwriting_case_id}}/add-evidence",
               "host": ["{{base_url}}"],
-              "path": ["api", "v1", "underwriting", "1", "add-evidence"]
+              "path": ["api", "v1", "underwriting", "{{underwriting_case_id}}", "add-evidence"]
             },
             "description": "Adds supporting evidence to underwriting case"
           },

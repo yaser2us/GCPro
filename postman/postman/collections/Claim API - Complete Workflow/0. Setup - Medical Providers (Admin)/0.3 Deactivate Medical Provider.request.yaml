@@ -1,6 +1,6 @@
 $kind: http-request
-description: Assigns a reviewer to the claim for evaluation
-url: "{{base_url}}/api/v1/claim/{{claim_id}}/assign-reviewer"
+description: Deactivates a medical provider (admin only)
+url: "{{base_url}}/api/v1/admin/medical-provider/{{provider_id}}/deactivate"
 method: POST
 headers:
   Content-Type: application/json
@@ -8,11 +8,7 @@ headers:
   X-User-Role: "{{user_role}}"
 body:
   type: text
-  content: |-
-    {
-      "reviewerId": "1",
-      "reviewerRole": "claims_adjuster"
-    }
+  content: "{}"
 scripts:
   - type: afterResponse
     code: |-
@@ -21,7 +17,7 @@ scripts:
       });
 
       if (pm.response.code === 200) {
-          console.log('✅ Reviewer Assigned');
+          console.log('✅ Provider Deactivated');
       }
     language: text/javascript
   - type: beforeRequest
@@ -31,4 +27,4 @@ scripts:
           value: pm.variables.replaceIn('{{$guid}}'),
       });
     language: text/javascript
-order: 2000
+order: 3000

@@ -1433,10 +1433,11 @@ resources:
     table: "medical_provider"
     primary_key: "id"
     api_surface:
-      - "POST /api/v1/medical-provider/create"
-      - "PUT /api/v1/medical-provider/:providerId"
-      - "GET /api/v1/medical-provider/:providerId"
-      - "GET /api/v1/medical-provider"
+      - "POST /api/v1/admin/medical-provider"
+      - "PUT /api/v1/admin/medical-provider/:providerId"
+      - "POST /api/v1/admin/medical-provider/:providerId/deactivate"
+      - "GET /api/v1/admin/medical-provider/:providerId"
+      - "GET /api/v1/admin/medical-provider"
 
   medical_underwriting_case:
     kind: "aggregate"
@@ -1854,6 +1855,97 @@ dtos:
         type: "json"
         required: false
 
+  MedicalProviderCreateDto:
+    description: "DTO for creating medical provider"
+    fields:
+      - name: "providerCode"
+        type: "string"
+        required: true
+        max_len: 64
+      - name: "name"
+        type: "string"
+        required: true
+        max_len: 255
+      - name: "type"
+        type: "string"
+        required: true
+        max_len: 16
+        default: "hospital"
+      - name: "panelStatus"
+        type: "string"
+        required: false
+        max_len: 16
+        default: "active"
+      - name: "contactPhone"
+        type: "string"
+        required: false
+        max_len: 64
+      - name: "contactEmail"
+        type: "string"
+        required: false
+        max_len: 255
+      - name: "metaJson"
+        type: "json"
+        required: false
+
+  MedicalProviderUpdateDto:
+    description: "DTO for updating medical provider"
+    fields:
+      - name: "name"
+        type: "string"
+        required: false
+        max_len: 255
+      - name: "type"
+        type: "string"
+        required: false
+        max_len: 16
+      - name: "panelStatus"
+        type: "string"
+        required: false
+        max_len: 16
+      - name: "contactPhone"
+        type: "string"
+        required: false
+        max_len: 64
+      - name: "contactEmail"
+        type: "string"
+        required: false
+        max_len: 255
+      - name: "metaJson"
+        type: "json"
+        required: false
+
+  UnderwritingCaseCreateDto:
+    description: "DTO for creating underwriting case"
+    fields:
+      - name: "subjectRefId"
+        type: "number"
+        required: true
+        description: "ID in resource_ref for the subject (policy/member/claim)"
+      - name: "contextRefId"
+        type: "number"
+        required: false
+        description: "Optional context reference (e.g., claim_case_id)"
+      - name: "channel"
+        type: "string"
+        required: false
+        max_len: 32
+        description: "Channel through which case was initiated"
+      - name: "priority"
+        type: "string"
+        required: false
+        max_len: 16
+        default: "normal"
+        description: "Case priority (low, normal, high, urgent)"
+      - name: "assignedToUserId"
+        type: "number"
+        required: false
+        description: "User ID to assign the case to"
+      - name: "metaJson"
+        type: "json"
+        required: false
+        description: "Additional case metadata"
+
 # ──────────────────────────────────────────────────────────────────────────────
 # EVENTS
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1914,6 +2006,11 @@ events:
     aggregate_type: "MEDICAL_CASE"
     description: "Medical case has been updated"
 
+  UNDERWRITING_CASE_CREATED:
+    version: "v1"
+    aggregate_type: "MEDICAL_UNDERWRITING_CASE"
+    description: "Medical underwriting case has been created"
+
   UNDERWRITING_DECISION_RECORDED:
     version: "v1"
     aggregate_type: "MEDICAL_UNDERWRITING_CASE"
@@ -1923,6 +2020,21 @@ events:
     version: "v1"
     aggregate_type: "MEDICAL_UNDERWRITING_CASE"
     description: "Evidence has been added to underwriting case"
+
+  MEDICAL_PROVIDER_CREATED:
+    version: "v1"
+    aggregate_type: "MEDICAL_PROVIDER"
+    description: "Medical provider has been created"
+
+  MEDICAL_PROVIDER_UPDATED:
+    version: "v1"
+    aggregate_type: "MEDICAL_PROVIDER"
+    description: "Medical provider has been updated"
+
+  MEDICAL_PROVIDER_DEACTIVATED:
+    version: "v1"
+    aggregate_type: "MEDICAL_PROVIDER"
+    description: "Medical provider has been deactivated"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # COMMANDS
@@ -2212,6 +2324,28 @@ commands:
     response:
       - "medicalCaseId"
 
+  Underwriting.CreateCase:
+    name: "Underwriting.CreateCase"
+    description: "Create medical underwriting case"
+    path: "/api/v1/underwriting/create"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "UnderwritingCaseCreateDto"
+    steps:
+      - kind: "guard"
+        description: "Validate subject_ref_id exists in resource_ref"
+      - kind: "guard"
+        description: "Validate context_ref_id exists in resource_ref if provided"
+      - kind: "insert"
+        table: "medical_underwriting_case"
+        fields: ["subject_ref_id", "context_ref_id", "case_no", "status", "channel", "priority", "created_by_user_id", "assigned_to_user_id", "meta_json"]
+      - kind: "outbox_emit"
+        event: "UNDERWRITING_CASE_CREATED"
+    response:
+      - "caseId"
+      - "caseNo"
+
   Underwriting.RecordDecision:
     name: "Underwriting.RecordDecision"
     description: "Record medical underwriting decision"
@@ -2266,11 +2400,86 @@ commands:
       - "caseId"
       - "evidenceId"
 
+  MedicalProvider.Create:
+    name: "MedicalProvider.Create"
+    description: "Create medical provider (admin only)"
+    path: "/api/v1/admin/medical-provider"
+    method: "POST"
+    idempotent: true
+    permissions: ["claim:admin"]
+    input: "MedicalProviderCreateDto"
+    steps:
+      - kind: "guard"
+        description: "Validate provider_code is unique"
+      - kind: "insert"
+        table: "medical_provider"
+        fields: ["provider_code", "name", "type", "panel_status", "contact_phone", "contact_email", "meta_json"]
+      - kind: "outbox_emit"
+        event: "MEDICAL_PROVIDER_CREATED"
+    response:
+      - "providerId"
+      - "providerCode"
+
+  MedicalProvider.Update:
+    name: "MedicalProvider.Update"
+    description: "Update medical provider (admin only)"
+    path: "/api/v1/admin/medical-provider/:providerId"
+    method: "PUT"
+    idempotent: true
+    permissions: ["claim:admin"]
+    input: "MedicalProviderUpdateDto"
+    steps:
+      - kind: "guard"
+        description: "Validate provider exists"
+      - kind: "update"
+        table: "medical_provider"
+        fields: ["name", "type", "panel_status", "contact_phone", "contact_email", "meta_json"]
+      - kind: "outbox_emit"
+        event: "MEDICAL_PROVIDER_UPDATED"
+    response:
+      - "providerId"
+
+  MedicalProvider.Deactivate:
+    name: "MedicalProvider.Deactivate"
+    description: "Deactivate medical provider (admin only)"
+    path: "/api/v1/admin/medical-provider/:providerId/deactivate"
+    method: "POST"
+    idempotent: true
+    permissions: ["claim:admin"]
+    input: null
+    steps:
+      - kind: "guard"
+        description: "Validate provider exists"
+      - kind: "guard"
+        description: "Validate no active medical cases with this provider"
+      - kind: "update"
+        table: "medical_provider"
+        fields: ["panel_status"]
+        values: ["inactive"]
+      - kind: "outbox_emit"
+        event: "MEDICAL_PROVIDER_DEACTIVATED"
+    response:
+      - "providerId"
+
 # ──────────────────────────────────────────────────────────────────────────────
 # CHANGELOG
 # ──────────────────────────────────────────────────────────────────────────────
 
 changelog:
+  - version: "2.1.0"
+    date: "2026-03-22"
+    author: "Claude Sonnet 4.5"
+    description: "Added Medical Provider admin commands"
+    changes:
+      - "Added MedicalProvider.Create command for creating panel hospitals/clinics"
+      - "Added MedicalProvider.Update command for updating provider details"
+      - "Added MedicalProvider.Deactivate command for removing providers from panel"
+      - "Added MedicalProviderCreateDto and MedicalProviderUpdateDto"
+      - "Added MEDICAL_PROVIDER_CREATED, MEDICAL_PROVIDER_UPDATED, MEDICAL_PROVIDER_DEACTIVATED events"
+      - "Updated medical_provider touched_by to include new commands"
+    breaking_changes: []
+    migrations_required: []
+
   - version: "2.0.0"
     date: "2026-03-21"
     author: "Claude Sonnet 4.5"
@@ -2350,7 +2559,10 @@ coverage:
         - "MedicalCase.Create"
         - "MedicalCase.Update"
     medical_provider:
-      touched_by: []
+      touched_by:
+        - "MedicalProvider.Create"
+        - "MedicalProvider.Update"
+        - "MedicalProvider.Deactivate"
     medical_underwriting_case:
       touched_by:
         - "Underwriting.RecordDecision"

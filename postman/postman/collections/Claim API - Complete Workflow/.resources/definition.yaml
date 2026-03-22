@@ -5,6 +5,7 @@ description: |-
   Based on: specs/claim/claim.pillar.v2.yml
 
   Covers:
+  - Medical provider setup (admin endpoints)
   - Claim submission, review, approval, rejection, and settlement
   - Guarantee letter issuance and cancellation
   - Medical case management
@@ -19,3 +20,4 @@ variables:
   gl_id: ""
   medical_case_id: ""
   underwriting_case_id: ""
+  provider_id: ""

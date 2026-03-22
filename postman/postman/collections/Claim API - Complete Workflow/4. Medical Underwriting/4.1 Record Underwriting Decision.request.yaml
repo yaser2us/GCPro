@@ -1,6 +1,6 @@
 $kind: http-request
 description: Records underwriting decision with terms, exclusions, and loadings
-url: "{{base_url}}/api/v1/underwriting/1/record-decision"
+url: "{{base_url}}/api/v1/underwriting/{{underwriting_case_id}}/record-decision"
 method: POST
 headers:
   Content-Type: application/json
@@ -62,4 +62,4 @@ scripts:
           value: pm.variables.replaceIn('{{$guid}}'),
       });
     language: text/javascript
-order: 1000
+order: 2000

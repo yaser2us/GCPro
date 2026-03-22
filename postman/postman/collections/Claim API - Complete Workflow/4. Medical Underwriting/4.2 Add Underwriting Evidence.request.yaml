@@ -1,6 +1,6 @@
 $kind: http-request
 description: Adds supporting evidence to underwriting case
-url: "{{base_url}}/api/v1/underwriting/1/add-evidence"
+url: "{{base_url}}/api/v1/underwriting/{{underwriting_case_id}}/add-evidence"
 method: POST
 headers:
   Content-Type: application/json
@@ -36,4 +36,4 @@ scripts:
           value: pm.variables.replaceIn('{{$guid}}'),
       });
     language: text/javascript
-order: 2000
+order: 3000

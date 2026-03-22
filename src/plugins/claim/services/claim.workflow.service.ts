@@ -35,6 +35,9 @@ import { MedicalCaseCreateDto } from '../dtos/medical-case-create.dto';
 import { MedicalCaseUpdateDto } from '../dtos/medical-case-update.dto';
 import { UnderwritingDecisionDto } from '../dtos/underwriting-decision.dto';
 import { UnderwritingEvidenceDto } from '../dtos/underwriting-evidence.dto';
+import { MedicalProviderCreateDto } from '../dtos/medical-provider-create.dto';
+import { MedicalProviderUpdateDto } from '../dtos/medical-provider-update.dto';
+import { UnderwritingCaseCreateDto } from '../dtos/underwriting-case-create.dto';
 import type { Actor } from '../../../corekit/types/actor.type';
 
 /**
@@ -1360,6 +1363,322 @@ export class ClaimWorkflowService {
       return {
         case_id: caseId,
         evidence_id: evidenceId,
+      };
+    });
+
+    return result;
+  }
+
+  /**
+   * CREATE MEDICAL PROVIDER COMMAND
+   * Source: specs/claim/claim.pillar.v2.yml MedicalProvider.Create
+   *
+   * HTTP: POST /api/v1/admin/medical-provider
+   */
+  async createMedicalProvider(
+    request: MedicalProviderCreateDto,
+    actor: Actor,
+    idempotencyKey: string,
+  ) {
+    const result = await this.txService.run(async (queryRunner) => {
+      // GUARD: Validate provider_code is unique
+      const existingProvider = await queryRunner.manager.query(
+        `SELECT id FROM medical_provider WHERE provider_code = ? LIMIT 1`,
+        [request.providerCode]
+      );
+
+      if (existingProvider.length > 0) {
+        throw new ConflictException({
+          code: 'PROVIDER_CODE_EXISTS',
+          message: `Provider with code ${request.providerCode} already exists`,
+        });
+      }
+
+      // WRITE: Create medical provider
+      const providerId = await this.medicalProviderRepo.create(
+        {
+          provider_code: request.providerCode,
+          name: request.name,
+          type: request.type || 'hospital',
+          panel_status: request.panelStatus || 'active',
+          contact_phone: request.contactPhone || null,
+          contact_email: request.contactEmail || null,
+          meta_json: request.metaJson || null,
+        },
+        queryRunner,
+      );
+
+      // EMIT: MEDICAL_PROVIDER_CREATED event
+      await this.outboxService.enqueue(
+        {
+          event_name: 'MEDICAL_PROVIDER_CREATED',
+          event_version: 1,
+          aggregate_type: 'MEDICAL_PROVIDER',
+          aggregate_id: String(providerId),
+          actor_user_id: actor.actor_user_id,
+          occurred_at: new Date(),
+          correlation_id: actor.correlation_id || `create-provider-${providerId}-${Date.now()}`,
+          causation_id: actor.causation_id || `cmd-create-provider-${providerId}`,
+          payload: {
+            provider_id: providerId,
+            provider_code: request.providerCode,
+            name: request.name,
+            type: request.type || 'hospital',
+            panel_status: request.panelStatus || 'active',
+          },
+          dedupe_key: idempotencyKey,
+        },
+        queryRunner,
+      );
+
+      return {
+        provider_id: providerId,
+        provider_code: request.providerCode,
+      };
+    });
+
+    return result;
+  }
+
+  /**
+   * UPDATE MEDICAL PROVIDER COMMAND
+   * Source: specs/claim/claim.pillar.v2.yml MedicalProvider.Update
+   *
+   * HTTP: PUT /api/v1/admin/medical-provider/:providerId
+   */
+  async updateMedicalProvider(
+    providerId: number,
+    request: MedicalProviderUpdateDto,
+    actor: Actor,
+    idempotencyKey: string,
+  ) {
+    const result = await this.txService.run(async (queryRunner) => {
+      // GUARD: Validate provider exists
+      const provider = await this.medicalProviderRepo.findById(providerId, queryRunner);
+
+      if (!provider) {
+        throw new NotFoundException({
+          code: 'PROVIDER_NOT_FOUND',
+          message: `Provider with id ${providerId} not found`,
+        });
+      }
+
+      // WRITE: Update medical provider
+      const updateData: any = {};
+      if (request.name !== undefined) updateData.name = request.name;
+      if (request.type !== undefined) updateData.type = request.type;
+      if (request.panelStatus !== undefined) updateData.panel_status = request.panelStatus;
+      if (request.contactPhone !== undefined) updateData.contact_phone = request.contactPhone;
+      if (request.contactEmail !== undefined) updateData.contact_email = request.contactEmail;
+      if (request.metaJson !== undefined) updateData.meta_json = request.metaJson;
+
+      if (Object.keys(updateData).length > 0) {
+        await this.medicalProviderRepo.update(providerId, updateData, queryRunner);
+      }
+
+      // EMIT: MEDICAL_PROVIDER_UPDATED event
+      await this.outboxService.enqueue(
+        {
+          event_name: 'MEDICAL_PROVIDER_UPDATED',
+          event_version: 1,
+          aggregate_type: 'MEDICAL_PROVIDER',
+          aggregate_id: String(providerId),
+          actor_user_id: actor.actor_user_id,
+          occurred_at: new Date(),
+          correlation_id: actor.correlation_id || `update-provider-${providerId}-${Date.now()}`,
+          causation_id: actor.causation_id || `cmd-update-provider-${providerId}`,
+          payload: {
+            provider_id: providerId,
+            updated_fields: Object.keys(updateData),
+          },
+          dedupe_key: idempotencyKey,
+        },
+        queryRunner,
+      );
+
+      return {
+        provider_id: providerId,
+      };
+    });
+
+    return result;
+  }
+
+  /**
+   * DEACTIVATE MEDICAL PROVIDER COMMAND
+   * Source: specs/claim/claim.pillar.v2.yml MedicalProvider.Deactivate
+   *
+   * HTTP: POST /api/v1/admin/medical-provider/:providerId/deactivate
+   */
+  async deactivateMedicalProvider(
+    providerId: number,
+    actor: Actor,
+    idempotencyKey: string,
+  ) {
+    const result = await this.txService.run(async (queryRunner) => {
+      // GUARD: Validate provider exists
+      const provider = await this.medicalProviderRepo.findById(providerId, queryRunner);
+
+      if (!provider) {
+        throw new NotFoundException({
+          code: 'PROVIDER_NOT_FOUND',
+          message: `Provider with id ${providerId} not found`,
+        });
+      }
+
+      // GUARD: Validate no active medical cases with this provider
+      const activeCases = await queryRunner.manager.query(
+        `SELECT id FROM medical_case
+         WHERE provider_id = ?
+           AND status IN ('reported', 'admitted', 'in_treatment')
+         LIMIT 1`,
+        [providerId]
+      );
+
+      if (activeCases.length > 0) {
+        throw new ConflictException({
+          code: 'PROVIDER_HAS_ACTIVE_CASES',
+          message: `Cannot deactivate provider ${providerId} - has active medical cases`,
+        });
+      }
+
+      // WRITE: Update panel_status to inactive
+      await this.medicalProviderRepo.update(
+        providerId,
+        { panel_status: 'inactive' },
+        queryRunner,
+      );
+
+      // EMIT: MEDICAL_PROVIDER_DEACTIVATED event
+      await this.outboxService.enqueue(
+        {
+          event_name: 'MEDICAL_PROVIDER_DEACTIVATED',
+          event_version: 1,
+          aggregate_type: 'MEDICAL_PROVIDER',
+          aggregate_id: String(providerId),
+          actor_user_id: actor.actor_user_id,
+          occurred_at: new Date(),
+          correlation_id: actor.correlation_id || `deactivate-provider-${providerId}-${Date.now()}`,
+          causation_id: actor.causation_id || `cmd-deactivate-provider-${providerId}`,
+          payload: {
+            provider_id: providerId,
+            provider_code: provider.provider_code,
+          },
+          dedupe_key: idempotencyKey,
+        },
+        queryRunner,
+      );
+
+      return {
+        provider_id: providerId,
+      };
+    });
+
+    return result;
+  }
+
+  /**
+   * CREATE UNDERWRITING CASE COMMAND
+   * Source: specs/claim/claim.pillar.v2.yml Underwriting.CreateCase
+   *
+   * HTTP: POST /api/v1/underwriting/create
+   */
+  async createUnderwritingCase(
+    request: UnderwritingCaseCreateDto,
+    actor: Actor,
+    idempotencyKey: string,
+  ) {
+    const result = await this.txService.run(async (queryRunner) => {
+      // GUARD: Validate subject_ref_id exists in resource_ref
+      const subjectRef = await queryRunner.manager.query(
+        `SELECT id FROM resource_ref WHERE id = ? LIMIT 1`,
+        [request.subjectRefId]
+      );
+
+      if (subjectRef.length === 0) {
+        throw new NotFoundException({
+          code: 'SUBJECT_REF_NOT_FOUND',
+          message: `Subject reference with id ${request.subjectRefId} not found`,
+        });
+      }
+
+      // GUARD: Validate context_ref_id exists if provided
+      if (request.contextRefId) {
+        const contextRef = await queryRunner.manager.query(
+          `SELECT id FROM resource_ref WHERE id = ? LIMIT 1`,
+          [request.contextRefId]
+        );
+
+        if (contextRef.length === 0) {
+          throw new NotFoundException({
+            code: 'CONTEXT_REF_NOT_FOUND',
+            message: `Context reference with id ${request.contextRefId} not found`,
+          });
+        }
+      }
+
+      // Generate case number (UW-YYYY-NNNN format)
+      const year = new Date().getFullYear();
+      const lastCase = await queryRunner.manager.query(
+        `SELECT case_no FROM medical_underwriting_case
+         WHERE case_no LIKE ?
+         ORDER BY id DESC
+         LIMIT 1`,
+        [`UW-${year}-%`]
+      );
+
+      let seq = 1;
+      if (lastCase.length > 0) {
+        const match = lastCase[0].case_no.match(/UW-\d{4}-(\d+)/);
+        if (match) {
+          seq = parseInt(match[1], 10) + 1;
+        }
+      }
+      const caseNo = `UW-${year}-${String(seq).padStart(4, '0')}`;
+
+      // WRITE: Create underwriting case
+      const caseId = await this.underwritingCaseRepo.create(
+        {
+          subject_ref_id: request.subjectRefId,
+          context_ref_id: request.contextRefId || null,
+          case_no: caseNo,
+          status: 'open',
+          channel: request.channel || null,
+          priority: request.priority || 'normal',
+          created_by_user_id: Number(actor.actor_user_id),
+          assigned_to_user_id: request.assignedToUserId || null,
+          meta_json: request.metaJson || null,
+        },
+        queryRunner,
+      );
+
+      // EMIT: UNDERWRITING_CASE_CREATED event
+      await this.outboxService.enqueue(
+        {
+          event_name: 'UNDERWRITING_CASE_CREATED',
+          event_version: 1,
+          aggregate_type: 'MEDICAL_UNDERWRITING_CASE',
+          aggregate_id: String(caseId),
+          actor_user_id: actor.actor_user_id,
+          occurred_at: new Date(),
+          correlation_id: actor.correlation_id || `create-underwriting-${caseId}-${Date.now()}`,
+          causation_id: actor.causation_id || `cmd-create-underwriting-${caseId}`,
+          payload: {
+            case_id: caseId,
+            case_no: caseNo,
+            subject_ref_id: request.subjectRefId,
+            context_ref_id: request.contextRefId,
+            status: 'open',
+            priority: request.priority || 'normal',
+          },
+          dedupe_key: idempotencyKey,
+        },
+        queryRunner,
+      );
+
+      return {
+        case_id: caseId,
+        case_no: caseNo,
       };
     });
 

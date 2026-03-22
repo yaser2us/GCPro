@@ -1,0 +1,3 @@
+$kind: collection
+description: Admin endpoints for managing medical providers (hospitals, clinics)
+order: 1000
