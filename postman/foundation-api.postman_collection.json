@@ -1,0 +1,1148 @@
+{
+  "info": {
+    "_postman_id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+    "name": "Foundation API - Complete Workflow",
+    "description": "Complete test suite for Foundation Pillar\n\nBased on: specs/foundation/foundation.pillar.v2.yml\n\nCovers:\n- Reference data (age bands, smoker profiles, geo states)\n- Address management\n- Benefit catalog (catalogs, items, levels)\n- Discount programs\n- Guidelines (documents, versions, acceptance)\n- KYC verification\n\nWorkflow order:\n1. Seed reference data (age-bands, smoker-profiles, geo-states)\n2. Add address to an owner\n3. Create benefit catalog → add items → add levels\n4. Create discount program → deactivate\n5. Create guideline document → create version → publish → accept\n6. Create KYC record → verify or reject\n\nAll endpoints require: foundation:admin (except Guideline.Accept)\nAll mutating endpoints require: Idempotency-Key header",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "admin_user_id",
+      "value": "admin-123",
+      "type": "string"
+    },
+    {
+      "key": "admin_user_role",
+      "value": "ADMIN",
+      "type": "string"
+    },
+    {
+      "key": "address_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "catalog_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "program_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "document_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "version_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "kyc_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Reference Data",
+      "description": "Seed and upsert reference lookup tables: age bands, smoker profiles, geo states",
+      "item": [
+        {
+          "name": "1.1 Upsert Age Band",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"25-30\",\n  \"min_age\": 25,\n  \"max_age\": 30,\n  \"age_factor\": \"1.000\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/age-bands",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "age-bands"]
+            },
+            "description": "Create or update an age band by code. Idempotent — safe to re-run for seeding."
+          }
+        },
+        {
+          "name": "1.2 Upsert Age Band (31-40)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"31-40\",\n  \"min_age\": 31,\n  \"max_age\": 40,\n  \"age_factor\": \"1.150\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/age-bands",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "age-bands"]
+            },
+            "description": "Seed a second age band with higher loading factor."
+          }
+        },
+        {
+          "name": "1.3 Upsert Smoker Profile (Non-Smoker)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"NON_SMOKER\",\n  \"smoker_factor\": \"1.000\",\n  \"loading_pct\": \"0.000\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/smoker-profiles",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "smoker-profiles"]
+            },
+            "description": "Seed non-smoker profile — no loading applied."
+          }
+        },
+        {
+          "name": "1.4 Upsert Smoker Profile (Smoker)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"SMOKER\",\n  \"smoker_factor\": \"1.500\",\n  \"loading_pct\": \"25.000\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/smoker-profiles",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "smoker-profiles"]
+            },
+            "description": "Seed smoker profile — 25% loading applied."
+          }
+        },
+        {
+          "name": "1.5 Upsert Geo State (Selangor)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"country_code\": \"MY\",\n  \"state_code\": \"SGR\",\n  \"name\": \"Selangor\",\n  \"status\": \"active\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/geo-states",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "geo-states"]
+            },
+            "description": "Seed Malaysian state reference data. Upsert by (country_code, state_code)."
+          }
+        },
+        {
+          "name": "1.6 Upsert Geo State (Kuala Lumpur)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"country_code\": \"MY\",\n  \"state_code\": \"KUL\",\n  \"name\": \"Kuala Lumpur\",\n  \"status\": \"active\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/geo-states",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "geo-states"]
+            },
+            "description": "Seed a second state."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Addresses",
+      "description": "Polymorphic address management — attach addresses to any owner entity",
+      "item": [
+        {
+          "name": "2.1 Add Address to Person",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "if (json && json.id) {",
+                  "    pm.collectionVariables.set('address_id', json.id);",
+                  "    console.log('address_id set to', json.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"owner_type\": \"person\",\n  \"owner_id\": 101,\n  \"type\": \"home\",\n  \"line1\": \"No. 12, Jalan Bunga Raya\",\n  \"line2\": \"Taman Maju\",\n  \"city\": \"Petaling Jaya\",\n  \"state_code\": \"SGR\",\n  \"postcode\": \"47810\",\n  \"country\": \"Malaysia\",\n  \"is_default\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/addresses",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "addresses"]
+            },
+            "description": "Add a home address to a person. Since is_default=true, any existing default address for this person will be cleared."
+          }
+        },
+        {
+          "name": "2.2 Add Second Address (Work)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"owner_type\": \"person\",\n  \"owner_id\": 101,\n  \"type\": \"work\",\n  \"line1\": \"Level 15, Menara KL\",\n  \"city\": \"Kuala Lumpur\",\n  \"state_code\": \"KUL\",\n  \"postcode\": \"50088\",\n  \"country\": \"Malaysia\",\n  \"is_default\": false\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/addresses",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "addresses"]
+            },
+            "description": "Add a second (work) address — not default."
+          }
+        },
+        {
+          "name": "2.3 Set Address as Default",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/addresses/{{address_id}}/set-default",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "addresses", "{{address_id}}", "set-default"]
+            },
+            "description": "Promote an address to default. Clears is_default on all other addresses for the same owner."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Benefit Catalog",
+      "description": "Manage versioned benefit catalogs, items, and coverage levels",
+      "item": [
+        {
+          "name": "3.1 Create Benefit Catalog",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "if (json && json.id) {",
+                  "    pm.collectionVariables.set('catalog_id', json.id);",
+                  "    console.log('catalog_id set to', json.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"HEALTH_2026\",\n  \"name\": \"Health Insurance Benefit Catalog 2026\",\n  \"version\": \"v1\",\n  \"effective_from\": \"2026-01-01T00:00:00Z\",\n  \"effective_to\": \"2026-12-31T23:59:59Z\",\n  \"meta_json\": { \"year\": 2026, \"product\": \"health\" }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/benefit-catalogs",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "benefit-catalogs"]
+            },
+            "description": "Create a versioned benefit catalog. Unique by (code, version)."
+          }
+        },
+        {
+          "name": "3.2 Add Benefit Item (Hospitalization)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"item_code\": \"HOSP_DAILY\",\n  \"name\": \"Hospital Daily Room & Board\",\n  \"category\": \"hospitalization\",\n  \"limit_type\": \"per_year\",\n  \"limit_amount\": \"100000.00\",\n  \"limit_count\": 0,\n  \"calculation_mode\": \"reimburse\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/benefit-catalogs/{{catalog_id}}/items",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "benefit-catalogs", "{{catalog_id}}", "items"]
+            },
+            "description": "Add a hospitalization benefit item. Unique by (catalog_id, item_code)."
+          }
+        },
+        {
+          "name": "3.3 Add Benefit Item (Outpatient)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"item_code\": \"GP_VISIT\",\n  \"name\": \"General Practitioner Visit\",\n  \"category\": \"outpatient\",\n  \"limit_type\": \"per_year\",\n  \"limit_amount\": \"5000.00\",\n  \"limit_count\": 52,\n  \"calculation_mode\": \"reimburse\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/benefit-catalogs/{{catalog_id}}/items",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "benefit-catalogs", "{{catalog_id}}", "items"]
+            },
+            "description": "Add outpatient benefit with 52 visits/year limit."
+          }
+        },
+        {
+          "name": "3.4 Add Benefit Level (Basic)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"level_code\": \"BASIC\",\n  \"level_name\": \"Basic Coverage\",\n  \"sort_order\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/benefit-catalogs/{{catalog_id}}/levels",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "benefit-catalogs", "{{catalog_id}}", "levels"]
+            },
+            "description": "Add Basic coverage level to catalog."
+          }
+        },
+        {
+          "name": "3.5 Add Benefit Level (Premium)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"level_code\": \"PREMIUM\",\n  \"level_name\": \"Premium Coverage\",\n  \"sort_order\": 2\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/benefit-catalogs/{{catalog_id}}/levels",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "benefit-catalogs", "{{catalog_id}}", "levels"]
+            },
+            "description": "Add Premium coverage level."
+          }
+        },
+        {
+          "name": "3.6 Archive Benefit Catalog",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/benefit-catalogs/{{catalog_id}}/archive",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "benefit-catalogs", "{{catalog_id}}", "archive"]
+            },
+            "description": "Archive a benefit catalog. Catalog status: active → archived."
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Discount Programs",
+      "description": "Manage discount program lifecycle",
+      "item": [
+        {
+          "name": "4.1 Create Discount Program",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "if (json && json.id) {",
+                  "    pm.collectionVariables.set('program_id', json.id);",
+                  "    console.log('program_id set to', json.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"NEWMEMBER10\",\n  \"discount_type\": \"percent\",\n  \"value\": \"10.00\",\n  \"starts_at\": \"2026-01-01T00:00:00Z\",\n  \"ends_at\": \"2026-12-31T23:59:59Z\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/discount-programs",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "discount-programs"]
+            },
+            "description": "Create a 10% new member discount active for 2026."
+          }
+        },
+        {
+          "name": "4.2 Deactivate Discount Program",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/discount-programs/{{program_id}}/deactivate",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "discount-programs", "{{program_id}}", "deactivate"]
+            },
+            "description": "Deactivate a discount program. Status: active → inactive. Emits DISCOUNT_PROGRAM_DEACTIVATED."
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Guidelines",
+      "description": "Manage legal documents (T&C, Privacy Policy), versions, and user acceptance",
+      "item": [
+        {
+          "name": "5.1 Create Guideline Document",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "if (json && json.id) {",
+                  "    pm.collectionVariables.set('document_id', json.id);",
+                  "    console.log('document_id set to', json.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"TNC_APP\",\n  \"name\": \"App Terms and Conditions\",\n  \"scope_type\": \"global\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/guideline-documents",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "guideline-documents"]
+            },
+            "description": "Create a guideline document record. Unique by code."
+          }
+        },
+        {
+          "name": "5.2 Create Guideline Version (Draft)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "if (json && json.id) {",
+                  "    pm.collectionVariables.set('version_id', json.id);",
+                  "    console.log('version_id set to', json.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version_code\": \"v1.0\",\n  \"locale\": \"en\",\n  \"content_type\": \"html\",\n  \"content_text\": \"<h1>Terms and Conditions</h1><p>By using this app you agree to these terms...</p>\",\n  \"effective_from\": \"2026-01-01T00:00:00Z\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/guideline-documents/{{document_id}}/versions",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "guideline-documents", "{{document_id}}", "versions"]
+            },
+            "description": "Create a new draft version for the guideline document. Status starts as 'draft'."
+          }
+        },
+        {
+          "name": "5.3 Publish Guideline Version",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/guideline-versions/{{version_id}}/publish",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "guideline-versions", "{{version_id}}", "publish"]
+            },
+            "description": "Publish a draft version. Version status: draft → published. Emits GUIDELINE_VERSION_PUBLISHED. Only published versions can be accepted."
+          }
+        },
+        {
+          "name": "5.4 Accept Guideline (User)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version_id\": 1,\n  \"user_id\": 55,\n  \"person_id\": 101,\n  \"acceptance_status\": \"accepted\",\n  \"channel\": \"app\",\n  \"source\": \"onboarding\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/guideline-versions/{{version_id}}/accept",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "guideline-versions", "{{version_id}}", "accept"]
+            },
+            "description": "Record user acceptance of a published guideline version. No permission required — this is a user action. Idempotent: same Idempotency-Key returns the same record. Emits GUIDELINE_ACCEPTED."
+          }
+        },
+        {
+          "name": "5.5 Archive Guideline Version",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/guideline-versions/{{version_id}}/archive",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "guideline-versions", "{{version_id}}", "archive"]
+            },
+            "description": "Archive a guideline version. Version status: published → archived. Emits GUIDELINE_VERSION_ARCHIVED."
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. KYC",
+      "description": "Manage KYC verification records for any subject (person, account, user)",
+      "item": [
+        {
+          "name": "6.1 Create KYC Record",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "if (json && json.id) {",
+                  "    pm.collectionVariables.set('kyc_id', json.id);",
+                  "    console.log('kyc_id set to', json.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject_type\": \"person\",\n  \"subject_id\": 101,\n  \"provider\": \"myinfo\",\n  \"status\": \"pending\",\n  \"meta_json\": { \"request_ref\": \"MYINFO-2026-001\" }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/kyc",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "kyc"]
+            },
+            "description": "Create a KYC record for a person. Status starts as 'pending'."
+          }
+        },
+        {
+          "name": "6.2 Verify KYC",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/kyc/{{kyc_id}}/verify",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "kyc", "{{kyc_id}}", "verify"]
+            },
+            "description": "Mark KYC as verified. Sets verified_at timestamp. Emits KYC_VERIFIED (consumed by user plugin to update verification_status). KYC status: pending → verified."
+          }
+        },
+        {
+          "name": "6.3 Reject KYC (Alternative to Verify)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/kyc/{{kyc_id}}/reject",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "kyc", "{{kyc_id}}", "reject"]
+            },
+            "description": "Mark KYC as rejected. Use instead of verify when documents are invalid. Emits KYC_REJECTED. KYC status: pending → rejected."
+          }
+        }
+      ]
+    }
+  ]
+}

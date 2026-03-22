@@ -1,0 +1,39 @@
+$kind: http-request
+description: Create a new crowd (Takaful) period. The periodKey must be unique.
+  lastDebtAmount/lastExtraAmount carry over from prior period.
+url: "{{base_url}}/api/v1/crowd/periods"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "periodKey": "2026-Q1",
+      "periodFrom": "2026-01-01",
+      "periodTo": "2026-03-31",
+      "lastDebtAmount": "0.00",
+      "lastExtraAmount": "0.00",
+      "ruleVersion": "v1",
+      "meta": { "note": "Q1 2026 Takaful period" }
+    }
+scripts:
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Status is 201', () => pm.response.to.have.status(201));
+      const json = pm.response.json();
+      if (json && json.id) {
+          pm.collectionVariables.set('period_id', json.id);
+          console.log('period_id set to', json.id);
+      }
+    language: text/javascript
+order: 1000

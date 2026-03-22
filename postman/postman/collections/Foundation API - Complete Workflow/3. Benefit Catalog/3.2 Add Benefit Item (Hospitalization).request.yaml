@@ -1,0 +1,29 @@
+$kind: http-request
+description: Add a hospitalization benefit item. Unique by (catalog_id, item_code).
+url: "{{base_url}}/api/v1/foundation/benefit-catalogs/{{catalog_id}}/items"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "item_code": "HOSP_DAILY",
+      "name": "Hospital Daily Room & Board",
+      "category": "hospitalization",
+      "limit_type": "per_year",
+      "limit_amount": "100000.00",
+      "limit_count": 0,
+      "calculation_mode": "reimburse"
+    }
+scripts:
+  - type: beforeRequest
+    code: "pm.request.headers.add({ key: 'Idempotency-Key', value:
+      pm.variables.replaceIn('{{$guid}}') });"
+    language: text/javascript
+  - type: afterResponse
+    code: pm.test('Status is 201', () => pm.response.to.have.status(201));
+    language: text/javascript
+order: 2000

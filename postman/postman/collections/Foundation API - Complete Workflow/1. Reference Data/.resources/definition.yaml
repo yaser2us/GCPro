@@ -1,0 +1,4 @@
+$kind: collection
+description: "Seed and upsert reference lookup tables: age bands, smoker
+  profiles, geo states"
+order: 1000

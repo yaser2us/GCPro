@@ -1,0 +1,29 @@
+$kind: http-request
+description: Soft-deletes a payment method. Requires Idempotency-Key header
+  (auto-generated).
+url: "{{base_url}}/api/v1/payment-method/{{payment_method_id}}"
+method: DELETE
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+scripts:
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+  - type: afterResponse
+    code: >-
+      pm.test('Status code is 200', function () {
+          pm.response.to.have.status(200);
+      });
+
+
+      if (pm.response.code === 200) {
+          console.log('✅ Payment Method Deleted:', pm.collectionVariables.get('payment_method_id'));
+      }
+    language: text/javascript
+order: 2000

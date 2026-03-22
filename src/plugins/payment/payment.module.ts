@@ -6,12 +6,14 @@ import { PaymentReceipt } from './entities/payment-receipt.entity';
 import { PaymentAttempt } from './entities/payment-attempt.entity';
 import { PaymentEvent } from './entities/payment-event.entity';
 import { PaymentWebhookInbox } from './entities/payment-webhook-inbox.entity';
+import { BankProfile } from './entities/bank-profile.entity';
 import { PaymentMethodRepository } from './repositories/payment-method.repo';
 import { PaymentIntentRepository } from './repositories/payment-intent.repo';
 import { PaymentReceiptRepository } from './repositories/payment-receipt.repo';
 import { PaymentAttemptRepository } from './repositories/payment-attempt.repo';
 import { PaymentEventRepository } from './repositories/payment-event.repo';
 import { PaymentWebhookInboxRepository } from './repositories/payment-webhook-inbox.repo';
+import { BankProfileRepository } from './repositories/bank-profile.repo';
 import { PaymentWorkflowService } from './services/payment.workflow.service';
 import { PaymentMethodController } from './controllers/payment-method.controller';
 import { PaymentIntentController } from './controllers/payment-intent.controller';
@@ -33,6 +35,7 @@ import { WebhookController } from './controllers/webhook.controller';
       PaymentAttempt,
       PaymentEvent,
       PaymentWebhookInbox,
+      BankProfile,
     ]),
   ],
   providers: [
@@ -42,6 +45,7 @@ import { WebhookController } from './controllers/webhook.controller';
     PaymentAttemptRepository,
     PaymentEventRepository,
     PaymentWebhookInboxRepository,
+    BankProfileRepository,
     PaymentWorkflowService,
   ],
   controllers: [

@@ -1,0 +1,37 @@
+$kind: http-request
+description: Admin-only. Marks a payment intent as failed. Requires
+  payment:admin permission.
+url: "{{base_url}}/api/v1/payment-intent/{{intent_id}}/mark-failed"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{admin_user_id}}"
+  X-User-Role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "failureCode": "insufficient_funds",
+      "failureMessage": "Card declined due to insufficient funds"
+    }
+scripts:
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Status code is 200', function () {
+          pm.response.to.have.status(200);
+      });
+
+      if (pm.response.code === 200) {
+          const response = pm.response.json();
+          console.log('✅ Intent Marked Failed:', response.intentId);
+          console.log('   Failure Code:', response.failureCode);
+      }
+    language: text/javascript
+order: 5000

@@ -13,6 +13,7 @@ import { CommissionRuleRepository } from './repositories/commission-rule.repo';
 import { CommissionAccrualRepository } from './repositories/commission-accrual.repo';
 import { CommissionPayoutBatchRepository } from './repositories/commission-payout-batch.repo';
 import { CommissionPayoutItemRepository } from './repositories/commission-payout-item.repo';
+import { CommissionPayoutItemAccrualRepository } from './repositories/commission-payout-item-accrual.repo';
 import { CommissionWorkflowService } from './services/commission.workflow.service';
 import { CommissionController } from './controllers/commission.controller';
 
@@ -40,6 +41,7 @@ import { CommissionController } from './controllers/commission.controller';
     CommissionAccrualRepository,
     CommissionPayoutBatchRepository,
     CommissionPayoutItemRepository,
+    CommissionPayoutItemAccrualRepository,
     CommissionWorkflowService,
   ],
   controllers: [CommissionController],

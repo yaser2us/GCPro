@@ -1,0 +1,34 @@
+$kind: http-request
+description: Create a new draft version for the guideline document. Status
+  starts as 'draft'.
+url: "{{base_url}}/api/v1/foundation/guideline-documents/{{document_id}}/versions"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: >-
+    {
+      "version_code": "v1.0",
+      "locale": "en",
+      "content_type": "html",
+      "content_text": "<h1>Terms and Conditions</h1><p>By using this app you agree to these terms...</p>",
+      "effective_from": "2026-01-01T00:00:00Z"
+    }
+scripts:
+  - type: beforeRequest
+    code: "pm.request.headers.add({ key: 'Idempotency-Key', value:
+      pm.variables.replaceIn('{{$guid}}') });"
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Status is 201', () => pm.response.to.have.status(201));
+      const json = pm.response.json();
+      if (json && json.id) {
+          pm.collectionVariables.set('version_id', json.id);
+          console.log('version_id set to', json.id);
+      }
+    language: text/javascript
+order: 2000

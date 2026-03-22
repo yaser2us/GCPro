@@ -26,3 +26,6 @@ cloudResources:
   collections:
     ../postman/collections/Policy API - Complete Workflow: e57f9a4c-efde-46b8-8bf0-09246fac0463
     ../postman/collections/Claim API - Complete Workflow: 47b3a5d1-4bed-4e57-bf34-ed6bc5aef751
+    ../postman/collections/Payment API - Complete Workflow: 3879e01b-599c-434a-bf8b-f911fec9e4ff
+    ../postman/collections/Foundation API - Complete Workflow: a8648034-9740-44da-aeaf-04c0ee7fbe0e
+    ../postman/collections/Crowd API - Takaful Workflow: d1839bfb-9972-4761-8f5d-92ad5d925635

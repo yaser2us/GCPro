@@ -14,6 +14,7 @@ import { ReferralInviteRepository } from './repositories/referral-invite.repo';
 import { ReferralConversionRepository } from './repositories/referral-conversion.repo';
 import { ReferralRewardGrantRepository } from './repositories/referral-reward-grant.repo';
 import { ReferralEventRepository } from './repositories/referral-event.repo';
+import { ReferralRuleRepository } from './repositories/referral-rule.repo';
 import { ReferralWorkflowService } from './services/referral.workflow.service';
 import { ReferralController } from './controllers/referral.controller';
 
@@ -49,6 +50,7 @@ import { ReferralController } from './controllers/referral.controller';
     ReferralConversionRepository,
     ReferralRewardGrantRepository,
     ReferralEventRepository,
+    ReferralRuleRepository,
     // Services (business logic)
     ReferralWorkflowService,
   ],

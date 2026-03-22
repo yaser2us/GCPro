@@ -1,0 +1,24 @@
+$kind: http-request
+description: "Mark the period as completed. Requires period to be in
+  'calculated' status. Period status: calculated → completed."
+url: "{{base_url}}/api/v1/crowd/periods/{{period_id}}/complete"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: "{}"
+scripts:
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+  - type: afterResponse
+    code: pm.test('Status is 200', () => pm.response.to.have.status(200));
+    language: text/javascript
+order: 6000

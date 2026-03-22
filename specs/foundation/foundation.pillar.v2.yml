@@ -1,0 +1,2680 @@
+version: "2.0"
+spec_id: "foundation.pillar.v2"
+domain: "foundation"
+plugin: "foundation"
+
+# -------------------------------------------------------
+# OWNERSHIP
+# -------------------------------------------------------
+
+ownership:
+  owner_plugin: "foundation"
+  owns_tables:
+    - address
+    - age_band
+    - audit_log
+    - benefit_catalog
+    - benefit_catalog_item
+    - benefit_level
+    - discount_program
+    - geo_state
+    - guideline_acceptance
+    - guideline_document
+    - guideline_version
+    - kyc
+    - outbox_event_consumer
+    - resource_ref
+    - smoker_profile
+  cross_plugin_writes: false
+  cross_plugin_integration:
+    allowed_via:
+      - command_api
+      - outbox_events
+
+# -------------------------------------------------------
+# DEPENDENCIES
+# -------------------------------------------------------
+
+dependencies:
+  corekit:
+    transaction_wrapper: "withTxn"
+    outbox_service: "OutboxService.emit"
+    guard_helper: "guard"
+    domain_error: "DomainError"
+
+  core_tables_readonly:
+    - table: outbox_event
+      reason: "outbox_event_consumer has FK to outbox_event.id — managed by OutboxService infrastructure"
+
+# -------------------------------------------------------
+# CONVENTIONS
+# -------------------------------------------------------
+
+conventions:
+  workflow_discipline:
+    - "guard"
+    - "write"
+    - "emit"
+    - "commit"
+  status_mutation_policy: "Status fields may only be mutated through commands."
+  outbox:
+    required_envelope_fields:
+      - "event_name"
+      - "event_version"
+      - "aggregate_type"
+      - "aggregate_id"
+      - "actor_user_id"
+      - "occurred_at"
+      - "correlation_id"
+      - "causation_id"
+  idempotency:
+    required_header: "Idempotency-Key"
+    default_scope: "actor_user_id + command_name"
+    db_strategy:
+      - "UNIQUE(idempotency_key) where applicable"
+      - "MySQL ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)"
+      - "UNIQUE(code) on age_band, smoker_profile, geo_state, discount_program, guideline_document"
+      - "UNIQUE(catalog_id, item_code) on benefit_catalog_item"
+      - "UNIQUE(catalog_id, level_code) on benefit_level"
+      - "UNIQUE(document_id, version_code, locale) on guideline_version"
+      - "UNIQUE(idempotency_key) on guideline_acceptance"
+      - "UNIQUE(version_id, account_id, person_id, user_id) on guideline_acceptance prevents double acceptance"
+      - "UNIQUE(resource_type, resource_id) and UNIQUE(resource_uuid) on resource_ref"
+      - "UNIQUE(consumer_name, event_id) on outbox_event_consumer"
+  reference_data_policy: "Reference tables (age_band, smoker_profile, geo_state) are admin-managed seed data. Upsert by unique code."
+  audit_policy: "audit_log is append-only. No updates or deletes permitted."
+  polymorphic_ownership: "address and kyc use (owner_type, owner_id) / (subject_type, subject_id) to attach to any entity."
+
+# -------------------------------------------------------
+# SCHEMA
+# -------------------------------------------------------
+
+schema:
+  tables:
+
+    address:
+      description: "Polymorphic address record. Attached to any owner via owner_type + owner_id."
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          auto_increment: true
+          nullable: false
+          description: "Primary key"
+        owner_type:
+          type: varchar
+          length: 16
+          nullable: false
+          description: "Type of entity that owns this address (e.g. person, account)"
+        owner_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "ID of the owning entity"
+        type:
+          type: varchar
+          length: 32
+          nullable: true
+          default: null
+          description: "Address type (e.g. home, work, billing)"
+        line1:
+          type: varchar
+          length: 255
+          nullable: true
+          default: null
+          description: "Street address line 1"
+        line2:
+          type: varchar
+          length: 255
+          nullable: true
+          default: null
+          description: "Street address line 2"
+        city:
+          type: varchar
+          length: 128
+          nullable: true
+          default: null
+          description: "City name"
+        state_code:
+          type: varchar
+          length: 64
+          nullable: true
+          default: null
+          description: "State code (references geo_state.state_code)"
+        postcode:
+          type: varchar
+          length: 32
+          nullable: true
+          default: null
+          description: "Postal / ZIP code"
+        country:
+          type: varchar
+          length: 64
+          nullable: true
+          default: null
+          description: "Country name or ISO code"
+        is_default:
+          type: tinyint
+          nullable: false
+          default: 0
+          description: "1 if this is the default address for the owner"
+        created_at:
+          type: datetime
+          nullable: false
+          default: CURRENT_TIMESTAMP
+          description: "Record creation timestamp"
+        updated_at:
+          type: datetime
+          nullable: false
+          default: CURRENT_TIMESTAMP
+          on_update: CURRENT_TIMESTAMP
+          description: "Last update timestamp"
+      constraints:
+        primary_key: [id]
+        unique_keys: []
+        foreign_keys: []
+        indexes:
+          - name: idx_address_owner
+            columns: [owner_type, owner_id]
+          - name: idx_address_default
+            columns: [owner_type, owner_id, is_default]
+
+    age_band:
+      description: "Age band reference table. Used for age-factor based premium calculations."
+      columns:
+        id:
+          type: bigint
+          auto_increment: true
+          nullable: false
+          description: "Primary key"
+        code:
+          type: varchar
+          length: 32
+          nullable: false
+          description: "Unique code for this age band (e.g. 25-30)"
+        min_age:
+          type: int
+          nullable: false
+          description: "Minimum age (inclusive)"
+        max_age:
+          type: int
+          nullable: false
+          description: "Maximum age (inclusive)"
+        age_factor:
+          type: decimal
+          precision: [8, 3]
+          nullable: false
+          default: "1.000"
+          description: "Multiplier applied to base premium for this age band"
+        created_at:
+          type: datetime
+          nullable: false
+          default: CURRENT_TIMESTAMP
+          description: "Record creation timestamp"
+      constraints:
+        primary_key: [id]
+        unique_keys:
+          - name: uk_age_band_code
+            columns: [code]
+        foreign_keys: []
+        indexes:
+          - name: idx_age_band_range
+            columns: [min_age, max_age]
+
+    audit_log:
+      description: "Append-only system audit trail. Records all significant actor actions on resources."
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          auto_increment: true
+          nullable: false
+          description: "Primary key"
+        actor_type:
+          type: varchar
+          length: 32
+          nullable: false
+          description: "Type of actor (user, system, admin)"
+        actor_id:
+          type: varchar
+          length: 128
+          nullable: true
+          default: null
+          description: "ID of the actor"
+        action:
+          type: varchar
+          length: 64
+          nullable: false
+          description: "Action performed (e.g. command name)"
+        resource_type:
+          type: varchar
+          length: 64
+          nullable: false
+          description: "Type of resource affected"
+        resource_id:
+          type: varchar
+          length: 128
+          nullable: true
+          default: null
+          description: "ID of the affected resource"
+        request_id:
+          type: varchar
+          length: 128
+          nullable: true
+          default: null
+          description: "Originating HTTP request ID"
+        ip:
+          type: varchar
+          length: 64
+          nullable: true
+          default: null
+          description: "Client IP address"
+        user_agent:
+          type: varchar
+          length: 512
+          nullable: true
+          default: null
+          description: "Client user agent string"
+        result:
+          type: varchar
+          length: 16
+          nullable: false
+          default: "success"
+          description: "Outcome of the action (success, failure, denied)"
+        before_json:
+          type: json
+          nullable: true
+          default: null
+          description: "Snapshot of resource state before action"
+        after_json:
+          type: json
+          nullable: true
+          default: null
+          description: "Snapshot of resource state after action"
+        meta_json:
+          type: json
+          nullable: true
+          default: null
+          description: "Additional context metadata"
+        occurred_at:
+          type: datetime
+          nullable: false
+          description: "When the action occurred"
+        created_at:
+          type: datetime
+          nullable: false
+          default: CURRENT_TIMESTAMP
+          description: "Record creation timestamp"
+      constraints:
+        primary_key: [id]
+        unique_keys: []
+        foreign_keys: []
+        indexes:
+          - name: idx_audit_time
+            columns: [occurred_at]
+          - name: idx_audit_actor
+            columns: [actor_type, actor_id]
+          - name: idx_audit_resource
+            columns: [resource_type, resource_id]
+          - name: idx_audit_request
+            columns: [request_id]
+          - name: idx_audit_action_result
+            columns: [action, result]
+
+    benefit_catalog:
+      description: "Versioned benefit catalog header. Groups benefit items and levels for a given product version."
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          auto_increment: true
+          nullable: false
+          description: "Primary key"
+        code:
+          type: varchar
+          length: 64
+          nullable: false
+          description: "Catalog code"
+        name:
+          type: varchar
+          length: 160
+          nullable: false
+          description: "Human-readable catalog name"
+        status:
+          type: varchar
+          length: 16
+          nullable: false
+          default: "active"
+          values: [active, archived]
+          description: "Catalog lifecycle status"
+        version:
+          type: varchar
+          length: 40
+          nullable: false
+          default: "v1"
+          description: "Catalog version identifier"
+        effective_from:
+          type: datetime
+          nullable: true
+          default: null
+          description: "When this catalog becomes effective"
+        effective_to:
+          type: datetime
+          nullable: true
+          default: null
+          description: "When this catalog expires"
+        meta_json:
+          type: json
+          nullable: true
+          default: null
+          description: "Additional metadata"
+        created_at:
+          type: datetime
+          nullable: false
+          default: CURRENT_TIMESTAMP
+          description: "Record creation timestamp"
+      constraints:
+        primary_key: [id]
+        unique_keys:
+          - name: uk_benefit_catalog_code_ver
+            columns: [code, version]
+        foreign_keys: []
+        indexes:
+          - name: idx_benefit_catalog_status
+            columns: [status]
+          - name: idx_benefit_catalog_effective
+            columns: [effective_from, effective_to]
+
+    benefit_catalog_item:
+      description: "Individual benefit item within a catalog. Defines limits, calculation mode, and eligibility rules."
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          auto_increment: true
+          nullable: false
+          description: "Primary key"
+        catalog_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "FK to benefit_catalog.id"
+        item_code:
+          type: varchar
+          length: 64
+          nullable: false
+          description: "Unique item code within the catalog"
+        name:
+          type: varchar
+          length: 160
+          nullable: false
+          description: "Benefit item name"
+        category:
+          type: varchar
+          length: 32
+          nullable: false
+          default: "other"
+          description: "Benefit category (e.g. hospitalization, outpatient)"
+        limit_type:
+          type: varchar
+          length: 20
+          nullable: false
+          default: "per_year"
+          description: "How the limit resets (per_year, per_visit, lifetime)"
+        limit_amount:
+          type: decimal
+          precision: [18, 2]
+          nullable: false
+          default: "0.00"
+          description: "Maximum benefit amount per limit period"
+        limit_count:
+          type: int
+          unsigned: true
+          nullable: false
+          default: 0
+          description: "Maximum number of uses per limit period (0 = unlimited)"
+        eligibility_rule_version:
+          type: varchar
+          length: 40
+          nullable: true
+          default: null
+          description: "Rule engine version for eligibility"
+        eligibility_rule_json:
+          type: json
+          nullable: true
+          default: null
+          description: "Eligibility rule definition"
+        calculation_mode:
+          type: varchar
+          length: 20
+          nullable: false
+          default: "reimburse"
+          description: "How benefit is calculated (reimburse, percent, fixed)"
+        percent_value:
+          type: decimal
+          precision: [8, 3]
+          nullable: true
+          default: null
+          description: "Percentage value if calculation_mode = percent"
+        fixed_amount:
+          type: decimal
+          precision: [18, 2]
+          nullable: true
+          default: null
+          description: "Fixed amount if calculation_mode = fixed"
+        status:
+          type: varchar
+          length: 16
+          nullable: false
+          default: "active"
+          values: [active, inactive]
+          description: "Item status"
+        created_at:
+          type: datetime
+          nullable: false
+          default: CURRENT_TIMESTAMP
+          description: "Record creation timestamp"
+      constraints:
+        primary_key: [id]
+        unique_keys:
+          - name: uk_benefit_item_code
+            columns: [catalog_id, item_code]
+        foreign_keys:
+          - name: fk_benefit_item_catalog
+            columns: [catalog_id]
+            references: { table: benefit_catalog, column: id }
+            on_delete: RESTRICT
+            on_update: CASCADE
+        indexes:
+          - name: idx_benefit_item_status
+            columns: [status]
+          - name: idx_benefit_item_category
+            columns: [category]
+
+    benefit_level:
+      description: "Coverage level within a benefit catalog. Allows tiered coverage (e.g. Basic, Standard, Premium)."
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          auto_increment: true
+          nullable: false
+          description: "Primary key"
+        catalog_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "FK to benefit_catalog.id"
+        level_code:
+          type: varchar
+          length: 32
+          nullable: false
+          description: "Unique level code within the catalog (e.g. BASIC, STANDARD)"
+        level_name:
+          type: varchar
+          length: 128
+          nullable: false
+          description: "Human-readable level name"
+        sort_order:
+          type: int
+          nullable: false
+          default: 0
+          description: "Display sort order"
+        meta_json:
+          type: json
+          nullable: true
+          default: null
+          description: "Additional metadata"
+        created_at:
+          type: datetime
+          nullable: false
+          default: CURRENT_TIMESTAMP
+          description: "Record creation timestamp"
+      constraints:
+        primary_key: [id]
+        unique_keys:
+          - name: uk_benefit_level
+            columns: [catalog_id, level_code]
+        foreign_keys:
+          - name: fk_benefit_level_catalog
+            columns: [catalog_id]
+            references: { table: benefit_catalog, column: id }
+            on_delete: RESTRICT
+            on_update: CASCADE
+        indexes:
+          - name: idx_benefit_level_sort
+            columns: [catalog_id, sort_order]
+
+    discount_program:
+      description: "Discount program definition. Stores discount type, value, eligibility rules, and active window."
+      columns:
+        id:
+          type: bigint
+          auto_increment: true
+          nullable: false
+          description: "Primary key"
+        code:
+          type: varchar
+          length: 64
+          nullable: false
+          description: "Unique discount code"
+        discount_type:
+          type: varchar
+          length: 20
+          nullable: false
+          description: "Discount type (percent, fixed, waiver)"
+        value:
+          type: decimal
+          precision: [12, 2]
+          nullable: false
+          default: "0.00"
+          description: "Discount value (percentage or fixed amount)"
+        eligibility_rule_version:
+          type: varchar
+          length: 40
+          nullable: true
+          default: null
+          description: "Rule engine version for eligibility check"
+        rule_json:
+          type: json
+          nullable: true
+          default: null
+          description: "Eligibility rule definition"
+        starts_at:
+          type: datetime
+          nullable: true
+          default: null
+          description: "When discount becomes active"
+        ends_at:
+          type: datetime
+          nullable: true
+          default: null
+          description: "When discount expires"
+        status:
+          type: varchar
+          length: 20
+          nullable: false
+          default: "active"
+          values: [active, inactive, expired]
+          description: "Discount program status"
+        created_at:
+          type: datetime
+          nullable: false
+          default: CURRENT_TIMESTAMP
+          description: "Record creation timestamp"
+      constraints:
+        primary_key: [id]
+        unique_keys:
+          - name: uk_discount_code
+            columns: [code]
+        foreign_keys: []
+        indexes:
+          - name: idx_discount_status
+            columns: [status]
+          - name: idx_discount_window
+            columns: [starts_at, ends_at]
+
+    geo_state:
+      description: "Geographic state / region reference data. Used for address validation and policy region rules."
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          auto_increment: true
+          nullable: false
+          description: "Primary key"
+        country_code:
+          type: varchar
+          length: 8
+          nullable: false
+          default: "MY"
+          description: "ISO country code (e.g. MY, SG)"
+        state_code:
+          type: varchar
+          length: 32
+          nullable: false
+          description: "State/region code (e.g. SGR, KUL)"
+        name:
+          type: varchar
+          length: 128
+          nullable: false
+          description: "State/region full name"
+        status:
+          type: varchar
+          length: 16
+          nullable: false
+          default: "active"
+          values: [active, inactive]
+          description: "Whether this state is active"
+        created_at:
+          type: datetime
+          nullable: false
+          default: CURRENT_TIMESTAMP
+          description: "Record creation timestamp"
+      constraints:
+        primary_key: [id]
+        unique_keys:
+          - name: uk_geo_state_cc_sc
+            columns: [country_code, state_code]
+        foreign_keys: []
+        indexes:
+          - name: idx_geo_state_status
+            columns: [status]
+          - name: idx_geo_state_name
+            columns: [name]
+
+    guideline_document:
+      description: "A legal or policy document (e.g. Privacy Policy, Terms & Conditions). Versioned separately."
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          auto_increment: true
+          nullable: false
+          description: "Primary key"
+        code:
+          type: varchar
+          length: 64
+          nullable: false
+          description: "Unique document code (e.g. PRIVACY_POLICY, TNC_APP)"
+        name:
+          type: varchar
+          length: 160
+          nullable: false
+          description: "Human-readable document name"
+        status:
+          type: varchar
+          length: 16
+          nullable: false
+          default: "active"
+          values: [active, inactive]
+          description: "Document status"
+        scope_type:
+          type: varchar
+          length: 16
+          nullable: false
+          default: "global"
+          description: "Scope of this document (global, product, region)"
+        scope_ref_type:
+          type: varchar
+          length: 64
+          nullable: true
+          default: null
+          description: "Type of the scoped entity if scope_type != global"
+        scope_ref_id:
+          type: varchar
+          length: 128
+          nullable: true
+          default: null
+          description: "ID of the scoped entity"
+        meta_json:
+          type: json
+          nullable: true
+          default: null
+          description: "Additional metadata"
+        created_at:
+          type: datetime
+          nullable: false
+          default: CURRENT_TIMESTAMP
+          description: "Record creation timestamp"
+        updated_at:
+          type: datetime
+          nullable: false
+          default: CURRENT_TIMESTAMP
+          on_update: CURRENT_TIMESTAMP
+          description: "Last update timestamp"
+      constraints:
+        primary_key: [id]
+        unique_keys:
+          - name: uk_guideline_doc_code
+            columns: [code]
+        foreign_keys: []
+        indexes:
+          - name: idx_guideline_doc_status
+            columns: [status]
+          - name: idx_guideline_doc_scope
+            columns: [scope_type, scope_ref_type, scope_ref_id]
+
+    guideline_version:
+      description: "A published version of a guideline document. Contains the actual content (HTML, URL, or file ref)."
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          auto_increment: true
+          nullable: false
+          description: "Primary key"
+        document_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "FK to guideline_document.id"
+        version_code:
+          type: varchar
+          length: 32
+          nullable: false
+          description: "Version code (e.g. v1.0, 2026-01)"
+        locale:
+          type: varchar
+          length: 10
+          nullable: false
+          default: "en"
+          description: "Language locale (e.g. en, ms)"
+        status:
+          type: varchar
+          length: 16
+          nullable: false
+          default: "draft"
+          values: [draft, published, archived]
+          description: "Version lifecycle status"
+        effective_from:
+          type: datetime
+          nullable: true
+          default: null
+          description: "When this version becomes effective"
+        effective_to:
+          type: datetime
+          nullable: true
+          default: null
+          description: "When this version expires"
+        checksum_sha256:
+          type: varchar
+          length: 64
+          nullable: true
+          default: null
+          description: "SHA-256 checksum of content for integrity verification"
+        content_type:
+          type: varchar
+          length: 16
+          nullable: false
+          default: "html"
+          description: "Content format (html, markdown, pdf)"
+        content_text:
+          type: mediumtext
+          nullable: true
+          default: null
+          description: "Inline content text"
+        content_url:
+          type: varchar
+          length: 512
+          nullable: true
+          default: null
+          description: "URL to external hosted content"
+        file_ref_type:
+          type: varchar
+          length: 32
+          nullable: true
+          default: "file_upload"
+          description: "Type of file reference"
+        file_ref_id:
+          type: varchar
+          length: 128
+          nullable: true
+          default: null
+          description: "ID of the referenced file"
+        meta_json:
+          type: json
+          nullable: true
+          default: null
+          description: "Additional metadata"
+        created_at:
+          type: datetime
+          nullable: false
+          default: CURRENT_TIMESTAMP
+          description: "Record creation timestamp"
+        updated_at:
+          type: datetime
+          nullable: false
+          default: CURRENT_TIMESTAMP
+          on_update: CURRENT_TIMESTAMP
+          description: "Last update timestamp"
+      constraints:
+        primary_key: [id]
+        unique_keys:
+          - name: uk_guideline_ver
+            columns: [document_id, version_code, locale]
+        foreign_keys:
+          - name: fk_guideline_version_doc
+            columns: [document_id]
+            references: { table: guideline_document, column: id }
+            on_delete: RESTRICT
+            on_update: CASCADE
+        indexes:
+          - name: idx_guideline_ver_status
+            columns: [status, effective_from, effective_to]
+          - name: idx_guideline_ver_document
+            columns: [document_id]
+
+    guideline_acceptance:
+      description: "Records that a user/account/person has accepted a specific guideline version. Idempotent."
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          auto_increment: true
+          nullable: false
+          description: "Primary key"
+        version_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "FK to guideline_version.id"
+        account_id:
+          type: bigint
+          unsigned: true
+          nullable: true
+          default: null
+          description: "Account that accepted (at least one of account_id/person_id/user_id must be set)"
+        person_id:
+          type: bigint
+          unsigned: true
+          nullable: true
+          default: null
+          description: "Person that accepted"
+        user_id:
+          type: bigint
+          unsigned: true
+          nullable: true
+          default: null
+          description: "User that accepted"
+        acceptance_status:
+          type: varchar
+          length: 16
+          nullable: false
+          default: "accepted"
+          values: [accepted, rejected]
+          description: "Whether accepted or rejected"
+        channel:
+          type: varchar
+          length: 16
+          nullable: false
+          default: "app"
+          description: "Channel through which acceptance was given (app, web, sms)"
+        source:
+          type: varchar
+          length: 32
+          nullable: false
+          default: "other"
+          description: "Source context (registration, onboarding, checkout)"
+        request_id:
+          type: varchar
+          length: 128
+          nullable: true
+          default: null
+          description: "Originating request ID"
+        idempotency_key:
+          type: varchar
+          length: 128
+          nullable: false
+          description: "Client-provided idempotency key"
+        ip:
+          type: varchar
+          length: 64
+          nullable: true
+          default: null
+          description: "Client IP address at time of acceptance"
+        user_agent:
+          type: varchar
+          length: 512
+          nullable: true
+          default: null
+          description: "Client user agent at time of acceptance"
+        accepted_at:
+          type: datetime
+          nullable: false
+          default: CURRENT_TIMESTAMP
+          description: "When acceptance was recorded"
+        meta_json:
+          type: json
+          nullable: true
+          default: null
+          description: "Additional metadata"
+        created_at:
+          type: datetime
+          nullable: false
+          default: CURRENT_TIMESTAMP
+          description: "Record creation timestamp"
+      constraints:
+        primary_key: [id]
+        unique_keys:
+          - name: uk_guideline_accept_idem
+            columns: [idempotency_key]
+          - name: uk_guideline_accept_once
+            columns: [version_id, account_id, person_id, user_id]
+        foreign_keys:
+          - name: fk_guideline_accept_version
+            columns: [version_id]
+            references: { table: guideline_version, column: id }
+            on_delete: RESTRICT
+            on_update: CASCADE
+        indexes:
+          - name: idx_guideline_accept_version
+            columns: [version_id, accepted_at]
+          - name: idx_guideline_accept_account
+            columns: [account_id, accepted_at]
+          - name: idx_guideline_accept_person
+            columns: [person_id, accepted_at]
+          - name: idx_guideline_accept_user
+            columns: [user_id, accepted_at]
+          - name: idx_guideline_accept_status
+            columns: [acceptance_status]
+
+    kyc:
+      description: "KYC (Know Your Customer) verification record. Polymorphic via subject_type + subject_id."
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          auto_increment: true
+          nullable: false
+          description: "Primary key"
+        subject_type:
+          type: varchar
+          length: 16
+          nullable: false
+          description: "Type of subject being verified (person, account, user)"
+        subject_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "ID of the subject"
+        provider:
+          type: varchar
+          length: 64
+          nullable: true
+          default: null
+          description: "KYC provider name (e.g. myinfo, manual)"
+        status:
+          type: varchar
+          length: 32
+          nullable: false
+          description: "Verification status (pending, verified, rejected, expired)"
+        verified_at:
+          type: datetime
+          nullable: true
+          default: null
+          description: "When verification was completed"
+        meta_json:
+          type: json
+          nullable: true
+          default: null
+          description: "Provider response and additional data"
+        created_at:
+          type: datetime
+          nullable: false
+          default: CURRENT_TIMESTAMP
+          description: "Record creation timestamp"
+        updated_at:
+          type: datetime
+          nullable: false
+          default: CURRENT_TIMESTAMP
+          on_update: CURRENT_TIMESTAMP
+          description: "Last update timestamp"
+      constraints:
+        primary_key: [id]
+        unique_keys: []
+        foreign_keys: []
+        indexes:
+          - name: idx_kyc_subject
+            columns: [subject_type, subject_id]
+          - name: idx_kyc_status
+            columns: [status, verified_at]
+
+    outbox_event_consumer:
+      description: "Tracks per-consumer processing state for outbox events. Enables reliable at-least-once delivery with idempotency."
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          auto_increment: true
+          nullable: false
+          description: "Primary key"
+        consumer_name:
+          type: varchar
+          length: 128
+          nullable: false
+          description: "Unique name of the consumer (e.g. CommissionAccrualConsumer)"
+        event_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "FK to outbox_event.id"
+        status:
+          type: varchar
+          length: 16
+          nullable: false
+          default: "processed"
+          values: [pending, processing, processed, failed, dead_letter]
+          description: "Processing status for this consumer"
+        attempts:
+          type: int
+          unsigned: true
+          nullable: false
+          default: 0
+          description: "Number of processing attempts"
+        available_at:
+          type: datetime
+          nullable: false
+          default: CURRENT_TIMESTAMP
+          description: "When this event becomes available for pickup (supports delayed retry)"
+        locked_at:
+          type: datetime
+          nullable: true
+          default: null
+          description: "When a worker locked this record for processing"
+        lock_owner:
+          type: varchar
+          length: 64
+          nullable: true
+          default: null
+          description: "Identity of the worker holding the lock"
+        last_error:
+          type: text
+          nullable: true
+          default: null
+          description: "Last error message from a failed attempt"
+        processed_at:
+          type: datetime
+          nullable: false
+          default: CURRENT_TIMESTAMP
+          description: "When last processed successfully"
+        meta_json:
+          type: json
+          nullable: true
+          default: null
+          description: "Additional processing metadata"
+        created_at:
+          type: datetime
+          nullable: false
+          default: CURRENT_TIMESTAMP
+          description: "Record creation timestamp"
+        updated_at:
+          type: datetime
+          nullable: false
+          default: CURRENT_TIMESTAMP
+          on_update: CURRENT_TIMESTAMP
+          description: "Last update timestamp"
+      constraints:
+        primary_key: [id]
+        unique_keys:
+          - name: uk_consumer_event
+            columns: [consumer_name, event_id]
+        foreign_keys:
+          - name: fk_consume_event
+            columns: [event_id]
+            references: { table: outbox_event, column: id }
+            on_delete: CASCADE
+            on_update: CASCADE
+        indexes:
+          - name: idx_consume_event
+            columns: [event_id]
+          - name: idx_consume_consumer_time
+            columns: [consumer_name, processed_at]
+          - name: idx_oec_pick
+            columns: [consumer_name, status, available_at]
+          - name: idx_oec_lock
+            columns: [consumer_name, locked_at]
+
+    resource_ref:
+      description: "UUID registry for internal resources. Maps resource_type + resource_id to a stable UUID for external-facing references."
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          auto_increment: true
+          nullable: false
+          description: "Primary key"
+        resource_type:
+          type: varchar
+          length: 64
+          nullable: false
+          description: "Type of the resource (e.g. payment_intent, policy)"
+        resource_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "Internal numeric ID of the resource"
+        resource_uuid:
+          type: char
+          length: 36
+          nullable: true
+          default: null
+          description: "Externally-facing UUID for this resource"
+        status:
+          type: varchar
+          length: 16
+          nullable: false
+          default: "active"
+          values: [active, inactive]
+          description: "Reference status"
+        meta_json:
+          type: json
+          nullable: true
+          default: null
+          description: "Additional metadata"
+        created_at:
+          type: datetime
+          nullable: false
+          default: CURRENT_TIMESTAMP
+          description: "Record creation timestamp"
+        updated_at:
+          type: datetime
+          nullable: false
+          default: CURRENT_TIMESTAMP
+          on_update: CURRENT_TIMESTAMP
+          description: "Last update timestamp"
+      constraints:
+        primary_key: [id]
+        unique_keys:
+          - name: uk_resource_type_id
+            columns: [resource_type, resource_id]
+          - name: uk_resource_uuid
+            columns: [resource_uuid]
+        foreign_keys: []
+        indexes:
+          - name: idx_resource_type_status
+            columns: [resource_type, status]
+
+    smoker_profile:
+      description: "Smoker risk profile reference table. Provides loading factors for premium calculations."
+      columns:
+        id:
+          type: bigint
+          auto_increment: true
+          nullable: false
+          description: "Primary key"
+        code:
+          type: varchar
+          length: 32
+          nullable: false
+          description: "Unique profile code (e.g. NON_SMOKER, SMOKER, EX_SMOKER)"
+        smoker_factor:
+          type: decimal
+          precision: [8, 3]
+          nullable: false
+          default: "1.000"
+          description: "Base multiplier for smoker status"
+        loading_pct:
+          type: decimal
+          precision: [8, 3]
+          nullable: false
+          default: "0.000"
+          description: "Additional loading percentage applied to premium"
+        created_at:
+          type: datetime
+          nullable: false
+          default: CURRENT_TIMESTAMP
+          description: "Record creation timestamp"
+      constraints:
+        primary_key: [id]
+        unique_keys:
+          - name: uk_smoker_profile_code
+            columns: [code]
+        foreign_keys: []
+        indexes: []
+
+# -------------------------------------------------------
+# RESOURCES
+# -------------------------------------------------------
+
+resources:
+
+  - name: Address
+    kind: resource
+    table: address
+    primary_key: id
+    api_surface:
+      - "POST /api/v1/foundation/addresses"
+      - "PUT /api/v1/foundation/addresses/:addressId/set-default"
+
+  - name: AgeBand
+    kind: resource
+    table: age_band
+    primary_key: id
+    api_surface:
+      - "POST /api/v1/foundation/age-bands"
+
+  - name: AuditLog
+    kind: resource
+    table: audit_log
+    primary_key: id
+    api_surface:
+      - "POST /api/v1/foundation/audit-logs"
+
+  - name: BenefitCatalog
+    kind: aggregate
+    table: benefit_catalog
+    primary_key: id
+    statuses: [active, archived]
+    api_surface:
+      - "POST /api/v1/foundation/benefit-catalogs"
+      - "POST /api/v1/foundation/benefit-catalogs/:catalogId/archive"
+      - "POST /api/v1/foundation/benefit-catalogs/:catalogId/items"
+      - "POST /api/v1/foundation/benefit-catalogs/:catalogId/levels"
+
+  - name: DiscountProgram
+    kind: aggregate
+    table: discount_program
+    primary_key: id
+    statuses: [active, inactive, expired]
+    api_surface:
+      - "POST /api/v1/foundation/discount-programs"
+      - "POST /api/v1/foundation/discount-programs/:programId/deactivate"
+
+  - name: GeoState
+    kind: resource
+    table: geo_state
+    primary_key: id
+    api_surface:
+      - "POST /api/v1/foundation/geo-states"
+
+  - name: GuidelineDocument
+    kind: aggregate
+    table: guideline_document
+    primary_key: id
+    statuses: [active, inactive]
+    api_surface:
+      - "POST /api/v1/foundation/guideline-documents"
+      - "POST /api/v1/foundation/guideline-documents/:documentId/versions"
+      - "POST /api/v1/foundation/guideline-versions/:versionId/publish"
+      - "POST /api/v1/foundation/guideline-versions/:versionId/archive"
+      - "POST /api/v1/foundation/guideline-versions/:versionId/accept"
+
+  - name: KYC
+    kind: aggregate
+    table: kyc
+    primary_key: id
+    statuses: [pending, verified, rejected, expired]
+    api_surface:
+      - "POST /api/v1/foundation/kyc"
+      - "POST /api/v1/foundation/kyc/:kycId/verify"
+      - "POST /api/v1/foundation/kyc/:kycId/reject"
+
+  - name: ResourceRef
+    kind: resource
+    table: resource_ref
+    primary_key: id
+    api_surface:
+      - "POST /api/v1/foundation/resource-refs"
+
+  - name: SmokProfile
+    kind: resource
+    table: smoker_profile
+    primary_key: id
+    api_surface:
+      - "POST /api/v1/foundation/smoker-profiles"
+
+# -------------------------------------------------------
+# AGGREGATES
+# -------------------------------------------------------
+
+aggregates:
+  BENEFIT_CATALOG:
+    root_table: "benefit_catalog"
+    primary_key: "id"
+    statuses: [active, archived]
+
+  DISCOUNT_PROGRAM:
+    root_table: "discount_program"
+    primary_key: "id"
+    statuses: [active, inactive, expired]
+
+  GUIDELINE_DOCUMENT:
+    root_table: "guideline_document"
+    primary_key: "id"
+    statuses: [active, inactive]
+
+  GUIDELINE_VERSION:
+    root_table: "guideline_version"
+    primary_key: "id"
+    statuses: [draft, published, archived]
+
+  KYC:
+    root_table: "kyc"
+    primary_key: "id"
+    statuses: [pending, verified, rejected, expired]
+
+# -------------------------------------------------------
+# TYPES
+# -------------------------------------------------------
+
+types:
+  Actor:
+    fields:
+      userId: number
+      role: string
+
+  AgeBandSummary:
+    fields:
+      id: number
+      code: string
+      min_age: number
+      max_age: number
+      age_factor: string
+
+  BenefitCatalogSummary:
+    fields:
+      id: number
+      code: string
+      version: string
+      status: string
+      effective_from: string | null
+      effective_to: string | null
+
+  GuidelineVersionSummary:
+    fields:
+      id: number
+      document_id: number
+      version_code: string
+      locale: string
+      status: string
+      effective_from: string | null
+
+  KYCSummary:
+    fields:
+      id: number
+      subject_type: string
+      subject_id: number
+      status: string
+      verified_at: string | null
+
+# -------------------------------------------------------
+# DTOS
+# -------------------------------------------------------
+
+dtos:
+
+  AgeBandUpsertDto:
+    description: "Create or update an age band by code"
+    fields:
+      code:
+        type: string
+        max_len: 32
+        required: true
+      min_age:
+        type: number
+        required: true
+      max_age:
+        type: number
+        required: true
+      age_factor:
+        type: string
+        required: false
+        description: "Decimal string e.g. '1.250'"
+
+  SmokProfileUpsertDto:
+    description: "Create or update a smoker profile by code"
+    fields:
+      code:
+        type: string
+        max_len: 32
+        required: true
+      smoker_factor:
+        type: string
+        required: false
+        description: "Decimal string e.g. '1.500'"
+      loading_pct:
+        type: string
+        required: false
+        description: "Decimal string e.g. '0.250'"
+
+  GeoStateUpsertDto:
+    description: "Create or update a geo state by country_code + state_code"
+    fields:
+      country_code:
+        type: string
+        max_len: 8
+        required: true
+      state_code:
+        type: string
+        max_len: 32
+        required: true
+      name:
+        type: string
+        max_len: 128
+        required: true
+      status:
+        type: string
+        required: false
+        default: "active"
+
+  AddressAddDto:
+    description: "Add an address to any owner entity"
+    fields:
+      owner_type:
+        type: string
+        max_len: 16
+        required: true
+      owner_id:
+        type: number
+        required: true
+      type:
+        type: string
+        max_len: 32
+        required: false
+      line1:
+        type: string
+        max_len: 255
+        required: false
+      line2:
+        type: string
+        max_len: 255
+        required: false
+      city:
+        type: string
+        max_len: 128
+        required: false
+      state_code:
+        type: string
+        max_len: 64
+        required: false
+      postcode:
+        type: string
+        max_len: 32
+        required: false
+      country:
+        type: string
+        max_len: 64
+        required: false
+      is_default:
+        type: boolean
+        required: false
+        default: false
+
+  BenefitCatalogCreateDto:
+    description: "Create a new benefit catalog"
+    fields:
+      code:
+        type: string
+        max_len: 64
+        required: true
+      name:
+        type: string
+        max_len: 160
+        required: true
+      version:
+        type: string
+        max_len: 40
+        required: false
+        default: "v1"
+      effective_from:
+        type: string
+        format: datetime
+        required: false
+      effective_to:
+        type: string
+        format: datetime
+        required: false
+      meta_json:
+        type: object
+        required: false
+
+  BenefitCatalogItemCreateDto:
+    description: "Add a benefit item to a catalog"
+    fields:
+      item_code:
+        type: string
+        max_len: 64
+        required: true
+      name:
+        type: string
+        max_len: 160
+        required: true
+      category:
+        type: string
+        max_len: 32
+        required: false
+        default: "other"
+      limit_type:
+        type: string
+        max_len: 20
+        required: false
+        default: "per_year"
+      limit_amount:
+        type: string
+        required: false
+        default: "0.00"
+      limit_count:
+        type: number
+        required: false
+        default: 0
+      eligibility_rule_version:
+        type: string
+        max_len: 40
+        required: false
+      eligibility_rule_json:
+        type: object
+        required: false
+      calculation_mode:
+        type: string
+        max_len: 20
+        required: false
+        default: "reimburse"
+      percent_value:
+        type: string
+        required: false
+      fixed_amount:
+        type: string
+        required: false
+
+  BenefitLevelCreateDto:
+    description: "Add a coverage level to a benefit catalog"
+    fields:
+      level_code:
+        type: string
+        max_len: 32
+        required: true
+      level_name:
+        type: string
+        max_len: 128
+        required: true
+      sort_order:
+        type: number
+        required: false
+        default: 0
+      meta_json:
+        type: object
+        required: false
+
+  DiscountProgramCreateDto:
+    description: "Create a new discount program"
+    fields:
+      code:
+        type: string
+        max_len: 64
+        required: true
+      discount_type:
+        type: string
+        max_len: 20
+        required: true
+      value:
+        type: string
+        required: true
+        description: "Decimal string"
+      eligibility_rule_version:
+        type: string
+        max_len: 40
+        required: false
+      rule_json:
+        type: object
+        required: false
+      starts_at:
+        type: string
+        format: datetime
+        required: false
+      ends_at:
+        type: string
+        format: datetime
+        required: false
+
+  GuidelineDocumentCreateDto:
+    description: "Create a new guideline document"
+    fields:
+      code:
+        type: string
+        max_len: 64
+        required: true
+      name:
+        type: string
+        max_len: 160
+        required: true
+      scope_type:
+        type: string
+        max_len: 16
+        required: false
+        default: "global"
+      scope_ref_type:
+        type: string
+        max_len: 64
+        required: false
+      scope_ref_id:
+        type: string
+        max_len: 128
+        required: false
+      meta_json:
+        type: object
+        required: false
+
+  GuidelineVersionCreateDto:
+    description: "Create a new version for a guideline document"
+    fields:
+      version_code:
+        type: string
+        max_len: 32
+        required: true
+      locale:
+        type: string
+        max_len: 10
+        required: false
+        default: "en"
+      content_type:
+        type: string
+        max_len: 16
+        required: false
+        default: "html"
+      content_text:
+        type: string
+        required: false
+      content_url:
+        type: string
+        max_len: 512
+        required: false
+      file_ref_type:
+        type: string
+        max_len: 32
+        required: false
+      file_ref_id:
+        type: string
+        max_len: 128
+        required: false
+      effective_from:
+        type: string
+        format: datetime
+        required: false
+      effective_to:
+        type: string
+        format: datetime
+        required: false
+      meta_json:
+        type: object
+        required: false
+
+  GuidelineAcceptDto:
+    description: "Record user/account/person acceptance of a guideline version"
+    fields:
+      version_id:
+        type: number
+        required: true
+      account_id:
+        type: number
+        required: false
+      person_id:
+        type: number
+        required: false
+      user_id:
+        type: number
+        required: false
+      acceptance_status:
+        type: string
+        required: false
+        default: "accepted"
+      channel:
+        type: string
+        max_len: 16
+        required: false
+        default: "app"
+      source:
+        type: string
+        max_len: 32
+        required: false
+        default: "other"
+      ip:
+        type: string
+        max_len: 64
+        required: false
+      user_agent:
+        type: string
+        max_len: 512
+        required: false
+      meta_json:
+        type: object
+        required: false
+
+  KYCUpsertDto:
+    description: "Create or update a KYC record for a subject"
+    fields:
+      subject_type:
+        type: string
+        max_len: 16
+        required: true
+      subject_id:
+        type: number
+        required: true
+      provider:
+        type: string
+        max_len: 64
+        required: false
+      status:
+        type: string
+        max_len: 32
+        required: true
+      meta_json:
+        type: object
+        required: false
+
+  ResourceRefRegisterDto:
+    description: "Register a resource in the UUID registry"
+    fields:
+      resource_type:
+        type: string
+        max_len: 64
+        required: true
+      resource_id:
+        type: number
+        required: true
+      resource_uuid:
+        type: string
+        max_len: 36
+        required: false
+        description: "If omitted, a UUID will be generated"
+
+# -------------------------------------------------------
+# EVENTS
+# -------------------------------------------------------
+
+events:
+
+  - name: BENEFIT_CATALOG_CREATED
+    version: "1"
+    aggregate_type: BENEFIT_CATALOG
+    description: "A new benefit catalog was created"
+
+  - name: BENEFIT_CATALOG_ARCHIVED
+    version: "1"
+    aggregate_type: BENEFIT_CATALOG
+    description: "A benefit catalog was archived"
+
+  - name: DISCOUNT_PROGRAM_CREATED
+    version: "1"
+    aggregate_type: DISCOUNT_PROGRAM
+    description: "A new discount program was created"
+
+  - name: DISCOUNT_PROGRAM_DEACTIVATED
+    version: "1"
+    aggregate_type: DISCOUNT_PROGRAM
+    description: "A discount program was deactivated"
+
+  - name: GUIDELINE_VERSION_PUBLISHED
+    version: "1"
+    aggregate_type: GUIDELINE_VERSION
+    description: "A guideline version was published and is now effective"
+
+  - name: GUIDELINE_VERSION_ARCHIVED
+    version: "1"
+    aggregate_type: GUIDELINE_VERSION
+    description: "A guideline version was archived"
+
+  - name: GUIDELINE_ACCEPTED
+    version: "1"
+    aggregate_type: GUIDELINE_VERSION
+    description: "A user/account/person accepted a guideline version"
+
+  - name: KYC_VERIFIED
+    version: "1"
+    aggregate_type: KYC
+    description: "A KYC record was marked as verified"
+
+  - name: KYC_REJECTED
+    version: "1"
+    aggregate_type: KYC
+    description: "A KYC record was marked as rejected"
+
+# -------------------------------------------------------
+# COMMANDS
+# -------------------------------------------------------
+
+commands:
+
+  - name: AgeBand.Upsert
+    description: "Create or update an age band by code. Used by admins to seed/update premium rate tables."
+    path: "/api/v1/foundation/age-bands"
+    method: POST
+    idempotent: true
+    permissions: ["foundation:admin"]
+    input:
+      dto: AgeBandUpsertDto
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: upsert
+        table: age_band
+        unique_by: [code]
+        set:
+          code: dto.code
+          min_age: dto.min_age
+          max_age: dto.max_age
+          age_factor: dto.age_factor ?? "1.000"
+    response:
+      fields: [id, code, min_age, max_age, age_factor, created_at]
+
+  - name: SmokProfile.Upsert
+    description: "Create or update a smoker profile by code. Used for underwriting loading factors."
+    path: "/api/v1/foundation/smoker-profiles"
+    method: POST
+    idempotent: true
+    permissions: ["foundation:admin"]
+    input:
+      dto: SmokProfileUpsertDto
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: upsert
+        table: smoker_profile
+        unique_by: [code]
+        set:
+          code: dto.code
+          smoker_factor: dto.smoker_factor ?? "1.000"
+          loading_pct: dto.loading_pct ?? "0.000"
+    response:
+      fields: [id, code, smoker_factor, loading_pct, created_at]
+
+  - name: GeoState.Upsert
+    description: "Create or update a geographic state record. Used for address validation and region rules."
+    path: "/api/v1/foundation/geo-states"
+    method: POST
+    idempotent: true
+    permissions: ["foundation:admin"]
+    input:
+      dto: GeoStateUpsertDto
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: upsert
+        table: geo_state
+        unique_by: [country_code, state_code]
+        set:
+          country_code: dto.country_code
+          state_code: dto.state_code
+          name: dto.name
+          status: dto.status ?? "active"
+    response:
+      fields: [id, country_code, state_code, name, status, created_at]
+
+  - name: Address.AddToOwner
+    description: "Add an address to any owner entity (person, account, user). If is_default=true, all other addresses for the same owner are set to is_default=false."
+    path: "/api/v1/foundation/addresses"
+    method: POST
+    idempotent: true
+    permissions: ["foundation:admin"]
+    input:
+      dto: AddressAddDto
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: when
+        condition: "dto.is_default == true"
+        then:
+          - kind: update
+            table: address
+            filter: { owner_type: dto.owner_type, owner_id: dto.owner_id, is_default: 1 }
+            set:
+              is_default: 0
+      - kind: insert
+        table: address
+        set:
+          owner_type: dto.owner_type
+          owner_id: dto.owner_id
+          type: dto.type
+          line1: dto.line1
+          line2: dto.line2
+          city: dto.city
+          state_code: dto.state_code
+          postcode: dto.postcode
+          country: dto.country
+          is_default: dto.is_default ?? 0
+    response:
+      fields: [id, owner_type, owner_id, type, line1, city, state_code, postcode, country, is_default, created_at]
+
+  - name: Address.SetDefault
+    description: "Set an address as the default for its owner. Clears is_default on all other addresses for the same owner."
+    path: "/api/v1/foundation/addresses/:addressId/set-default"
+    method: POST
+    idempotent: true
+    permissions: ["foundation:admin"]
+    input:
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: read
+        table: address
+        filter: { id: params.addressId }
+        bind: address
+      - kind: guard
+        condition: "address not found"
+        error: "ADDRESS_NOT_FOUND"
+      - kind: update
+        table: address
+        filter: { owner_type: address.owner_type, owner_id: address.owner_id, is_default: 1 }
+        set:
+          is_default: 0
+      - kind: update
+        table: address
+        filter: { id: params.addressId }
+        set:
+          is_default: 1
+    response:
+      fields: [id, owner_type, owner_id, is_default, updated_at]
+
+  - name: BenefitCatalog.Create
+    description: "Create a new versioned benefit catalog."
+    path: "/api/v1/foundation/benefit-catalogs"
+    method: POST
+    idempotent: true
+    permissions: ["foundation:admin"]
+    input:
+      dto: BenefitCatalogCreateDto
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: guard
+        condition: "benefit_catalog with (code, version) already exists"
+        error: "BENEFIT_CATALOG_ALREADY_EXISTS"
+      - kind: insert
+        table: benefit_catalog
+        set:
+          code: dto.code
+          name: dto.name
+          status: "active"
+          version: dto.version ?? "v1"
+          effective_from: dto.effective_from
+          effective_to: dto.effective_to
+          meta_json: dto.meta_json
+      - kind: outbox_emit
+        event: BENEFIT_CATALOG_CREATED
+        aggregate_type: BENEFIT_CATALOG
+        aggregate_id: inserted.id
+    response:
+      fields: [id, code, name, status, version, effective_from, effective_to, created_at]
+
+  - name: BenefitCatalog.Archive
+    description: "Archive a benefit catalog. Prevents new references to it."
+    path: "/api/v1/foundation/benefit-catalogs/:catalogId/archive"
+    method: POST
+    idempotent: true
+    permissions: ["foundation:admin"]
+    input:
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: read
+        table: benefit_catalog
+        filter: { id: params.catalogId }
+        bind: catalog
+      - kind: guard
+        condition: "catalog not found"
+        error: "BENEFIT_CATALOG_NOT_FOUND"
+      - kind: guard
+        condition: "catalog.status == 'archived'"
+        error: "BENEFIT_CATALOG_ALREADY_ARCHIVED"
+      - kind: update
+        table: benefit_catalog
+        filter: { id: params.catalogId }
+        set:
+          status: "archived"
+      - kind: outbox_emit
+        event: BENEFIT_CATALOG_ARCHIVED
+        aggregate_type: BENEFIT_CATALOG
+        aggregate_id: params.catalogId
+    response:
+      fields: [id, status]
+
+  - name: BenefitCatalogItem.Create
+    description: "Add a benefit item to a catalog."
+    path: "/api/v1/foundation/benefit-catalogs/:catalogId/items"
+    method: POST
+    idempotent: true
+    permissions: ["foundation:admin"]
+    input:
+      dto: BenefitCatalogItemCreateDto
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: read
+        table: benefit_catalog
+        filter: { id: params.catalogId }
+        bind: catalog
+      - kind: guard
+        condition: "catalog not found"
+        error: "BENEFIT_CATALOG_NOT_FOUND"
+      - kind: guard
+        condition: "catalog.status == 'archived'"
+        error: "BENEFIT_CATALOG_ARCHIVED"
+      - kind: guard
+        condition: "benefit_catalog_item with (catalogId, item_code) already exists"
+        error: "BENEFIT_ITEM_ALREADY_EXISTS"
+      - kind: insert
+        table: benefit_catalog_item
+        set:
+          catalog_id: params.catalogId
+          item_code: dto.item_code
+          name: dto.name
+          category: dto.category ?? "other"
+          limit_type: dto.limit_type ?? "per_year"
+          limit_amount: dto.limit_amount ?? "0.00"
+          limit_count: dto.limit_count ?? 0
+          eligibility_rule_version: dto.eligibility_rule_version
+          eligibility_rule_json: dto.eligibility_rule_json
+          calculation_mode: dto.calculation_mode ?? "reimburse"
+          percent_value: dto.percent_value
+          fixed_amount: dto.fixed_amount
+          status: "active"
+    response:
+      fields: [id, catalog_id, item_code, name, category, limit_type, limit_amount, status, created_at]
+
+  - name: BenefitLevel.Create
+    description: "Add a coverage level to a benefit catalog."
+    path: "/api/v1/foundation/benefit-catalogs/:catalogId/levels"
+    method: POST
+    idempotent: true
+    permissions: ["foundation:admin"]
+    input:
+      dto: BenefitLevelCreateDto
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: read
+        table: benefit_catalog
+        filter: { id: params.catalogId }
+        bind: catalog
+      - kind: guard
+        condition: "catalog not found"
+        error: "BENEFIT_CATALOG_NOT_FOUND"
+      - kind: guard
+        condition: "benefit_level with (catalogId, level_code) already exists"
+        error: "BENEFIT_LEVEL_ALREADY_EXISTS"
+      - kind: insert
+        table: benefit_level
+        set:
+          catalog_id: params.catalogId
+          level_code: dto.level_code
+          level_name: dto.level_name
+          sort_order: dto.sort_order ?? 0
+          meta_json: dto.meta_json
+    response:
+      fields: [id, catalog_id, level_code, level_name, sort_order, created_at]
+
+  - name: DiscountProgram.Create
+    description: "Create a new discount program."
+    path: "/api/v1/foundation/discount-programs"
+    method: POST
+    idempotent: true
+    permissions: ["foundation:admin"]
+    input:
+      dto: DiscountProgramCreateDto
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: guard
+        condition: "discount_program with code already exists"
+        error: "DISCOUNT_PROGRAM_ALREADY_EXISTS"
+      - kind: insert
+        table: discount_program
+        set:
+          code: dto.code
+          discount_type: dto.discount_type
+          value: dto.value
+          eligibility_rule_version: dto.eligibility_rule_version
+          rule_json: dto.rule_json
+          starts_at: dto.starts_at
+          ends_at: dto.ends_at
+          status: "active"
+      - kind: outbox_emit
+        event: DISCOUNT_PROGRAM_CREATED
+        aggregate_type: DISCOUNT_PROGRAM
+        aggregate_id: inserted.id
+    response:
+      fields: [id, code, discount_type, value, status, starts_at, ends_at, created_at]
+
+  - name: DiscountProgram.Deactivate
+    description: "Deactivate a discount program."
+    path: "/api/v1/foundation/discount-programs/:programId/deactivate"
+    method: POST
+    idempotent: true
+    permissions: ["foundation:admin"]
+    input:
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: read
+        table: discount_program
+        filter: { id: params.programId }
+        bind: program
+      - kind: guard
+        condition: "program not found"
+        error: "DISCOUNT_PROGRAM_NOT_FOUND"
+      - kind: guard
+        condition: "program.status == 'inactive'"
+        error: "DISCOUNT_PROGRAM_ALREADY_INACTIVE"
+      - kind: update
+        table: discount_program
+        filter: { id: params.programId }
+        set:
+          status: "inactive"
+      - kind: outbox_emit
+        event: DISCOUNT_PROGRAM_DEACTIVATED
+        aggregate_type: DISCOUNT_PROGRAM
+        aggregate_id: params.programId
+    response:
+      fields: [id, status]
+
+  - name: GuidelineDocument.Create
+    description: "Create a new guideline document (e.g. T&C, Privacy Policy)."
+    path: "/api/v1/foundation/guideline-documents"
+    method: POST
+    idempotent: true
+    permissions: ["foundation:admin"]
+    input:
+      dto: GuidelineDocumentCreateDto
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: guard
+        condition: "guideline_document with code already exists"
+        error: "GUIDELINE_DOCUMENT_ALREADY_EXISTS"
+      - kind: insert
+        table: guideline_document
+        set:
+          code: dto.code
+          name: dto.name
+          status: "active"
+          scope_type: dto.scope_type ?? "global"
+          scope_ref_type: dto.scope_ref_type
+          scope_ref_id: dto.scope_ref_id
+          meta_json: dto.meta_json
+    response:
+      fields: [id, code, name, status, scope_type, created_at]
+
+  - name: GuidelineVersion.Create
+    description: "Create a new version (draft) for a guideline document."
+    path: "/api/v1/foundation/guideline-documents/:documentId/versions"
+    method: POST
+    idempotent: true
+    permissions: ["foundation:admin"]
+    input:
+      dto: GuidelineVersionCreateDto
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: read
+        table: guideline_document
+        filter: { id: params.documentId }
+        bind: document
+      - kind: guard
+        condition: "document not found"
+        error: "GUIDELINE_DOCUMENT_NOT_FOUND"
+      - kind: guard
+        condition: "guideline_version with (document_id, version_code, locale) already exists"
+        error: "GUIDELINE_VERSION_ALREADY_EXISTS"
+      - kind: insert
+        table: guideline_version
+        set:
+          document_id: params.documentId
+          version_code: dto.version_code
+          locale: dto.locale ?? "en"
+          status: "draft"
+          content_type: dto.content_type ?? "html"
+          content_text: dto.content_text
+          content_url: dto.content_url
+          file_ref_type: dto.file_ref_type
+          file_ref_id: dto.file_ref_id
+          effective_from: dto.effective_from
+          effective_to: dto.effective_to
+          meta_json: dto.meta_json
+    response:
+      fields: [id, document_id, version_code, locale, status, content_type, effective_from, created_at]
+
+  - name: GuidelineVersion.Publish
+    description: "Publish a guideline version. Makes it effective and visible to users."
+    path: "/api/v1/foundation/guideline-versions/:versionId/publish"
+    method: POST
+    idempotent: true
+    permissions: ["foundation:admin"]
+    input:
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: read
+        table: guideline_version
+        filter: { id: params.versionId }
+        bind: version
+      - kind: guard
+        condition: "version not found"
+        error: "GUIDELINE_VERSION_NOT_FOUND"
+      - kind: guard
+        condition: "version.status != 'draft'"
+        error: "GUIDELINE_VERSION_NOT_DRAFT"
+      - kind: update
+        table: guideline_version
+        filter: { id: params.versionId }
+        set:
+          status: "published"
+      - kind: outbox_emit
+        event: GUIDELINE_VERSION_PUBLISHED
+        aggregate_type: GUIDELINE_VERSION
+        aggregate_id: params.versionId
+    response:
+      fields: [id, document_id, version_code, status, effective_from]
+
+  - name: GuidelineVersion.Archive
+    description: "Archive a published guideline version."
+    path: "/api/v1/foundation/guideline-versions/:versionId/archive"
+    method: POST
+    idempotent: true
+    permissions: ["foundation:admin"]
+    input:
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: read
+        table: guideline_version
+        filter: { id: params.versionId }
+        bind: version
+      - kind: guard
+        condition: "version not found"
+        error: "GUIDELINE_VERSION_NOT_FOUND"
+      - kind: guard
+        condition: "version.status == 'archived'"
+        error: "GUIDELINE_VERSION_ALREADY_ARCHIVED"
+      - kind: update
+        table: guideline_version
+        filter: { id: params.versionId }
+        set:
+          status: "archived"
+      - kind: outbox_emit
+        event: GUIDELINE_VERSION_ARCHIVED
+        aggregate_type: GUIDELINE_VERSION
+        aggregate_id: params.versionId
+    response:
+      fields: [id, document_id, version_code, status]
+
+  - name: Guideline.Accept
+    description: "Record that a user/account/person has accepted a guideline version. Idempotent via idempotency_key and unique (version_id, account_id, person_id, user_id)."
+    path: "/api/v1/foundation/guideline-versions/:versionId/accept"
+    method: POST
+    idempotent: true
+    permissions: []
+    input:
+      dto: GuidelineAcceptDto
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: read
+        table: guideline_version
+        filter: { id: dto.version_id }
+        bind: version
+      - kind: guard
+        condition: "version not found"
+        error: "GUIDELINE_VERSION_NOT_FOUND"
+      - kind: guard
+        condition: "version.status != 'published'"
+        error: "GUIDELINE_VERSION_NOT_PUBLISHED"
+      - kind: upsert
+        table: guideline_acceptance
+        unique_by: [idempotency_key]
+        set:
+          version_id: dto.version_id
+          account_id: dto.account_id
+          person_id: dto.person_id
+          user_id: dto.user_id
+          acceptance_status: dto.acceptance_status ?? "accepted"
+          channel: dto.channel ?? "app"
+          source: dto.source ?? "other"
+          request_id: context.request_id
+          idempotency_key: headers.idempotency_key
+          ip: context.ip
+          user_agent: context.user_agent
+          meta_json: dto.meta_json
+      - kind: outbox_emit
+        event: GUIDELINE_ACCEPTED
+        aggregate_type: GUIDELINE_VERSION
+        aggregate_id: dto.version_id
+    response:
+      fields: [id, version_id, acceptance_status, channel, accepted_at]
+
+  - name: KYC.Upsert
+    description: "Create or update a KYC record for a subject. Creates if none exists, updates status if it does."
+    path: "/api/v1/foundation/kyc"
+    method: POST
+    idempotent: true
+    permissions: ["foundation:admin"]
+    input:
+      dto: KYCUpsertDto
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: insert
+        table: kyc
+        set:
+          subject_type: dto.subject_type
+          subject_id: dto.subject_id
+          provider: dto.provider
+          status: dto.status
+          meta_json: dto.meta_json
+    response:
+      fields: [id, subject_type, subject_id, provider, status, verified_at, created_at]
+
+  - name: KYC.Verify
+    description: "Mark a KYC record as verified. Sets verified_at timestamp."
+    path: "/api/v1/foundation/kyc/:kycId/verify"
+    method: POST
+    idempotent: true
+    permissions: ["foundation:admin"]
+    input:
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: read
+        table: kyc
+        filter: { id: params.kycId }
+        bind: kyc
+      - kind: guard
+        condition: "kyc not found"
+        error: "KYC_NOT_FOUND"
+      - kind: guard
+        condition: "kyc.status == 'verified'"
+        error: "KYC_ALREADY_VERIFIED"
+      - kind: update
+        table: kyc
+        filter: { id: params.kycId }
+        set:
+          status: "verified"
+          verified_at: NOW()
+      - kind: outbox_emit
+        event: KYC_VERIFIED
+        aggregate_type: KYC
+        aggregate_id: params.kycId
+    response:
+      fields: [id, subject_type, subject_id, status, verified_at]
+
+  - name: KYC.Reject
+    description: "Mark a KYC record as rejected."
+    path: "/api/v1/foundation/kyc/:kycId/reject"
+    method: POST
+    idempotent: true
+    permissions: ["foundation:admin"]
+    input:
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: read
+        table: kyc
+        filter: { id: params.kycId }
+        bind: kyc
+      - kind: guard
+        condition: "kyc not found"
+        error: "KYC_NOT_FOUND"
+      - kind: guard
+        condition: "kyc.status == 'rejected'"
+        error: "KYC_ALREADY_REJECTED"
+      - kind: update
+        table: kyc
+        filter: { id: params.kycId }
+        set:
+          status: "rejected"
+      - kind: outbox_emit
+        event: KYC_REJECTED
+        aggregate_type: KYC
+        aggregate_id: params.kycId
+    response:
+      fields: [id, subject_type, subject_id, status]
+
+  - name: AuditLog.Record
+    description: "Append an audit log entry. Typically called internally by commands or middleware, not directly by end users."
+    path: "/api/v1/foundation/audit-logs"
+    method: POST
+    idempotent: false
+    permissions: ["foundation:admin"]
+    input:
+      headers: []
+    steps:
+      - kind: insert
+        table: audit_log
+        set:
+          actor_type: context.actor_type
+          actor_id: context.actor_id
+          action: context.action
+          resource_type: context.resource_type
+          resource_id: context.resource_id
+          request_id: context.request_id
+          ip: context.ip
+          user_agent: context.user_agent
+          result: context.result ?? "success"
+          before_json: context.before_json
+          after_json: context.after_json
+          meta_json: context.meta_json
+          occurred_at: NOW()
+    response:
+      fields: [id, action, resource_type, resource_id, result, occurred_at]
+
+  - name: ResourceRef.Register
+    description: "Register a resource in the UUID registry. Assigns or stores a UUID for the resource."
+    path: "/api/v1/foundation/resource-refs"
+    method: POST
+    idempotent: true
+    permissions: ["foundation:admin"]
+    input:
+      dto: ResourceRefRegisterDto
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: upsert
+        table: resource_ref
+        unique_by: [resource_type, resource_id]
+        set:
+          resource_type: dto.resource_type
+          resource_id: dto.resource_id
+          resource_uuid: dto.resource_uuid ?? UUID()
+          status: "active"
+    response:
+      fields: [id, resource_type, resource_id, resource_uuid, status, created_at]
+
+# -------------------------------------------------------
+# CHANGELOG
+# -------------------------------------------------------
+
+changelog:
+  - version: "2.0"
+    date: "2026-03-22"
+    author: "system"
+    description: "Initial Foundation pillar spec. Covers all shared/support tables with no domain-pillar owner."
+    changes:
+      - "15 tables defined: address, age_band, audit_log, benefit_catalog, benefit_catalog_item, benefit_level, discount_program, geo_state, guideline_acceptance, guideline_document, guideline_version, kyc, outbox_event_consumer, resource_ref, smoker_profile"
+      - "5 aggregates: BENEFIT_CATALOG, DISCOUNT_PROGRAM, GUIDELINE_DOCUMENT, GUIDELINE_VERSION, KYC"
+      - "18 commands across all sub-domains"
+      - "9 events covering lifecycle transitions and cross-pillar triggers"
+      - "12 DTOs"
+    breaking_changes: []
+    migrations_required: false
+
+# -------------------------------------------------------
+# COVERAGE
+# -------------------------------------------------------
+
+coverage:
+  tables:
+    age_band:
+      touched_by:
+        - "AgeBand.Upsert"
+    smoker_profile:
+      touched_by:
+        - "SmokProfile.Upsert"
+    geo_state:
+      touched_by:
+        - "GeoState.Upsert"
+    address:
+      touched_by:
+        - "Address.AddToOwner"
+        - "Address.SetDefault"
+    benefit_catalog:
+      touched_by:
+        - "BenefitCatalog.Create"
+        - "BenefitCatalog.Archive"
+        - "BenefitCatalogItem.Create"
+        - "BenefitLevel.Create"
+    benefit_catalog_item:
+      touched_by:
+        - "BenefitCatalogItem.Create"
+    benefit_level:
+      touched_by:
+        - "BenefitLevel.Create"
+    discount_program:
+      touched_by:
+        - "DiscountProgram.Create"
+        - "DiscountProgram.Deactivate"
+    guideline_document:
+      touched_by:
+        - "GuidelineDocument.Create"
+        - "GuidelineVersion.Create"
+    guideline_version:
+      touched_by:
+        - "GuidelineVersion.Create"
+        - "GuidelineVersion.Publish"
+        - "GuidelineVersion.Archive"
+        - "Guideline.Accept"
+    guideline_acceptance:
+      touched_by:
+        - "Guideline.Accept"
+    kyc:
+      touched_by:
+        - "KYC.Upsert"
+        - "KYC.Verify"
+        - "KYC.Reject"
+    audit_log:
+      touched_by:
+        - "AuditLog.Record"
+    resource_ref:
+      touched_by:
+        - "ResourceRef.Register"
+    outbox_event_consumer:
+      touched_by: []
+      note: "Managed exclusively by OutboxService infrastructure. No direct commands."
+
+  events:
+    BENEFIT_CATALOG_CREATED:
+      emitted_by:
+        - "BenefitCatalog.Create"
+    BENEFIT_CATALOG_ARCHIVED:
+      emitted_by:
+        - "BenefitCatalog.Archive"
+    DISCOUNT_PROGRAM_CREATED:
+      emitted_by:
+        - "DiscountProgram.Create"
+    DISCOUNT_PROGRAM_DEACTIVATED:
+      emitted_by:
+        - "DiscountProgram.Deactivate"
+    GUIDELINE_VERSION_PUBLISHED:
+      emitted_by:
+        - "GuidelineVersion.Publish"
+    GUIDELINE_VERSION_ARCHIVED:
+      emitted_by:
+        - "GuidelineVersion.Archive"
+    GUIDELINE_ACCEPTED:
+      emitted_by:
+        - "Guideline.Accept"
+    KYC_VERIFIED:
+      emitted_by:
+        - "KYC.Verify"
+    KYC_REJECTED:
+      emitted_by:
+        - "KYC.Reject"
+
+  aggregate_transitions:
+    BENEFIT_CATALOG:
+      - "active → archived (BenefitCatalog.Archive)"
+    DISCOUNT_PROGRAM:
+      - "active → inactive (DiscountProgram.Deactivate)"
+    GUIDELINE_VERSION:
+      - "draft → published (GuidelineVersion.Publish)"
+      - "published → archived (GuidelineVersion.Archive)"
+    KYC:
+      - "pending → verified (KYC.Verify)"
+      - "pending → rejected (KYC.Reject)"
+
+# -------------------------------------------------------
+# INTEGRATION
+# -------------------------------------------------------
+
+integration:
+  description: "Foundation emits KYC and guideline events consumed by user/identity and onboarding workflows. outbox_event_consumer is managed by the OutboxService infrastructure shared across all pillars."
+
+  outbox_pattern:
+    how_it_works:
+      - "Foundation commands emit events via OutboxService.emit() within the same transaction"
+      - "OutboxService writes to outbox_event table atomically with the command write"
+      - "outbox_event_consumer tracks per-consumer delivery state for at-least-once processing"
+      - "Consumers query outbox_event_consumer by (consumer_name, status, available_at) to pick up pending events"
+    benefits:
+      - "Guaranteed delivery even if downstream consumer is temporarily unavailable"
+      - "Per-consumer idempotency via UNIQUE(consumer_name, event_id)"
+      - "Dead-letter support via status=dead_letter after max attempts"
+
+  user:
+    description: "User/identity plugin can consume KYC_VERIFIED to update user verification_status"
+    pattern: "event_driven_via_outbox"
+    consumers:
+      - event: "KYC_VERIFIED"
+        consumer_name: "KYCVerifiedConsumer"
+        location: "src/plugins/user/consumers/kyc-verified.consumer.ts"
+        responsibility: "Update user/person verification_status to verified when KYC passes"
+        expected_behavior:
+          - "Read KYC record to get subject_type and subject_id"
+          - "Update verification_status record for the subject"
+          - "Emit USER_VERIFIED event if applicable"
+        event_payload_example:
+          event_type: "KYC_VERIFIED"
+          aggregate_type: "KYC"
+          aggregate_id: 42
+          payload:
+            subject_type: "person"
+            subject_id: 101
+            provider: "myinfo"
+            verified_at: "2026-03-22T10:00:00Z"
+        idempotency_strategy:
+          - "UNIQUE(consumer_name, event_id) on outbox_event_consumer prevents duplicate processing"
+        error_handling:
+          - "Increment attempts and reschedule available_at with backoff on failure"
+          - "Move to dead_letter after configured max attempts"
+
+      - event: "GUIDELINE_ACCEPTED"
+        consumer_name: "GuidelineAcceptedConsumer"
+        location: "src/plugins/user/consumers/guideline-accepted.consumer.ts"
+        responsibility: "Advance onboarding_progress when required guideline is accepted"
+        expected_behavior:
+          - "Check if accepted guideline version is a required onboarding step"
+          - "Update onboarding_progress for the accepting user/person"
+        event_payload_example:
+          event_type: "GUIDELINE_ACCEPTED"
+          aggregate_type: "GUIDELINE_VERSION"
+          aggregate_id: 7
+          payload:
+            version_id: 7
+            account_id: null
+            person_id: 101
+            user_id: 55
+            acceptance_status: "accepted"
+            channel: "app"
+            source: "onboarding"
+        idempotency_strategy:
+          - "UNIQUE(consumer_name, event_id) on outbox_event_consumer prevents duplicate processing"
+        error_handling:
+          - "Retry with backoff; dead-letter after max attempts"
+
+  implementation_checklist:
+    user:
+      - "[ ] Implement KYCVerifiedConsumer in user plugin"
+      - "[ ] Implement GuidelineAcceptedConsumer in user plugin"
+      - "[ ] Wire consumers into UserModule"
+
+    foundation:
+      - "[✓] KYC_VERIFIED event defined and emitted by KYC.Verify command"
+      - "[✓] GUIDELINE_ACCEPTED event defined and emitted by Guideline.Accept command"
+      - "[ ] Implement foundation plugin entities, repos, service, controllers"
+
+  testing_strategy:
+    end_to_end_test: |
+      1. POST /api/v1/foundation/kyc (upsert pending)
+      2. POST /api/v1/foundation/kyc/:id/verify
+      3. Verify KYC_VERIFIED event in outbox_event table
+      4. Verify outbox_event_consumer picks up event for KYCVerifiedConsumer
+      5. Verify user verification_status updated
+
+    idempotency_test: |
+      POST /api/v1/foundation/guideline-versions/:id/accept with same Idempotency-Key twice.
+      Second call must return same response without creating a duplicate record.
+      Verify outbox_event emitted only once.
+
+    error_test: |
+      Attempt to archive an already-archived benefit catalog.
+      Expect 422 with error code BENEFIT_CATALOG_ALREADY_ARCHIVED.
+      Attempt GuidelineVersion.Publish on a non-draft version.
+      Expect 422 with GUIDELINE_VERSION_NOT_DRAFT.

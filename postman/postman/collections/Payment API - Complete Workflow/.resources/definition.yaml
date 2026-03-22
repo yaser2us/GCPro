@@ -1,0 +1,31 @@
+$kind: collection
+description: |-
+  Complete test suite for Payment Pillar
+
+  Based on: specs/payment/payment.pillar.v2.yml
+
+  Covers:
+  - Payment method management
+  - Payment intent lifecycle (create → confirm → succeed/fail/cancel)
+  - Receipt issuance and voiding (admin)
+  - Webhook ingestion
+
+  Workflow order:
+  1. Create a payment method
+  2. Create a payment intent (optionally referencing the method)
+  3. Confirm the intent with a provider
+  4. Mark succeeded or failed (admin)
+  5. Issue a receipt (admin)
+  6. Void the receipt if needed (admin)
+variables:
+  base_url: http://localhost:3000
+  user_id: user-123
+  user_role: USER
+  admin_user_id: admin-123
+  admin_user_role: ADMIN
+  account_id: "1"
+  person_id: "1"
+  payment_method_id: ""
+  intent_id: ""
+  intent_key: ""
+  receipt_id: ""

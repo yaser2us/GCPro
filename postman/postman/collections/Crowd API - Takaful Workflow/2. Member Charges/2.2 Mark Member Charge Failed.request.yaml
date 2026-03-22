@@ -1,0 +1,25 @@
+$kind: http-request
+description: "Record that collection of a member's share has failed (e.g.
+  insufficient funds). Emits CROWD_MEMBER_CHARGE_FAILED event. Charge status:
+  pending → failed."
+url: "{{base_url}}/api/v1/crowd/member-charges/{{charge_id}}/mark-failed"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: "{}"
+scripts:
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+  - type: afterResponse
+    code: pm.test('Status is 200', () => pm.response.to.have.status(200));
+    language: text/javascript
+order: 2000

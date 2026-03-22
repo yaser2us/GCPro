@@ -1,0 +1,34 @@
+$kind: collection
+description: |-
+  Complete test suite for Foundation Pillar
+
+  Based on: specs/foundation/foundation.pillar.v2.yml
+
+  Covers:
+  - Reference data (age bands, smoker profiles, geo states)
+  - Address management
+  - Benefit catalog (catalogs, items, levels)
+  - Discount programs
+  - Guidelines (documents, versions, acceptance)
+  - KYC verification
+
+  Workflow order:
+  1. Seed reference data (age-bands, smoker-profiles, geo-states)
+  2. Add address to an owner
+  3. Create benefit catalog → add items → add levels
+  4. Create discount program → deactivate
+  5. Create guideline document → create version → publish → accept
+  6. Create KYC record → verify or reject
+
+  All endpoints require: foundation:admin (except Guideline.Accept)
+  All mutating endpoints require: Idempotency-Key header
+variables:
+  base_url: http://localhost:3000
+  admin_user_id: admin-123
+  admin_user_role: ADMIN
+  address_id: ""
+  catalog_id: ""
+  program_id: ""
+  document_id: ""
+  version_id: ""
+  kyc_id: ""

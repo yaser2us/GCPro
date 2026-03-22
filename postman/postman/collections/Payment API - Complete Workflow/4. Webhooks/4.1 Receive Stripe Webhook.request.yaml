@@ -1,0 +1,50 @@
+$kind: http-request
+description: Simulates a Stripe webhook. Signature is read from stripe-signature
+  header. Provider event ID from stripe-event-id header.
+url: "{{base_url}}/api/v1/webhook/stripe"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+  stripe-signature: t=1234567890,v1=abc123signature
+  stripe-event-id: evt_test_123456
+body:
+  type: text
+  content: |-
+    {
+      "id": "evt_test_123456",
+      "type": "payment_intent.succeeded",
+      "data": {
+        "object": {
+          "id": "pi_test_789",
+          "status": "succeeded",
+          "amount": 15000,
+          "currency": "myr",
+          "metadata": {
+            "intent_key": "{{intent_key}}"
+          }
+        }
+      }
+    }
+scripts:
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Status code is 200', function () {
+          pm.response.to.have.status(200);
+      });
+
+      if (pm.response.code === 200) {
+          const response = pm.response.json();
+          console.log('✅ Webhook Received:', response.webhookId);
+          console.log('   Status:', response.status);
+      }
+    language: text/javascript
+order: 1000

@@ -1,0 +1,30 @@
+$kind: http-request
+description: "Record user acceptance of a published guideline version. No
+  permission required — this is a user action. Idempotent: same Idempotency-Key
+  returns the same record. Emits GUIDELINE_ACCEPTED."
+url: "{{base_url}}/api/v1/foundation/guideline-versions/{{version_id}}/accept"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "version_id": 1,
+      "user_id": 55,
+      "person_id": 101,
+      "acceptance_status": "accepted",
+      "channel": "app",
+      "source": "onboarding"
+    }
+scripts:
+  - type: beforeRequest
+    code: "pm.request.headers.add({ key: 'Idempotency-Key', value:
+      pm.variables.replaceIn('{{$guid}}') });"
+    language: text/javascript
+  - type: afterResponse
+    code: pm.test('Status is 201', () => pm.response.to.have.status(201));
+    language: text/javascript
+order: 4000

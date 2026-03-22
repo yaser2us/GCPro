@@ -1,0 +1,42 @@
+$kind: http-request
+description: Simulates an FPX webhook callback.
+url: "{{base_url}}/api/v1/webhook/fpx"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+  x-signature: fpx-hmac-signature-here
+  x-event-id: fpx_evt_001
+body:
+  type: text
+  content: |-
+    {
+      "id": "fpx_evt_001",
+      "event": "payment.success",
+      "fpx_txn_id": "FPX20240101001",
+      "amount": "150.00",
+      "currency": "MYR",
+      "status": "success",
+      "ref_id": "{{intent_key}}"
+    }
+scripts:
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Status code is 200', function () {
+          pm.response.to.have.status(200);
+      });
+
+      if (pm.response.code === 200) {
+          const response = pm.response.json();
+          console.log('✅ FPX Webhook Received:', response.webhookId);
+      }
+    language: text/javascript
+order: 2000

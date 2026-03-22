@@ -1,0 +1,558 @@
+{
+  "info": {
+    "_postman_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+    "name": "Crowd API - Takaful Workflow",
+    "description": "Complete test suite for Crowd (Takaful) Pillar\n\nBased on: specs/crowd/crowd.pillar.v2.yml\n\nCovers:\n- Crowd period lifecycle (create → add members → add claims → calculate → complete/cancel)\n- Member charge management (mark-charged / mark-failed)\n- Claim payout management (mark-paid / mark-failed)\n\nWorkflow order:\n1. Create a crowd period\n2. Add members to the period\n3. Add approved claims to the period\n4. Trigger calculation (distributes cost equally across members)\n5. Complete the period (or cancel it)\n6. Mark each member charge as charged or failed\n7. Mark each claim payout as paid or failed\n\nAll endpoints require: crowd:admin permission\nAll mutating endpoints require: Idempotency-Key header",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "admin_user_id",
+      "value": "admin-123",
+      "type": "string"
+    },
+    {
+      "key": "admin_user_role",
+      "value": "ADMIN",
+      "type": "string"
+    },
+    {
+      "key": "period_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "charge_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "payout_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Crowd Period Lifecycle",
+      "description": "Manage crowd period from creation through calculation to completion",
+      "item": [
+        {
+          "name": "1.1 Create Period",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "if (json && json.id) {",
+                  "    pm.collectionVariables.set('period_id', json.id);",
+                  "    console.log('period_id set to', json.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"periodKey\": \"2026-Q1\",\n  \"periodFrom\": \"2026-01-01\",\n  \"periodTo\": \"2026-03-31\",\n  \"lastDebtAmount\": \"0.00\",\n  \"lastExtraAmount\": \"0.00\",\n  \"ruleVersion\": \"v1\",\n  \"meta\": { \"note\": \"Q1 2026 Takaful period\" }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/crowd/periods",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "crowd", "periods"]
+            },
+            "description": "Create a new crowd (Takaful) period. The periodKey must be unique. lastDebtAmount/lastExtraAmount carry over from prior period."
+          }
+        },
+        {
+          "name": "1.2 Add Member",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"insurantId\": 101,\n  \"packageId\": 5,\n  \"reasonCode\": \"new_enrollment\",\n  \"note\": \"Member joined in January\",\n  \"packageCodeSnapshot\": \"BASIC\",\n  \"ageYearsSnapshot\": 32,\n  \"smokerSnapshot\": false,\n  \"meta\": {}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/crowd/periods/{{period_id}}/members",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "crowd", "periods", "{{period_id}}", "members"]
+            },
+            "description": "Add an insurant to the crowd period. Each insurant+period pair must be unique. Run multiple times with different insurantId values to populate the period."
+          }
+        },
+        {
+          "name": "1.3 Add Second Member",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"insurantId\": 102,\n  \"packageId\": 5,\n  \"reasonCode\": \"new_enrollment\",\n  \"packageCodeSnapshot\": \"BASIC\",\n  \"ageYearsSnapshot\": 45,\n  \"smokerSnapshot\": true,\n  \"meta\": {}\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/crowd/periods/{{period_id}}/members",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "crowd", "periods", "{{period_id}}", "members"]
+            },
+            "description": "Add a second insurant to demonstrate equal-share cost distribution."
+          }
+        },
+        {
+          "name": "1.4 Add Claim",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"claimId\": 1001,\n  \"approvedAmountSnapshot\": \"500.00\",\n  \"eligibilityVersion\": \"v1.2\",\n  \"meta\": { \"claimType\": \"hospitalization\" }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/crowd/periods/{{period_id}}/claims",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "crowd", "periods", "{{period_id}}", "claims"]
+            },
+            "description": "Add an approved claim to the crowd period. The approvedAmountSnapshot is snapshotted at addition time and used in cost distribution."
+          }
+        },
+        {
+          "name": "1.5 Calculate Period",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "if (json && json.charges && json.charges.length > 0) {",
+                  "    pm.collectionVariables.set('charge_id', json.charges[0].id);",
+                  "    console.log('charge_id set to', json.charges[0].id);",
+                  "}",
+                  "if (json && json.payouts && json.payouts.length > 0) {",
+                  "    pm.collectionVariables.set('payout_id', json.payouts[0].id);",
+                  "    console.log('payout_id set to', json.payouts[0].id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ruleVersion\": \"v1\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/crowd/periods/{{period_id}}/calculate",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "crowd", "periods", "{{period_id}}", "calculate"]
+            },
+            "description": "Trigger cost distribution calculation. Creates crowd_member_charge rows (equal share per member) and crowd_claim_payout rows. Uses distributed lock to prevent concurrent runs. Period status: open → calculating → calculated."
+          }
+        },
+        {
+          "name": "1.6 Complete Period",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/crowd/periods/{{period_id}}/complete",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "crowd", "periods", "{{period_id}}", "complete"]
+            },
+            "description": "Mark the period as completed. Requires period to be in 'calculated' status. Period status: calculated → completed."
+          }
+        },
+        {
+          "name": "1.7 Cancel Period (Alternative to Complete)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/crowd/periods/{{period_id}}/cancel",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "crowd", "periods", "{{period_id}}", "cancel"]
+            },
+            "description": "Cancel a crowd period. Can be used instead of complete. Period status: open|calculating|calculated → cancelled."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Member Charges",
+      "description": "Mark crowd member charges as collected or failed",
+      "item": [
+        {
+          "name": "2.1 Mark Member Charged",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paidAmount\": \"250.00\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/crowd/member-charges/{{charge_id}}/mark-charged",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "crowd", "member-charges", "{{charge_id}}", "mark-charged"]
+            },
+            "description": "Record that a member's share has been successfully collected. Emits CROWD_MEMBER_CHARGED event (triggers Notification pillar). Charge status: pending → charged."
+          }
+        },
+        {
+          "name": "2.2 Mark Member Charge Failed",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/crowd/member-charges/{{charge_id}}/mark-failed",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "crowd", "member-charges", "{{charge_id}}", "mark-failed"]
+            },
+            "description": "Record that collection of a member's share has failed (e.g. insufficient funds). Emits CROWD_MEMBER_CHARGE_FAILED event. Charge status: pending → failed."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Claim Payouts",
+      "description": "Mark claim payouts as disbursed or failed",
+      "item": [
+        {
+          "name": "3.1 Mark Claim Payout Paid",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"payoutRef\": \"PAYOUT-2026-001\",\n  \"ledgerTxnId\": 5001\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/crowd/claim-payouts/{{payout_id}}/mark-paid",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "crowd", "claim-payouts", "{{payout_id}}", "mark-paid"]
+            },
+            "description": "Record that a claim payout has been successfully disbursed. Emits CROWD_CLAIM_PAYOUT_PAID event (triggers Wallet pillar). Payout status: pending → paid."
+          }
+        },
+        {
+          "name": "3.2 Mark Claim Payout Failed",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.add({",
+                  "    key: 'Idempotency-Key',",
+                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"failureReason\": \"Invalid bank account number\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/crowd/claim-payouts/{{payout_id}}/mark-failed",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "crowd", "claim-payouts", "{{payout_id}}", "mark-failed"]
+            },
+            "description": "Record that a claim payout disbursement has failed. Emits CROWD_CLAIM_PAYOUT_FAILED event. Payout status: pending → failed."
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+$kind: http-request
+description: Add a home address to a person. Since is_default=true, any existing
+  default address for this person will be cleared.
+url: "{{base_url}}/api/v1/foundation/addresses"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "owner_type": "person",
+      "owner_id": 101,
+      "type": "home",
+      "line1": "No. 12, Jalan Bunga Raya",
+      "line2": "Taman Maju",
+      "city": "Petaling Jaya",
+      "state_code": "SGR",
+      "postcode": "47810",
+      "country": "Malaysia",
+      "is_default": true
+    }
+scripts:
+  - type: beforeRequest
+    code: "pm.request.headers.add({ key: 'Idempotency-Key', value:
+      pm.variables.replaceIn('{{$guid}}') });"
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Status is 201', () => pm.response.to.have.status(201));
+      const json = pm.response.json();
+      if (json && json.id) {
+          pm.collectionVariables.set('address_id', json.id);
+          console.log('address_id set to', json.id);
+      }
+    language: text/javascript
+order: 1000

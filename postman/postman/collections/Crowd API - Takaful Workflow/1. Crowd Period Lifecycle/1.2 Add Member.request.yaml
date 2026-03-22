@@ -1,0 +1,35 @@
+$kind: http-request
+description: Add an insurant to the crowd period. Each insurant+period pair must
+  be unique. Run multiple times with different insurantId values to populate the
+  period.
+url: "{{base_url}}/api/v1/crowd/periods/{{period_id}}/members"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "insurantId": 101,
+      "packageId": 5,
+      "reasonCode": "new_enrollment",
+      "note": "Member joined in January",
+      "packageCodeSnapshot": "BASIC",
+      "ageYearsSnapshot": 32,
+      "smokerSnapshot": false,
+      "meta": {}
+    }
+scripts:
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+  - type: afterResponse
+    code: pm.test('Status is 201', () => pm.response.to.have.status(201));
+    language: text/javascript
+order: 2000

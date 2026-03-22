@@ -1,0 +1,53 @@
+$kind: http-request
+description: Creates a payment intent. Status starts as 'created'. Saves
+  intent_id and intent_key to collection variables.
+url: "{{base_url}}/api/v1/payment-intent"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "accountId": {{account_id}},
+      "personId": {{person_id}},
+      "intentType": "payment",
+      "amount": 150.00,
+      "currency": "MYR",
+      "purposeCode": "policy_premium",
+      "refType": "policy",
+      "refId": "POL-001",
+      "paymentMethodId": {{payment_method_id}},
+      "provider": "stripe",
+      "returnUrl": "https://app.example.com/payment/return",
+      "callbackUrl": "https://app.example.com/payment/callback"
+    }
+scripts:
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Status code is 201', function () {
+          pm.response.to.have.status(201);
+      });
+
+      if (pm.response.code === 201) {
+          const response = pm.response.json();
+          if (response.intentId) {
+              pm.collectionVariables.set('intent_id', response.intentId);
+              console.log('✅ Intent Created:', response.intentId);
+          }
+          if (response.intentKey) {
+              pm.collectionVariables.set('intent_key', response.intentKey);
+              console.log('   Intent Key:', response.intentKey);
+          }
+      }
+    language: text/javascript
+order: 1000

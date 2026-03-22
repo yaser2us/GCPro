@@ -18,6 +18,7 @@ import { PolicyModule } from './plugins/policy/policy.module';
 import { ClaimModule } from './plugins/claim/claim.module';
 import { PaymentModule } from './plugins/payment/payment.module';
 import { CrowdModule } from './plugins/crowd/crowd.module';
+import { FoundationModule } from './plugins/foundation/foundation.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { CrowdModule } from './plugins/crowd/crowd.module';
     ClaimModule,
     PaymentModule,
     CrowdModule,
+    FoundationModule,
   ],
   controllers: [AppController],
   providers: [AppService],

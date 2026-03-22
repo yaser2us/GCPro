@@ -1,0 +1,31 @@
+$kind: http-request
+description: Add an approved claim to the crowd period. The
+  approvedAmountSnapshot is snapshotted at addition time and used in cost
+  distribution.
+url: "{{base_url}}/api/v1/crowd/periods/{{period_id}}/claims"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "claimId": 1001,
+      "approvedAmountSnapshot": "500.00",
+      "eligibilityVersion": "v1.2",
+      "meta": { "claimType": "hospitalization" }
+    }
+scripts:
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+  - type: afterResponse
+    code: pm.test('Status is 201', () => pm.response.to.have.status(201));
+    language: text/javascript
+order: 4000

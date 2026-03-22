@@ -1,0 +1,3 @@
+$kind: collection
+description: Issue and void payment receipts. Requires payment:admin permission.
+order: 3000

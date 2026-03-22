@@ -1,0 +1,27 @@
+$kind: http-request
+description: "Record that a claim payout disbursement has failed. Emits
+  CROWD_CLAIM_PAYOUT_FAILED event. Payout status: pending → failed."
+url: "{{base_url}}/api/v1/crowd/claim-payouts/{{payout_id}}/mark-failed"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "failureReason": "Invalid bank account number"
+    }
+scripts:
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+  - type: afterResponse
+    code: pm.test('Status is 200', () => pm.response.to.have.status(200));
+    language: text/javascript
+order: 2000

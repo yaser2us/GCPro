@@ -1,0 +1,31 @@
+$kind: http-request
+description: Create a guideline document record. Unique by code.
+url: "{{base_url}}/api/v1/foundation/guideline-documents"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "code": "TNC_APP",
+      "name": "App Terms and Conditions",
+      "scope_type": "global"
+    }
+scripts:
+  - type: beforeRequest
+    code: "pm.request.headers.add({ key: 'Idempotency-Key', value:
+      pm.variables.replaceIn('{{$guid}}') });"
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Status is 201', () => pm.response.to.have.status(201));
+      const json = pm.response.json();
+      if (json && json.id) {
+          pm.collectionVariables.set('document_id', json.id);
+          console.log('document_id set to', json.id);
+      }
+    language: text/javascript
+order: 1000

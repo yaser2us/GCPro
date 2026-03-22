@@ -1,0 +1,28 @@
+$kind: http-request
+description: "Record that a member's share has been successfully collected.
+  Emits CROWD_MEMBER_CHARGED event (triggers Notification pillar). Charge
+  status: pending → charged."
+url: "{{base_url}}/api/v1/crowd/member-charges/{{charge_id}}/mark-charged"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "paidAmount": "250.00"
+    }
+scripts:
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+  - type: afterResponse
+    code: pm.test('Status is 200', () => pm.response.to.have.status(200));
+    language: text/javascript
+order: 1000

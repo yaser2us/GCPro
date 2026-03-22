@@ -1,0 +1,48 @@
+$kind: http-request
+description: Creates a saved payment method. Requires Idempotency-Key header
+  (auto-generated).
+url: "{{base_url}}/api/v1/payment-method"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "accountId": {{account_id}},
+      "personId": {{person_id}},
+      "provider": "stripe",
+      "methodType": "card",
+      "providerCustomerRef": "cus_test123",
+      "providerMethodRef": "pm_test456",
+      "brand": "visa",
+      "last4": "4242",
+      "expMm": "12",
+      "expYyyy": "2027"
+    }
+scripts:
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+  - type: afterResponse
+    code: >-
+      pm.test('Status code is 201', function () {
+          pm.response.to.have.status(201);
+      });
+
+
+      if (pm.response.code === 201) {
+          const response = pm.response.json();
+          if (response.paymentMethodId) {
+              pm.collectionVariables.set('payment_method_id', response.paymentMethodId);
+              console.log('✅ Payment Method Created:', response.paymentMethodId);
+          }
+      }
+    language: text/javascript
+order: 1000

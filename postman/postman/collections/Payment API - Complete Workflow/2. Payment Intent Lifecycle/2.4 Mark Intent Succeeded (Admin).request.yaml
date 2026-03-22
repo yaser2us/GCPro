@@ -1,0 +1,33 @@
+$kind: http-request
+description: Admin-only. Marks a payment intent as succeeded. Requires
+  payment:admin permission. Triggers PAYMENT_SUCCEEDED event.
+url: "{{base_url}}/api/v1/payment-intent/{{intent_id}}/mark-succeeded"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{admin_user_id}}"
+  X-User-Role: "{{admin_user_role}}"
+body:
+  type: text
+  content: "{}"
+scripts:
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Status code is 200', function () {
+          pm.response.to.have.status(200);
+      });
+
+      if (pm.response.code === 200) {
+          const response = pm.response.json();
+          console.log('✅ Intent Marked Succeeded:', response.intentId);
+          console.log('   Succeeded At:', response.succeededAt);
+      }
+    language: text/javascript
+order: 4000

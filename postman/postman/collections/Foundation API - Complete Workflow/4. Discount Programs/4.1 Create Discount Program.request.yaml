@@ -1,0 +1,33 @@
+$kind: http-request
+description: Create a 10% new member discount active for 2026.
+url: "{{base_url}}/api/v1/foundation/discount-programs"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "code": "NEWMEMBER10",
+      "discount_type": "percent",
+      "value": "10.00",
+      "starts_at": "2026-01-01T00:00:00Z",
+      "ends_at": "2026-12-31T23:59:59Z"
+    }
+scripts:
+  - type: beforeRequest
+    code: "pm.request.headers.add({ key: 'Idempotency-Key', value:
+      pm.variables.replaceIn('{{$guid}}') });"
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Status is 201', () => pm.response.to.have.status(201));
+      const json = pm.response.json();
+      if (json && json.id) {
+          pm.collectionVariables.set('program_id', json.id);
+          console.log('program_id set to', json.id);
+      }
+    language: text/javascript
+order: 1000

@@ -1,0 +1,3 @@
+$kind: collection
+description: Manage versioned benefit catalogs, items, and coverage levels
+order: 3000

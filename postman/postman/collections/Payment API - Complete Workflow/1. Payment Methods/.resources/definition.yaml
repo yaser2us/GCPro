@@ -1,0 +1,3 @@
+$kind: collection
+description: Manage saved payment methods (cards, bank accounts, eWallets)
+order: 1000

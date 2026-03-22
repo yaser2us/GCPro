@@ -1,0 +1,3 @@
+$kind: collection
+description: Payment provider webhook ingestion endpoints
+order: 4000

@@ -1,0 +1,39 @@
+$kind: http-request
+description: "Trigger cost distribution calculation. Creates crowd_member_charge
+  rows (equal share per member) and crowd_claim_payout rows. Uses distributed
+  lock to prevent concurrent runs. Period status: open → calculating →
+  calculated."
+url: "{{base_url}}/api/v1/crowd/periods/{{period_id}}/calculate"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "ruleVersion": "v1"
+    }
+scripts:
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Status is 200', () => pm.response.to.have.status(200));
+      const json = pm.response.json();
+      if (json && json.charges && json.charges.length > 0) {
+          pm.collectionVariables.set('charge_id', json.charges[0].id);
+          console.log('charge_id set to', json.charges[0].id);
+      }
+      if (json && json.payouts && json.payouts.length > 0) {
+          pm.collectionVariables.set('payout_id', json.payouts[0].id);
+          console.log('payout_id set to', json.payouts[0].id);
+      }
+    language: text/javascript
+order: 5000

@@ -1,0 +1,31 @@
+$kind: http-request
+description: Add a second (work) address — not default.
+url: "{{base_url}}/api/v1/foundation/addresses"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "owner_type": "person",
+      "owner_id": 101,
+      "type": "work",
+      "line1": "Level 15, Menara KL",
+      "city": "Kuala Lumpur",
+      "state_code": "KUL",
+      "postcode": "50088",
+      "country": "Malaysia",
+      "is_default": false
+    }
+scripts:
+  - type: beforeRequest
+    code: "pm.request.headers.add({ key: 'Idempotency-Key', value:
+      pm.variables.replaceIn('{{$guid}}') });"
+    language: text/javascript
+  - type: afterResponse
+    code: pm.test('Status is 201', () => pm.response.to.have.status(201));
+    language: text/javascript
+order: 2000

@@ -1,0 +1,45 @@
+$kind: collection
+description: >-
+  Complete test suite for Crowd (Takaful) Pillar
+
+
+  Based on: specs/crowd/crowd.pillar.v2.yml
+
+
+  Covers:
+
+  - Crowd period lifecycle (create → add members → add claims → calculate →
+  complete/cancel)
+
+  - Member charge management (mark-charged / mark-failed)
+
+  - Claim payout management (mark-paid / mark-failed)
+
+
+  Workflow order:
+
+  1. Create a crowd period
+
+  2. Add members to the period
+
+  3. Add approved claims to the period
+
+  4. Trigger calculation (distributes cost equally across members)
+
+  5. Complete the period (or cancel it)
+
+  6. Mark each member charge as charged or failed
+
+  7. Mark each claim payout as paid or failed
+
+
+  All endpoints require: crowd:admin permission
+
+  All mutating endpoints require: Idempotency-Key header
+variables:
+  base_url: http://localhost:3000
+  admin_user_id: admin-123
+  admin_user_role: ADMIN
+  period_id: ""
+  charge_id: ""
+  payout_id: ""

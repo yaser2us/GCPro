@@ -1,0 +1,26 @@
+$kind: http-request
+description: Seed Malaysian state reference data. Upsert by (country_code, state_code).
+url: "{{base_url}}/api/v1/foundation/geo-states"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "country_code": "MY",
+      "state_code": "SGR",
+      "name": "Selangor",
+      "status": "active"
+    }
+scripts:
+  - type: beforeRequest
+    code: "pm.request.headers.add({ key: 'Idempotency-Key', value:
+      pm.variables.replaceIn('{{$guid}}') });"
+    language: text/javascript
+  - type: afterResponse
+    code: pm.test('Status is 200', () => pm.response.to.have.status(200));
+    language: text/javascript
+order: 5000

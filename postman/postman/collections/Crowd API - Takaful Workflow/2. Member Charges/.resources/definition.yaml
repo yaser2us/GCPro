@@ -1,0 +1,3 @@
+$kind: collection
+description: Mark crowd member charges as collected or failed
+order: 2000
