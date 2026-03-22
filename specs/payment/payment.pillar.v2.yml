@@ -1,0 +1,1778 @@
+# ============================================================================
+# Payment Pillar Specification v2
+# ============================================================================
+# Generated: 2026-03-22
+# Source: docs/database/FULL-DDL.md
+#
+# Extraction Summary:
+# - Target Pillar: Payment
+# - Tables: 6 (payment_method, payment_intent, payment_receipt, payment_attempt, payment_event, payment_webhook_inbox)
+# - Readonly Dependencies: account, person, ledger_txn
+# - Assumptions: Payment gateway integration via webhooks, support for multiple providers (Stripe, etc.)
+# ============================================================================
+
+version: "2.0.0"
+spec_id: "payment.pillar.v2"
+domain: "payment"
+plugin: "payment"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# OWNERSHIP
+# ──────────────────────────────────────────────────────────────────────────────
+
+ownership:
+  owner_plugin: "payment"
+  owns_tables:
+    - "payment_method"
+    - "payment_intent"
+    - "payment_receipt"
+    - "payment_attempt"
+    - "payment_event"
+    - "payment_webhook_inbox"
+  cross_plugin_writes: false
+  cross_plugin_integration:
+    allowed_via:
+      - "command_api"
+      - "outbox_events"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DEPENDENCIES
+# ──────────────────────────────────────────────────────────────────────────────
+
+dependencies:
+  corekit:
+    transaction_wrapper: "withTxn"
+    outbox_service: "OutboxService.emit"
+    guard_helper: "guard"
+    domain_error: "DomainError"
+
+  core_tables_readonly:
+    - table: "account"
+      reason: "Payment method and intent ownership"
+    - table: "person"
+      reason: "Person-level payment tracking"
+    - table: "ledger_txn"
+      reason: "Accounting ledger integration for successful payments"
+
+  external_services:
+    - name: "Stripe"
+      purpose: "Payment gateway for card payments"
+    - name: "FPX"
+      purpose: "Malaysian online banking payments"
+    - name: "eWallet providers"
+      purpose: "GrabPay, TNG, etc."
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CONVENTIONS
+# ──────────────────────────────────────────────────────────────────────────────
+
+conventions:
+  workflow_discipline:
+    - "guard"
+    - "write"
+    - "emit"
+    - "commit"
+
+  status_mutation_policy: "Status fields may only be mutated through commands."
+
+  outbox:
+    required_envelope_fields:
+      - "event_name"
+      - "event_version"
+      - "aggregate_type"
+      - "aggregate_id"
+      - "actor_user_id"
+      - "occurred_at"
+      - "correlation_id"
+      - "causation_id"
+
+  idempotency:
+    required_header: "Idempotency-Key"
+    default_scope: "actor_user_id + command_name"
+    db_strategy:
+      - "UNIQUE(idempotency_key) on payment_intent"
+      - "UNIQUE(idempotency_key) on payment_webhook_inbox"
+      - "MySQL ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)"
+
+  payment_specific:
+    intent_key_generation: "Generate unique intent_key for each payment intent (PIY-UUID format)"
+    receipt_no_generation: "Generate unique receipt_no for each receipt (RCP-YYYY-NNNNNN format)"
+    webhook_idempotency: "Use provider_event_id + provider for webhook deduplication"
+    retry_strategy: "Use payment_attempt table to track retry attempts with exponential backoff"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SCHEMA
+# ──────────────────────────────────────────────────────────────────────────────
+
+schema:
+  tables:
+    payment_method:
+      description: "Payment methods (credit cards, bank accounts, eWallets) saved by users"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        account_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to account table"
+        person_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Optional foreign key to person table"
+        provider:
+          type: "varchar"
+          length: 32
+          nullable: false
+          description: "Payment provider (stripe, fpx, grabpay, etc.)"
+        method_type:
+          type: "varchar"
+          length: 32
+          nullable: false
+          description: "Type of payment method (card, bank_account, ewallet)"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "active"
+          description: "Status (active, expired, deleted)"
+        provider_customer_ref:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Provider's customer reference (e.g., Stripe customer ID)"
+        provider_method_ref:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Provider's payment method reference (e.g., Stripe payment method ID)"
+        brand:
+          type: "varchar"
+          length: 32
+          nullable: true
+          description: "Card brand (visa, mastercard) or bank name"
+        last4:
+          type: "varchar"
+          length: 8
+          nullable: true
+          description: "Last 4 digits of card or account number"
+        exp_mm:
+          type: "varchar"
+          length: 2
+          nullable: true
+          description: "Expiry month (MM) for cards"
+        exp_yyyy:
+          type: "varchar"
+          length: 4
+          nullable: true
+          description: "Expiry year (YYYY) for cards"
+        consent_json:
+          type: "json"
+          nullable: true
+          description: "User consent data for storing payment method"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional metadata"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Record update timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_pm_provider_method"
+            columns: ["provider", "provider_method_ref"]
+        indexes:
+          - name: "idx_pm_account_status"
+            columns: ["account_id", "status"]
+          - name: "idx_pm_person"
+            columns: ["person_id"]
+          - name: "idx_pm_provider"
+            columns: ["provider", "method_type", "status"]
+
+    payment_intent:
+      description: "Payment intents tracking the lifecycle of payment requests"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        intent_key:
+          type: "varchar"
+          length: 64
+          nullable: false
+          description: "Unique intent identifier (PIY-UUID)"
+        intent_type:
+          type: "varchar"
+          length: 16
+          nullable: false
+          description: "Type of intent (premium, deposit, topup, etc.)"
+        account_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to account table"
+        person_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Optional foreign key to person table"
+        payment_method_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Foreign key to payment_method table"
+        amount:
+          type: "decimal"
+          precision: [18, 2]
+          nullable: false
+          description: "Payment amount"
+        currency:
+          type: "varchar"
+          length: 8
+          nullable: false
+          default: "MYR"
+          description: "Currency code"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "created"
+          description: "Status (created, processing, succeeded, failed, cancelled)"
+        purpose_code:
+          type: "varchar"
+          length: 32
+          nullable: false
+          default: "other"
+          description: "Purpose of payment (premium, claim_reimbursement, etc.)"
+        ref_type:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "Reference type (policy, claim, etc.)"
+        ref_id:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Reference ID"
+        idempotency_key:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Client-provided idempotency key"
+        request_id:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Client request tracking ID"
+        provider:
+          type: "varchar"
+          length: 32
+          nullable: true
+          description: "Selected payment provider"
+        provider_intent_ref:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Provider's intent reference (e.g., Stripe PaymentIntent ID)"
+        return_url:
+          type: "varchar"
+          length: 500
+          nullable: true
+          description: "URL to redirect after payment"
+        callback_url:
+          type: "varchar"
+          length: 500
+          nullable: true
+          description: "Webhook callback URL"
+        expires_at:
+          type: "datetime"
+          nullable: true
+          description: "Expiry time for payment intent"
+        ledger_txn_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Foreign key to ledger_txn after successful payment"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional metadata"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+        updated_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Record update timestamp"
+        succeeded_at:
+          type: "datetime"
+          nullable: true
+          description: "Success timestamp"
+        failed_at:
+          type: "datetime"
+          nullable: true
+          description: "Failure timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_pi_intent_key"
+            columns: ["intent_key"]
+          - name: "uk_pi_idempotency"
+            columns: ["idempotency_key"]
+        indexes:
+          - name: "idx_pi_status_time"
+            columns: ["status", "created_at"]
+          - name: "idx_pi_account_purpose"
+            columns: ["account_id", "purpose_code", "status"]
+          - name: "idx_pi_ref"
+            columns: ["ref_type", "ref_id"]
+          - name: "idx_pi_provider_ref"
+            columns: ["provider", "provider_intent_ref"]
+          - name: "fk_pi_payment_method"
+            columns: ["payment_method_id"]
+        foreign_keys:
+          - name: "fk_pi_payment_method"
+            columns: ["payment_method_id"]
+            references:
+              table: "payment_method"
+              columns: ["id"]
+            on_delete: "SET NULL"
+            on_update: "CASCADE"
+
+    payment_receipt:
+      description: "Payment receipts issued to customers"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        receipt_no:
+          type: "varchar"
+          length: 64
+          nullable: false
+          description: "Unique receipt number (RCP-YYYY-NNNNNN)"
+        account_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to account table"
+        person_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Optional foreign key to person table"
+        payment_intent_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Foreign key to payment_intent table"
+        ledger_txn_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Foreign key to ledger_txn table"
+        amount:
+          type: "decimal"
+          precision: [18, 2]
+          nullable: false
+          description: "Receipt amount"
+        currency:
+          type: "varchar"
+          length: 8
+          nullable: false
+          default: "MYR"
+          description: "Currency code"
+        title:
+          type: "varchar"
+          length: 255
+          nullable: true
+          description: "Receipt title"
+        description:
+          type: "varchar"
+          length: 512
+          nullable: true
+          description: "Receipt description"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "issued"
+          description: "Status (issued, voided)"
+        issued_at:
+          type: "datetime"
+          nullable: false
+          description: "Receipt issue timestamp"
+        voided_at:
+          type: "datetime"
+          nullable: true
+          description: "Receipt void timestamp"
+        ref_type:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "Reference type (policy, claim, etc.)"
+        ref_id:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Reference ID"
+        meta_json:
+          type: "json"
+          nullable: true
+          description: "Additional metadata"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_receipt_no"
+            columns: ["receipt_no"]
+        indexes:
+          - name: "idx_receipt_account_time"
+            columns: ["account_id", "issued_at"]
+          - name: "idx_receipt_person_time"
+            columns: ["person_id", "issued_at"]
+          - name: "idx_receipt_status_time"
+            columns: ["status", "issued_at"]
+          - name: "idx_receipt_ref"
+            columns: ["ref_type", "ref_id"]
+          - name: "idx_receipt_payment_intent"
+            columns: ["payment_intent_id"]
+          - name: "idx_receipt_ledger_txn"
+            columns: ["ledger_txn_id"]
+        foreign_keys:
+          - name: "fk_receipt_account"
+            columns: ["account_id"]
+            references:
+              table: "account"
+              columns: ["id"]
+            on_delete: "RESTRICT"
+            on_update: "CASCADE"
+          - name: "fk_receipt_person"
+            columns: ["person_id"]
+            references:
+              table: "person"
+              columns: ["id"]
+            on_delete: "SET NULL"
+            on_update: "CASCADE"
+          - name: "fk_receipt_pi"
+            columns: ["payment_intent_id"]
+            references:
+              table: "payment_intent"
+              columns: ["id"]
+            on_delete: "SET NULL"
+            on_update: "CASCADE"
+          - name: "fk_receipt_ledger_txn"
+            columns: ["ledger_txn_id"]
+            references:
+              table: "ledger_txn"
+              columns: ["id"]
+            on_delete: "SET NULL"
+            on_update: "CASCADE"
+
+    payment_attempt:
+      description: "Payment processing attempts for tracking retries and provider responses"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        intent_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to payment_intent table"
+        attempt_no:
+          type: "int"
+          unsigned: true
+          nullable: false
+          default: "1"
+          description: "Attempt number (1, 2, 3, etc.)"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "initiated"
+          description: "Status (initiated, processing, succeeded, failed)"
+        provider:
+          type: "varchar"
+          length: 32
+          nullable: false
+          description: "Payment provider used for this attempt"
+        provider_txn_ref:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Provider's transaction reference"
+        provider_status:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "Provider's status code"
+        failure_code:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "Failure code if attempt failed"
+        failure_message:
+          type: "varchar"
+          length: 255
+          nullable: true
+          description: "Failure message"
+        request_json:
+          type: "json"
+          nullable: true
+          description: "Request payload sent to provider"
+        response_json:
+          type: "json"
+          nullable: true
+          description: "Response payload from provider"
+        started_at:
+          type: "datetime"
+          nullable: true
+          description: "Attempt start timestamp"
+        completed_at:
+          type: "datetime"
+          nullable: true
+          description: "Attempt completion timestamp"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_pa_intent_attempt"
+            columns: ["intent_id", "attempt_no"]
+        indexes:
+          - name: "idx_pa_status_time"
+            columns: ["status", "created_at"]
+          - name: "idx_pa_provider_txn"
+            columns: ["provider", "provider_txn_ref"]
+        foreign_keys:
+          - name: "fk_pa_intent"
+            columns: ["intent_id"]
+            references:
+              table: "payment_intent"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+
+    payment_event:
+      description: "Payment event log for tracking state changes and actions"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        intent_id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          description: "Foreign key to payment_intent table"
+        event_type:
+          type: "varchar"
+          length: 64
+          nullable: false
+          description: "Event type (created, processing, succeeded, failed, etc.)"
+        actor_type:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "system"
+          description: "Actor type (user, system, webhook)"
+        actor_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Actor ID (user_id if actor_type=user)"
+        request_id:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Request tracking ID"
+        payload_json:
+          type: "json"
+          nullable: true
+          description: "Event payload data"
+        occurred_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Event occurrence timestamp"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        indexes:
+          - name: "idx_pe_intent_time"
+            columns: ["intent_id", "occurred_at"]
+          - name: "idx_pe_type"
+            columns: ["event_type"]
+        foreign_keys:
+          - name: "fk_pe_intent"
+            columns: ["intent_id"]
+            references:
+              table: "payment_intent"
+              columns: ["id"]
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+
+    payment_webhook_inbox:
+      description: "Webhook inbox for processing payment provider callbacks"
+      columns:
+        id:
+          type: "bigint"
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Primary key"
+        provider:
+          type: "varchar"
+          length: 32
+          nullable: false
+          description: "Payment provider (stripe, fpx, etc.)"
+        provider_event_id:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Provider's event ID for deduplication"
+        status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "new"
+          description: "Status (new, processing, processed, failed)"
+        signature_status:
+          type: "varchar"
+          length: 16
+          nullable: false
+          default: "unknown"
+          description: "Signature verification status (valid, invalid, unknown)"
+        intent_key:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "Payment intent key extracted from webhook"
+        provider_txn_ref:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Provider transaction reference"
+        attempt_id:
+          type: "bigint"
+          unsigned: true
+          nullable: true
+          description: "Foreign key to payment_attempt table"
+        received_ip:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "IP address of webhook sender"
+        headers_json:
+          type: "json"
+          nullable: true
+          description: "HTTP headers from webhook request"
+        payload_json:
+          type: "json"
+          nullable: false
+          description: "Webhook payload"
+        idempotency_key:
+          type: "varchar"
+          length: 128
+          nullable: true
+          description: "Idempotency key for deduplication"
+        attempts:
+          type: "int"
+          unsigned: true
+          nullable: false
+          default: "0"
+          description: "Number of processing attempts"
+        received_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Webhook receipt timestamp"
+        processed_at:
+          type: "datetime"
+          nullable: true
+          description: "Processing completion timestamp"
+        created_at:
+          type: "datetime"
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Record creation timestamp"
+      constraints:
+        primary_key:
+          - "id"
+        unique_keys:
+          - name: "uk_pwi_idempotency"
+            columns: ["idempotency_key"]
+          - name: "uk_pwi_provider_event"
+            columns: ["provider", "provider_event_id"]
+        indexes:
+          - name: "idx_pwi_status_time"
+            columns: ["status", "received_at"]
+          - name: "idx_pwi_provider_txn"
+            columns: ["provider", "provider_txn_ref"]
+          - name: "fk_pwi_attempt"
+            columns: ["attempt_id"]
+        foreign_keys:
+          - name: "fk_pwi_attempt"
+            columns: ["attempt_id"]
+            references:
+              table: "payment_attempt"
+              columns: ["id"]
+            on_delete: "SET NULL"
+            on_update: "CASCADE"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# RESOURCES
+# ──────────────────────────────────────────────────────────────────────────────
+
+resources:
+  payment_method:
+    kind: "resource"
+    table: "payment_method"
+    primary_key: "id"
+    api_surface:
+      - "create"
+      - "delete"
+      - "list"
+    description: "Saved payment methods for users"
+
+  payment_intent:
+    kind: "aggregate"
+    table: "payment_intent"
+    primary_key: "id"
+    statuses:
+      - "created"
+      - "processing"
+      - "succeeded"
+      - "failed"
+      - "cancelled"
+    api_surface:
+      - "create"
+      - "confirm"
+      - "cancel"
+      - "get"
+    description: "Payment intent lifecycle management"
+
+  payment_receipt:
+    kind: "resource"
+    table: "payment_receipt"
+    primary_key: "id"
+    statuses:
+      - "issued"
+      - "voided"
+    api_surface:
+      - "issue"
+      - "void"
+      - "get"
+      - "list"
+    description: "Payment receipts for customers"
+
+  payment_attempt:
+    kind: "resource"
+    table: "payment_attempt"
+    primary_key: "id"
+    api_surface:
+      - "create"
+      - "list"
+    description: "Payment processing attempt tracking"
+
+  payment_event:
+    kind: "resource"
+    table: "payment_event"
+    primary_key: "id"
+    api_surface:
+      - "create"
+      - "list"
+    description: "Payment event audit log"
+
+  payment_webhook_inbox:
+    kind: "resource"
+    table: "payment_webhook_inbox"
+    primary_key: "id"
+    statuses:
+      - "new"
+      - "processing"
+      - "processed"
+      - "failed"
+    api_surface:
+      - "receive"
+      - "process"
+      - "retry"
+    description: "Webhook processing inbox"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# AGGREGATES
+# ──────────────────────────────────────────────────────────────────────────────
+
+aggregates:
+  PAYMENT_INTENT:
+    root_table: "payment_intent"
+    primary_key: "id"
+    statuses:
+      - "created"
+      - "processing"
+      - "succeeded"
+      - "failed"
+      - "cancelled"
+    description: "Payment intent aggregate representing the payment lifecycle"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# TYPES
+# ──────────────────────────────────────────────────────────────────────────────
+
+types:
+  Actor:
+    description: "Standard actor context for commands"
+    fields:
+      - name: "actor_user_id"
+        type: "number"
+      - name: "actor_type"
+        type: "string"
+      - name: "correlation_id"
+        type: "string"
+      - name: "causation_id"
+        type: "string"
+
+  PaymentIntentSummary:
+    description: "Summary of payment intent for responses"
+    fields:
+      - name: "intent_id"
+        type: "number"
+      - name: "intent_key"
+        type: "string"
+      - name: "amount"
+        type: "number"
+      - name: "currency"
+        type: "string"
+      - name: "status"
+        type: "string"
+      - name: "provider"
+        type: "string"
+      - name: "provider_intent_ref"
+        type: "string"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DTOS
+# ──────────────────────────────────────────────────────────────────────────────
+
+dtos:
+  PaymentMethodCreateDto:
+    description: "DTO for creating payment method"
+    fields:
+      - name: "accountId"
+        type: "number"
+        required: true
+        description: "Account ID"
+      - name: "personId"
+        type: "number"
+        required: false
+        description: "Person ID (optional)"
+      - name: "provider"
+        type: "string"
+        required: true
+        max_len: 32
+        description: "Payment provider (stripe, fpx, etc.)"
+      - name: "methodType"
+        type: "string"
+        required: true
+        max_len: 32
+        description: "Method type (card, bank_account, ewallet)"
+      - name: "providerCustomerRef"
+        type: "string"
+        required: false
+        max_len: 128
+        description: "Provider customer reference"
+      - name: "providerMethodRef"
+        type: "string"
+        required: false
+        max_len: 128
+        description: "Provider payment method reference"
+      - name: "brand"
+        type: "string"
+        required: false
+        max_len: 32
+        description: "Card brand or bank name"
+      - name: "last4"
+        type: "string"
+        required: false
+        max_len: 8
+        description: "Last 4 digits"
+      - name: "expMm"
+        type: "string"
+        required: false
+        max_len: 2
+        description: "Expiry month"
+      - name: "expYyyy"
+        type: "string"
+        required: false
+        max_len: 4
+        description: "Expiry year"
+      - name: "consentJson"
+        type: "json"
+        required: false
+        description: "User consent data"
+      - name: "metaJson"
+        type: "json"
+        required: false
+        description: "Additional metadata"
+
+  PaymentIntentCreateDto:
+    description: "DTO for creating payment intent"
+    fields:
+      - name: "accountId"
+        type: "number"
+        required: true
+        description: "Account ID"
+      - name: "personId"
+        type: "number"
+        required: false
+        description: "Person ID (optional)"
+      - name: "intentType"
+        type: "string"
+        required: true
+        max_len: 16
+        description: "Intent type (premium, deposit, topup)"
+      - name: "amount"
+        type: "number"
+        required: true
+        description: "Payment amount"
+      - name: "currency"
+        type: "string"
+        required: false
+        max_len: 8
+        default: "MYR"
+        description: "Currency code"
+      - name: "purposeCode"
+        type: "string"
+        required: false
+        max_len: 32
+        default: "other"
+        description: "Purpose code"
+      - name: "refType"
+        type: "string"
+        required: false
+        max_len: 64
+        description: "Reference type (policy, claim, etc.)"
+      - name: "refId"
+        type: "string"
+        required: false
+        max_len: 128
+        description: "Reference ID"
+      - name: "paymentMethodId"
+        type: "number"
+        required: false
+        description: "Payment method ID (optional)"
+      - name: "provider"
+        type: "string"
+        required: false
+        max_len: 32
+        description: "Preferred provider"
+      - name: "returnUrl"
+        type: "string"
+        required: false
+        max_len: 500
+        description: "Return URL after payment"
+      - name: "callbackUrl"
+        type: "string"
+        required: false
+        max_len: 500
+        description: "Webhook callback URL"
+      - name: "metaJson"
+        type: "json"
+        required: false
+        description: "Additional metadata"
+
+  PaymentIntentConfirmDto:
+    description: "DTO for confirming payment intent"
+    fields:
+      - name: "paymentMethodId"
+        type: "number"
+        required: false
+        description: "Payment method ID to use"
+      - name: "provider"
+        type: "string"
+        required: true
+        max_len: 32
+        description: "Payment provider to use"
+      - name: "returnUrl"
+        type: "string"
+        required: false
+        max_len: 500
+        description: "Return URL after payment"
+
+  WebhookReceiveDto:
+    description: "DTO for receiving webhook"
+    fields:
+      - name: "provider"
+        type: "string"
+        required: true
+        max_len: 32
+        description: "Payment provider"
+      - name: "providerEventId"
+        type: "string"
+        required: false
+        max_len: 128
+        description: "Provider event ID"
+      - name: "signature"
+        type: "string"
+        required: false
+        description: "Webhook signature for verification"
+      - name: "headersJson"
+        type: "json"
+        required: false
+        description: "HTTP headers"
+      - name: "payloadJson"
+        type: "json"
+        required: true
+        description: "Webhook payload"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# EVENTS
+# ──────────────────────────────────────────────────────────────────────────────
+
+events:
+  PAYMENT_METHOD_CREATED:
+    version: "v1"
+    aggregate_type: "PAYMENT_METHOD"
+    description: "Payment method has been created and saved"
+
+  PAYMENT_METHOD_DELETED:
+    version: "v1"
+    aggregate_type: "PAYMENT_METHOD"
+    description: "Payment method has been deleted"
+
+  PAYMENT_INTENT_CREATED:
+    version: "v1"
+    aggregate_type: "PAYMENT_INTENT"
+    description: "Payment intent has been created"
+
+  PAYMENT_INTENT_CONFIRMED:
+    version: "v1"
+    aggregate_type: "PAYMENT_INTENT"
+    description: "Payment intent has been confirmed and is processing"
+
+  PAYMENT_SUCCEEDED:
+    version: "v1"
+    aggregate_type: "PAYMENT_INTENT"
+    description: "Payment has been successfully completed"
+
+  PAYMENT_FAILED:
+    version: "v1"
+    aggregate_type: "PAYMENT_INTENT"
+    description: "Payment has failed"
+
+  PAYMENT_CANCELLED:
+    version: "v1"
+    aggregate_type: "PAYMENT_INTENT"
+    description: "Payment intent has been cancelled"
+
+  PAYMENT_RECEIPT_ISSUED:
+    version: "v1"
+    aggregate_type: "PAYMENT_RECEIPT"
+    description: "Payment receipt has been issued"
+
+  PAYMENT_RECEIPT_VOIDED:
+    version: "v1"
+    aggregate_type: "PAYMENT_RECEIPT"
+    description: "Payment receipt has been voided"
+
+  WEBHOOK_RECEIVED:
+    version: "v1"
+    aggregate_type: "WEBHOOK_INBOX"
+    description: "Payment webhook has been received"
+
+  WEBHOOK_PROCESSED:
+    version: "v1"
+    aggregate_type: "WEBHOOK_INBOX"
+    description: "Payment webhook has been processed successfully"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# COMMANDS
+# ──────────────────────────────────────────────────────────────────────────────
+
+commands:
+  PaymentMethod.Create:
+    name: "PaymentMethod.Create"
+    description: "Save a new payment method for user"
+    path: "/api/v1/payment-method"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "PaymentMethodCreateDto"
+    steps:
+      - kind: "guard"
+        description: "Validate account exists and is active"
+      - kind: "guard"
+        description: "Validate person exists if person_id provided"
+      - kind: "guard"
+        description: "Validate provider and method_type are supported"
+      - kind: "insert"
+        table: "payment_method"
+        fields: ["account_id", "person_id", "provider", "method_type", "status", "provider_customer_ref", "provider_method_ref", "brand", "last4", "exp_mm", "exp_yyyy", "consent_json", "meta_json"]
+      - kind: "outbox_emit"
+        event: "PAYMENT_METHOD_CREATED"
+    response:
+      - "paymentMethodId"
+      - "status"
+
+  PaymentMethod.Delete:
+    name: "PaymentMethod.Delete"
+    description: "Delete (soft) a payment method"
+    path: "/api/v1/payment-method/:paymentMethodId"
+    method: "DELETE"
+    idempotent: true
+    permissions: []
+    input: null
+    steps:
+      - kind: "guard"
+        description: "Validate payment method exists and belongs to actor's account"
+      - kind: "update"
+        table: "payment_method"
+        fields: ["status"]
+        description: "Set status to 'deleted'"
+      - kind: "outbox_emit"
+        event: "PAYMENT_METHOD_DELETED"
+    response:
+      - "paymentMethodId"
+      - "status"
+
+  PaymentIntent.Create:
+    name: "PaymentIntent.Create"
+    description: "Create a new payment intent"
+    path: "/api/v1/payment-intent"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "PaymentIntentCreateDto"
+    steps:
+      - kind: "guard"
+        description: "Validate account exists and is active"
+      - kind: "guard"
+        description: "Validate amount > 0"
+      - kind: "guard"
+        description: "Validate payment_method exists if provided"
+      - kind: "read"
+        description: "Generate unique intent_key (PIY-{UUID})"
+      - kind: "insert"
+        table: "payment_intent"
+        fields: ["intent_key", "intent_type", "account_id", "person_id", "payment_method_id", "amount", "currency", "status", "purpose_code", "ref_type", "ref_id", "idempotency_key", "provider", "return_url", "callback_url", "meta_json"]
+        description: "Status defaults to 'created'"
+      - kind: "insert"
+        table: "payment_event"
+        fields: ["intent_id", "event_type", "actor_type", "actor_id", "occurred_at"]
+        description: "Log CREATED event"
+      - kind: "outbox_emit"
+        event: "PAYMENT_INTENT_CREATED"
+    response:
+      - "intentId"
+      - "intentKey"
+      - "amount"
+      - "currency"
+      - "status"
+
+  PaymentIntent.Confirm:
+    name: "PaymentIntent.Confirm"
+    description: "Confirm and process payment intent"
+    path: "/api/v1/payment-intent/:intentId/confirm"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "PaymentIntentConfirmDto"
+    steps:
+      - kind: "guard"
+        description: "Validate intent exists and status is 'created'"
+      - kind: "guard"
+        description: "Validate payment_method exists if provided"
+      - kind: "guard"
+        description: "Validate provider is supported"
+      - kind: "update"
+        table: "payment_intent"
+        fields: ["status", "payment_method_id", "provider", "return_url"]
+        description: "Set status to 'processing'"
+      - kind: "insert"
+        table: "payment_attempt"
+        fields: ["intent_id", "attempt_no", "status", "provider", "started_at"]
+        description: "Create first payment attempt"
+      - kind: "insert"
+        table: "payment_event"
+        fields: ["intent_id", "event_type", "actor_type", "actor_id", "occurred_at"]
+        description: "Log CONFIRMED event"
+      - kind: "call"
+        description: "Call payment provider API to initiate payment"
+      - kind: "update"
+        table: "payment_attempt"
+        fields: ["provider_txn_ref", "request_json", "response_json"]
+        description: "Update attempt with provider response"
+      - kind: "outbox_emit"
+        event: "PAYMENT_INTENT_CONFIRMED"
+    response:
+      - "intentId"
+      - "intentKey"
+      - "status"
+      - "providerIntentRef"
+      - "redirectUrl"
+
+  PaymentIntent.MarkSucceeded:
+    name: "PaymentIntent.MarkSucceeded"
+    description: "Mark payment intent as succeeded (called by webhook processor)"
+    path: "/api/v1/payment-intent/:intentId/mark-succeeded"
+    method: "POST"
+    idempotent: true
+    permissions: ["payment:admin"]
+    input: null
+    steps:
+      - kind: "guard"
+        description: "Validate intent exists and status is 'processing'"
+      - kind: "update"
+        table: "payment_intent"
+        fields: ["status", "succeeded_at"]
+        description: "Set status to 'succeeded'"
+      - kind: "update"
+        table: "payment_attempt"
+        fields: ["status", "completed_at"]
+        description: "Mark latest attempt as succeeded"
+      - kind: "insert"
+        table: "payment_event"
+        fields: ["intent_id", "event_type", "actor_type", "actor_id", "occurred_at"]
+        description: "Log SUCCEEDED event"
+      - kind: "outbox_emit"
+        event: "PAYMENT_SUCCEEDED"
+    response:
+      - "intentId"
+      - "status"
+      - "succeededAt"
+
+  PaymentIntent.MarkFailed:
+    name: "PaymentIntent.MarkFailed"
+    description: "Mark payment intent as failed (called by webhook processor)"
+    path: "/api/v1/payment-intent/:intentId/mark-failed"
+    method: "POST"
+    idempotent: true
+    permissions: ["payment:admin"]
+    input: null
+    steps:
+      - kind: "guard"
+        description: "Validate intent exists and status is 'processing'"
+      - kind: "update"
+        table: "payment_intent"
+        fields: ["status", "failed_at"]
+        description: "Set status to 'failed'"
+      - kind: "update"
+        table: "payment_attempt"
+        fields: ["status", "failure_code", "failure_message", "completed_at"]
+        description: "Mark latest attempt as failed"
+      - kind: "insert"
+        table: "payment_event"
+        fields: ["intent_id", "event_type", "actor_type", "actor_id", "payload_json", "occurred_at"]
+        description: "Log FAILED event with failure details"
+      - kind: "outbox_emit"
+        event: "PAYMENT_FAILED"
+    response:
+      - "intentId"
+      - "status"
+      - "failedAt"
+      - "failureCode"
+
+  PaymentIntent.Cancel:
+    name: "PaymentIntent.Cancel"
+    description: "Cancel payment intent"
+    path: "/api/v1/payment-intent/:intentId/cancel"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: null
+    steps:
+      - kind: "guard"
+        description: "Validate intent exists and status is 'created' or 'processing'"
+      - kind: "guard"
+        description: "Validate actor has permission to cancel (owns the intent)"
+      - kind: "update"
+        table: "payment_intent"
+        fields: ["status"]
+        description: "Set status to 'cancelled'"
+      - kind: "insert"
+        table: "payment_event"
+        fields: ["intent_id", "event_type", "actor_type", "actor_id", "occurred_at"]
+        description: "Log CANCELLED event"
+      - kind: "when"
+        condition: "provider_intent_ref is not null"
+        description: "If provider intent exists, call provider to cancel"
+        steps:
+          - kind: "call"
+            description: "Call payment provider API to cancel payment"
+      - kind: "outbox_emit"
+        event: "PAYMENT_CANCELLED"
+    response:
+      - "intentId"
+      - "status"
+
+  Receipt.Issue:
+    name: "Receipt.Issue"
+    description: "Issue payment receipt"
+    path: "/api/v1/receipt"
+    method: "POST"
+    idempotent: true
+    permissions: ["payment:admin"]
+    input: null
+    steps:
+      - kind: "guard"
+        description: "Validate payment_intent exists and status is 'succeeded'"
+      - kind: "guard"
+        description: "Validate no receipt exists for this payment_intent"
+      - kind: "read"
+        description: "Generate unique receipt_no (RCP-YYYY-NNNNNN)"
+      - kind: "insert"
+        table: "payment_receipt"
+        fields: ["receipt_no", "account_id", "person_id", "payment_intent_id", "ledger_txn_id", "amount", "currency", "title", "description", "status", "issued_at", "ref_type", "ref_id", "meta_json"]
+        description: "Status defaults to 'issued'"
+      - kind: "outbox_emit"
+        event: "PAYMENT_RECEIPT_ISSUED"
+    response:
+      - "receiptId"
+      - "receiptNo"
+      - "amount"
+      - "issuedAt"
+
+  Receipt.Void:
+    name: "Receipt.Void"
+    description: "Void payment receipt"
+    path: "/api/v1/receipt/:receiptId/void"
+    method: "POST"
+    idempotent: true
+    permissions: ["payment:admin"]
+    input: null
+    steps:
+      - kind: "guard"
+        description: "Validate receipt exists and status is 'issued'"
+      - kind: "update"
+        table: "payment_receipt"
+        fields: ["status", "voided_at"]
+        description: "Set status to 'voided'"
+      - kind: "outbox_emit"
+        event: "PAYMENT_RECEIPT_VOIDED"
+    response:
+      - "receiptId"
+      - "status"
+      - "voidedAt"
+
+  Webhook.Receive:
+    name: "Webhook.Receive"
+    description: "Receive payment webhook from provider"
+    path: "/api/v1/webhook/:provider"
+    method: "POST"
+    idempotent: true
+    permissions: []
+    input: "WebhookReceiveDto"
+    steps:
+      - kind: "read"
+        description: "Verify webhook signature if provided"
+      - kind: "insert"
+        table: "payment_webhook_inbox"
+        fields: ["provider", "provider_event_id", "status", "signature_status", "received_ip", "headers_json", "payload_json", "idempotency_key", "received_at"]
+        description: "Insert webhook with status 'new'"
+      - kind: "outbox_emit"
+        event: "WEBHOOK_RECEIVED"
+    response:
+      - "webhookId"
+      - "status"
+
+  Webhook.Process:
+    name: "Webhook.Process"
+    description: "Process webhook (internal command called by worker)"
+    path: null
+    method: null
+    idempotent: true
+    permissions: ["payment:admin"]
+    input: null
+    steps:
+      - kind: "guard"
+        description: "Validate webhook exists and status is 'new'"
+      - kind: "update"
+        table: "payment_webhook_inbox"
+        fields: ["status"]
+        description: "Set status to 'processing'"
+      - kind: "read"
+        description: "Extract intent_key and provider_txn_ref from payload"
+      - kind: "update"
+        table: "payment_webhook_inbox"
+        fields: ["intent_key", "provider_txn_ref"]
+        description: "Update webhook with extracted data"
+      - kind: "read"
+        description: "Find payment_intent by intent_key"
+      - kind: "read"
+        description: "Find payment_attempt by provider_txn_ref"
+      - kind: "update"
+        table: "payment_webhook_inbox"
+        fields: ["attempt_id"]
+        description: "Link webhook to attempt"
+      - kind: "when"
+        condition: "webhook payload indicates success"
+        description: "If payment succeeded"
+        steps:
+          - kind: "call"
+            description: "Call PaymentIntent.MarkSucceeded"
+      - kind: "when"
+        condition: "webhook payload indicates failure"
+        description: "If payment failed"
+        steps:
+          - kind: "call"
+            description: "Call PaymentIntent.MarkFailed"
+      - kind: "update"
+        table: "payment_webhook_inbox"
+        fields: ["status", "processed_at", "attempts"]
+        description: "Set status to 'processed'"
+      - kind: "outbox_emit"
+        event: "WEBHOOK_PROCESSED"
+    response:
+      - "webhookId"
+      - "status"
+      - "processedAt"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CHANGELOG
+# ──────────────────────────────────────────────────────────────────────────────
+
+changelog:
+  - version: "2.0.0"
+    date: "2026-03-22"
+    author: "Claude Sonnet 4.5"
+    description: "Initial Payment Pillar specification"
+    changes:
+      - "Extracted 6 payment tables from FULL-DDL.md"
+      - "Defined payment intent lifecycle (created → processing → succeeded/failed/cancelled)"
+      - "Defined payment method management commands"
+      - "Defined webhook processing workflow"
+      - "Defined payment receipt issuance"
+      - "Created 11 commands covering full payment workflow"
+      - "Created 11 events for outbox pattern"
+      - "Defined integration with Policy and Wallet pillars"
+    breaking_changes: []
+    migrations_required:
+      - "All tables already exist in FULL-DDL.md"
+      - "No migrations required"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# COVERAGE
+# ──────────────────────────────────────────────────────────────────────────────
+
+coverage:
+  tables:
+    payment_method:
+      touched_by:
+        - "PaymentMethod.Create"
+        - "PaymentMethod.Delete"
+
+    payment_intent:
+      touched_by:
+        - "PaymentIntent.Create"
+        - "PaymentIntent.Confirm"
+        - "PaymentIntent.MarkSucceeded"
+        - "PaymentIntent.MarkFailed"
+        - "PaymentIntent.Cancel"
+        - "Webhook.Process"
+
+    payment_receipt:
+      touched_by:
+        - "Receipt.Issue"
+        - "Receipt.Void"
+
+    payment_attempt:
+      touched_by:
+        - "PaymentIntent.Confirm"
+        - "PaymentIntent.MarkSucceeded"
+        - "PaymentIntent.MarkFailed"
+        - "Webhook.Process"
+
+    payment_event:
+      touched_by:
+        - "PaymentIntent.Create"
+        - "PaymentIntent.Confirm"
+        - "PaymentIntent.MarkSucceeded"
+        - "PaymentIntent.MarkFailed"
+        - "PaymentIntent.Cancel"
+
+    payment_webhook_inbox:
+      touched_by:
+        - "Webhook.Receive"
+        - "Webhook.Process"
+
+  events:
+    PAYMENT_METHOD_CREATED:
+      emitted_by:
+        - "PaymentMethod.Create"
+
+    PAYMENT_METHOD_DELETED:
+      emitted_by:
+        - "PaymentMethod.Delete"
+
+    PAYMENT_INTENT_CREATED:
+      emitted_by:
+        - "PaymentIntent.Create"
+
+    PAYMENT_INTENT_CONFIRMED:
+      emitted_by:
+        - "PaymentIntent.Confirm"
+
+    PAYMENT_SUCCEEDED:
+      emitted_by:
+        - "PaymentIntent.MarkSucceeded"
+
+    PAYMENT_FAILED:
+      emitted_by:
+        - "PaymentIntent.MarkFailed"
+
+    PAYMENT_CANCELLED:
+      emitted_by:
+        - "PaymentIntent.Cancel"
+
+    PAYMENT_RECEIPT_ISSUED:
+      emitted_by:
+        - "Receipt.Issue"
+
+    PAYMENT_RECEIPT_VOIDED:
+      emitted_by:
+        - "Receipt.Void"
+
+    WEBHOOK_RECEIVED:
+      emitted_by:
+        - "Webhook.Receive"
+
+    WEBHOOK_PROCESSED:
+      emitted_by:
+        - "Webhook.Process"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# INTEGRATION
+# ──────────────────────────────────────────────────────────────────────────────
+
+integration:
+  description: |
+    Payment pillar integrates with Policy and Wallet pillars via event-driven architecture.
+    Payment events trigger policy activation and wallet crediting.
+
+  outbox_pattern:
+    how_it_works:
+      - "Payment commands emit events to outbox_event table within same transaction"
+      - "OutboxProcessorService polls and publishes events to EventBusService"
+      - "Consumer pillars subscribe to payment events and execute their workflows"
+      - "All events include correlation_id for tracing cross-pillar flows"
+
+    benefits:
+      - "Transactional consistency - events only published if payment succeeds"
+      - "Guaranteed delivery - events are retried until acknowledged"
+      - "Audit trail - all events logged in outbox_event table"
+      - "Decoupling - payment pillar doesn't know about consuming pillars"
+
+  policy:
+    description: "Policy pillar consumes payment events to activate policies and process renewals"
+    pattern: "event_driven_via_outbox"
+
+    consumers:
+      - event: "PAYMENT_SUCCEEDED"
+        consumer_name: "PolicyPaymentSucceededConsumer"
+        location: "src/plugins/policy/consumers/policy-payment-succeeded.consumer.ts"
+        responsibility: "Activate policy when premium payment succeeds"
+
+        expected_behavior:
+          - "Find policy by ref_type='policy' and ref_id=policy_id from payment intent"
+          - "Validate payment amount matches policy premium"
+          - "Update policy status from 'pending_payment' to 'active'"
+          - "Set policy.activated_at timestamp"
+          - "Emit POLICY_ACTIVATED event"
+
+        event_payload_example:
+          event_type: "PAYMENT_SUCCEEDED"
+          aggregate_type: "PAYMENT_INTENT"
+          aggregate_id: 123
+          payload:
+            intent_id: 123
+            intent_key: "PIY-abc-123"
+            amount: 500.00
+            currency: "MYR"
+            purpose_code: "premium"
+            ref_type: "policy"
+            ref_id: "456"
+            payment_method_id: 789
+            succeeded_at: "2026-03-22T10:30:00Z"
+
+        idempotency_strategy:
+          - "Check if policy is already 'active' before updating"
+          - "Use payment_intent.id as dedupe key to prevent duplicate activations"
+
+        error_handling:
+          - "If policy not found, log error and mark event as failed"
+          - "If payment amount mismatch, log error and create manual review case"
+          - "Retry transient errors (DB deadlock) with exponential backoff"
+
+  wallet:
+    description: "Wallet pillar consumes payment events to credit user wallets for refunds and credits"
+    pattern: "event_driven_via_outbox"
+
+    consumers:
+      - event: "PAYMENT_SUCCEEDED"
+        consumer_name: "WalletPaymentSucceededConsumer"
+        location: "src/plugins/wallet/consumers/wallet-payment-succeeded.consumer.ts"
+        responsibility: "Credit wallet when payment is for wallet topup"
+
+        expected_behavior:
+          - "Check if purpose_code is 'topup' or 'deposit'"
+          - "Credit wallet for account_id with payment amount"
+          - "Create ledger entries for double-entry bookkeeping"
+          - "Emit WALLET_CREDITED event"
+
+        event_payload_example:
+          event_type: "PAYMENT_SUCCEEDED"
+          aggregate_type: "PAYMENT_INTENT"
+          aggregate_id: 124
+          payload:
+            intent_id: 124
+            intent_key: "PIY-def-456"
+            amount: 1000.00
+            currency: "MYR"
+            purpose_code: "topup"
+            account_id: 1
+            succeeded_at: "2026-03-22T11:00:00Z"
+
+        idempotency_strategy:
+          - "Check if ledger_txn already exists for this payment_intent.id"
+          - "Use payment_intent.id in ledger_txn.ref_id to prevent duplicate credits"
+
+        error_handling:
+          - "If wallet not found, create wallet automatically"
+          - "Retry transient errors with exponential backoff"
+          - "Alert admin if credit fails after 5 retries"
+
+  architecture_diagram: |
+    ┌──────────────────────────────────────────────────────────────────┐
+    │                      PAYMENT PILLAR                              │
+    ├──────────────────────────────────────────────────────────────────┤
+    │                                                                  │
+    │  Commands:                         Events (via Outbox):         │
+    │  • PaymentIntent.Create            • PAYMENT_INTENT_CREATED     │
+    │  • PaymentIntent.Confirm           • PAYMENT_INTENT_CONFIRMED   │
+    │  • PaymentIntent.MarkSucceeded     • PAYMENT_SUCCEEDED ⭐       │
+    │  • PaymentIntent.MarkFailed        • PAYMENT_FAILED ⭐          │
+    │  • Receipt.Issue                   • PAYMENT_RECEIPT_ISSUED     │
+    │                                                                  │
+    └──────────┬──────────────────────┬────────────────────────────────┘
+               │                      │
+               │ sync reads           │ events via outbox
+               │ + command calls      │
+               ↓                      ↓
+    ┌──────────────────┐   ┌─────────────────┐   ┌─────────────────┐
+    │  POLICY PILLAR   │   │  WALLET PILLAR  │   │ NOTIFICATION    │
+    ├──────────────────┤   ├─────────────────┤   ├─────────────────┤
+    │ Consumes:        │   │ Consumes:       │   │ Consumes:       │
+    │ PAYMENT_SUCCEEDED│   │ PAYMENT_SUCCEEDED│   │ All payment     │
+    │                  │   │                 │   │ events          │
+    │ Actions:         │   │ Actions:        │   │                 │
+    │ • Activate policy│   │ • Credit wallet │   │ Sends:          │
+    │ • Update status  │   │ • Create ledger │   │ • Email receipt │
+    │                  │   │   entries       │   │ • SMS confirm   │
+    └──────────────────┘   └─────────────────┘   └─────────────────┘
+
+  implementation_checklist:
+    policy:
+      - "[ ] PolicyPaymentSucceededConsumer implemented"
+      - "[ ] Policy activation logic"
+      - "[ ] Idempotency check on payment_intent.id"
+      - "[ ] Error handling and retry logic"
+      - "[ ] E2E test: payment → policy activation"
+
+    wallet:
+      - "[ ] WalletPaymentSucceededConsumer implemented"
+      - "[ ] Wallet credit logic for topup/deposit"
+      - "[ ] Idempotency check on ledger_txn"
+      - "[ ] Error handling and retry logic"
+      - "[ ] E2E test: payment → wallet credit"
+
+    notification:
+      - "[ ] PaymentNotificationConsumer implemented"
+      - "[ ] Email receipt template"
+      - "[ ] SMS confirmation template"
+      - "[ ] E2E test: payment → notifications sent"
+
+    payment:
+      - "[✓] All 11 commands specified"
+      - "[✓] All 11 events specified"
+      - "[✓] Outbox pattern integrated"
+      - "[ ] Payment gateway integration (Stripe, FPX)"
+      - "[ ] Webhook signature verification"
+      - "[ ] E2E test: full payment flow with webhook"
+
+  testing_strategy:
+    end_to_end_test: |
+      1. Create payment intent via PaymentIntent.Create
+      2. Verify PAYMENT_INTENT_CREATED event emitted
+      3. Confirm payment via PaymentIntent.Confirm
+      4. Verify PAYMENT_INTENT_CONFIRMED event emitted
+      5. Simulate webhook from provider indicating success
+      6. Process webhook via Webhook.Process
+      7. Verify PaymentIntent.MarkSucceeded called
+      8. Verify PAYMENT_SUCCEEDED event emitted
+      9. Verify policy activated (if purpose_code=premium)
+      10. Verify wallet credited (if purpose_code=topup)
+      11. Verify receipt issued
+      12. Verify notification sent
+
+    idempotency_test: |
+      1. Create same payment intent twice with same idempotency key
+      2. Verify only one payment_intent record created
+      3. Verify second call returns same intent_id
+      4. Process same webhook twice (same provider_event_id)
+      5. Verify only one webhook_inbox record created
+      6. Verify payment_intent not updated twice
+
+    error_test: |
+      1. Create payment intent with invalid amount (0 or negative)
+      2. Verify DomainError thrown with clear message
+      3. Confirm payment with unsupported provider
+      4. Verify DomainError thrown
+      5. Simulate webhook failure (invalid signature)
+      6. Verify webhook marked as failed
+      7. Simulate policy consumer failure
+      8. Verify event marked for retry
+      9. Verify alert sent after retry limit exceeded

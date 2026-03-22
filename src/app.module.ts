@@ -16,6 +16,7 @@ import { ReferralV2Module } from './plugins/referral/referral-v2.module';
 import { CommissionModule } from './plugins/commission/commission.module';
 import { PolicyModule } from './plugins/policy/policy.module';
 import { ClaimModule } from './plugins/claim/claim.module';
+import { PaymentModule } from './plugins/payment/payment.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { ClaimModule } from './plugins/claim/claim.module';
     CommissionModule,
     PolicyModule,
     ClaimModule,
+    PaymentModule,
   ],
   controllers: [AppController],
   providers: [AppService],
