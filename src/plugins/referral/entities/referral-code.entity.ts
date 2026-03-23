@@ -23,6 +23,9 @@ export class ReferralCode {
   @Column({ type: 'varchar', length: 32 })
   code: string;
 
+  @Column({ type: 'varchar', length: 16, default: 'referral' })
+  code_type: string; // 'referral' | 'invite'
+
   @Column({ type: 'varchar', length: 16, default: 'active' })
   status: string;
 

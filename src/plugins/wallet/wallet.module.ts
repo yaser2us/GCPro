@@ -48,11 +48,13 @@ import { WalletAdvancedWorkflowService } from './services/wallet-advanced.workfl
 import { MissionRewardHandler } from './handlers/mission-reward.handler';
 import { CommissionAccrualHandler } from './handlers/commission-accrual.handler';
 import { PolicyActivatedHandler } from './handlers/policy-activated.handler';
+import { PersonCreatedHandler } from './handlers/person-created.handler';
 
 // Event Consumers (one per event source)
 import { MissionRewardConsumer } from './consumers/mission-reward.consumer';
 import { CommissionAccrualConsumer } from './consumers/commission-accrual.consumer';
 import { PolicyActivatedConsumer } from './consumers/policy-activated.consumer';
+import { PersonCreatedConsumer } from './consumers/person-created.consumer';
 
 // Controllers
 import { WalletController } from './controllers/wallet.controller';
@@ -159,13 +161,13 @@ import { PolicyGateController } from './controllers/policy-gate.controller';
     MissionRewardHandler,
     CommissionAccrualHandler,
     PolicyActivatedHandler,
-    // Future: ClaimPayoutHandler, etc.
+    PersonCreatedHandler,
 
     // Event Consumers (one per event source)
     MissionRewardConsumer,
     CommissionAccrualConsumer,
     PolicyActivatedConsumer,
-    // Future: ClaimPayoutConsumer, etc.
+    PersonCreatedConsumer,
   ],
   exports: [
     // Export shared services for other modules

@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuditInterceptor } from './interceptors/audit.interceptor';
 import { Address } from './entities/address.entity';
 import { AgeBand } from './entities/age-band.entity';
 import { AuditLog } from './entities/audit-log.entity';
@@ -81,6 +83,9 @@ import { KYCController } from './controllers/kyc.controller';
     ResourceRefRepository,
     SmokProfileRepository,
     FoundationWorkflowService,
+    // M8 Audit Trail — global interceptor registered here so it can inject AuditLogRepository
+    AuditInterceptor,
+    { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
   ],
   controllers: [
     ReferenceDataController,

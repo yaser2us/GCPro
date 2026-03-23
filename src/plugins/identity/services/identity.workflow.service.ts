@@ -244,6 +244,21 @@ export class IdentityWorkflowService {
    */
   async issueRegistrationToken(dto: RegistrationTokenIssueDto, actor: Actor, idempotencyKey: string) {
     return this.txService.run(async (queryRunner) => {
+      // GUARD (M7 + C2): Registration-specific gates
+      if (!dto.purpose || dto.purpose === 'registration') {
+        // C2: invite_code is required and must be a valid active invite code
+        if (!dto.invite_code) throw new BadRequestException('INVITE_CODE_REQUIRED');
+        const inviteValid = await this.isValidInviteCode(dto.invite_code, queryRunner);
+        if (!inviteValid) throw new ConflictException('INVITE_CODE_INVALID');
+
+        // M7: user (if already in DB) must have accepted T&C
+        const user = await this.userReadRepo.findByChannelValue(dto.channel_value, queryRunner);
+        if (user) {
+          const accepted = await this.hasAcceptedTerms(user.id, queryRunner);
+          if (!accepted) throw new ConflictException('TERMS_NOT_ACCEPTED');
+        }
+      }
+
       // GUARD: OTP cooldown (60 seconds)
       const recentCount = await this.registrationTokenRepo.countRecentPending(
         dto.channel_value,
@@ -497,6 +512,40 @@ export class IdentityWorkflowService {
   }
 
   // ── HELPERS ───────────────────────────────────────────────────────────────────
+
+  /**
+   * C2 — check that the invite code exists in referral_code with code_type='invite'
+   * and status='active'. Raw SQL; no cross-module dependency.
+   */
+  private async isValidInviteCode(inviteCode: string, queryRunner: import('typeorm').QueryRunner): Promise<boolean> {
+    const rows = await queryRunner.manager.query(
+      `SELECT id FROM referral_code
+       WHERE code = ? AND code_type = 'invite' AND status = 'active'
+       LIMIT 1`,
+      [inviteCode],
+    );
+    return rows.length > 0;
+  }
+
+  /**
+   * M7 — check if the user has accepted the active published T&C version.
+   * Uses a raw SQL cross-join; no FoundationModule dependency needed.
+   */
+  private async hasAcceptedTerms(userId: number, queryRunner: import('typeorm').QueryRunner): Promise<boolean> {
+    const rows = await queryRunner.manager.query(
+      `SELECT ga.id
+       FROM guideline_acceptance ga
+       JOIN guideline_version gv ON ga.version_id = gv.id
+       JOIN guideline_document gd ON gv.document_id = gd.id
+       WHERE ga.user_id = ?
+         AND gd.code = 'gc:terms'
+         AND gv.status = 'published'
+         AND (gv.effective_to IS NULL OR gv.effective_to > NOW())
+       LIMIT 1`,
+      [userId],
+    );
+    return rows.length > 0;
+  }
 
   private async verifyOtp(otpPlain: string, otpHash: string | null): Promise<boolean> {
     if (!otpHash) return false;
