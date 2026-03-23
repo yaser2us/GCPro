@@ -1,4 +1,4 @@
-version: "2.1.0"
+version: "2.4.0"
 spec_id: "policy.pillar.v2"
 domain: "policy"
 plugin: "policy"
@@ -1498,16 +1498,21 @@ dtos:
       type: "string"
       required: true
       max_len: 20
-      enum: ["annual", "monthly", "quarterly"]
-      description: "Billing type"
+      # C7: added 'split' and 'full'
+      enum: ["annual", "monthly", "quarterly", "split", "full"]
+      description: >
+        Billing schedule type.
+        split — 2 installments at 50%/50%: installment_no=1 due now, installment_no=2 due +30 days.
+        full  — 1 installment for full amount due now.
+        annual/monthly/quarterly — caller-controlled installment_count.
     total_amount:
       type: "number"
       required: true
       description: "Total billing amount"
     installment_count:
       type: "number"
-      required: true
-      description: "Number of installments"
+      required: false
+      description: "Number of installments (ignored when billing_type=split or full — auto-set)"
     idempotency_key:
       type: "string"
       required: true
@@ -1985,39 +1990,72 @@ commands:
       installment_id: "string"
       status: "string"
 
+  - name: "DepositRequirement.Get"
+    id: M1-read
+    description: "M1 — Read current deposit status for a policy"
+    path: "/api/v1/policy/:policyId/deposit"
+    method: "GET"
+    idempotent: true
+    permissions: ["policy:deposit:evaluate"]
+    input: {}
+    response:
+      policy_id: "number"
+      monthly_max_cap: "decimal"
+      deposit_capacity_amount: "decimal"
+      min_required_amount: "decimal"
+      warning_amount: "decimal"
+      urgent_amount: "decimal"
+      status: "ok | warning | urgent | critical"
+      last_evaluated_at: "datetime | null"
+
   - name: "DepositRequirement.Evaluate"
-    description: "Evaluate deposit requirement and update status"
+    id: M1
+    description: >
+      M1 — Evaluate deposit requirement using live formula.
+      Re-derives monthly_max_cap from current policy_package_rate for the holder's
+      age band. Recomputes all thresholds, then evaluates current_balance.
+      Formula:
+        deposit_capacity = monthly_max_cap × deposit_capacity_multiplier (default 2.0)
+        min_required     = deposit_capacity × min_deposit_pct            (default 0.5)
+        warning_amount   = deposit_capacity × warning_pct                (default 0.6)
+        urgent_amount    = deposit_capacity × urgent_pct                 (default 0.5)
     path: "/api/v1/policy/:policyId/deposit/evaluate"
     method: "POST"
     idempotent: false
-    permissions: []
+    permissions: ["policy:deposit:evaluate"]
     input: "EvaluateDepositRequirementInput"
     steps:
-      - kind: "read"
-        table: "policy_deposit_requirement"
-        where: "policy_id = input.policy_id"
       - kind: "guard"
-        description: "Deposit requirement must exist"
-        expression: "deposit_requirement exists"
-      - kind: "hook"
-        description: "Calculate status based on balance thresholds"
+        description: "policy_deposit_requirement must exist for this policy"
+        error: "DEPOSIT_REQUIREMENT_NOT_FOUND"
+      - kind: "guard"
+        description: "policy must exist"
+        error: "POLICY_NOT_FOUND"
+      - kind: "read"
+        description: "Fetch current rate from policy_package_rate via holder DOB + age_band"
+        tables: ["policy", "policy_package", "person", "age_band", "policy_package_rate"]
+        fallback: "use stored monthly_max_cap if no rate row found"
+      - kind: "compute"
+        description: "deposit_capacity = monthly_max_cap × multiplier; min/warning/urgent from pcts"
+      - kind: "evaluate"
+        description: "status = ok|warning|urgent|critical based on current_balance vs thresholds"
       - kind: "update"
         table: "policy_deposit_requirement"
-        where: "policy_id = input.policy_id"
-        fields:
-          - "status"
-          - "last_evaluated_at"
-      - kind: "when"
-        condition: "status changed to warning or urgent"
-        then:
-          - kind: "outbox_emit"
-            event: "DEPOSIT_REQUIREMENT_EVALUATED"
-            aggregate_type: "POLICY"
-            aggregate_id: "input.policy_id"
+        fields: ["monthly_max_cap", "deposit_capacity_amount", "min_required_amount",
+                 "warning_amount", "urgent_amount", "status", "last_evaluated_at"]
+      - kind: "outbox_emit"
+        event: "DEPOSIT_REQUIREMENT_EVALUATED"
+        aggregate_type: "POLICY"
+        aggregate_id: "input.policy_id"
     response:
-      status: "string"
-      current_amount: "number"
-      required_amount: "number"
+      policy_id: "number"
+      status: "ok | warning | urgent | critical"
+      current_balance: "number"
+      monthly_max_cap: "number"
+      deposit_capacity: "number"
+      min_required_amount: "number"
+      warning_amount: "number"
+      urgent_amount: "number"
 
   - name: "RemediationCase.Open"
     description: "Open a remediation case for policy compliance issues"
@@ -2131,6 +2169,42 @@ commands:
 # ──────────────────────────────────────────────────────────────────────────────
 
 changelog:
+  - version: "2.4.0"
+    date: "2026-03-23"
+    author: "system"
+    description: "M5 — Benefit Record Auto-Init on Policy Activation"
+    changes:
+      - "M5: PolicyActivatedHandler — subscribes to POLICY_ACTIVATED"
+      - "M5: Creates policy_benefit_entitlement (if missing) from benefit_catalog snapshot"
+      - "M5: Initialises policy_benefit_usage rows (one per item) for current period"
+      - "M5: Emits BENEFIT_RECORDS_INITIALISED event"
+    breaking_changes: []
+    migrations_required: []
+
+  - version: "2.3.0"
+    date: "2026-03-23"
+    author: "system"
+    description: "C7 — Split Payment 50/50 Enforcement"
+    changes:
+      - "C7: billing_type now accepts 'split' and 'full' in addition to annual/monthly/quarterly"
+      - "C7: split → 2 installments at 50% each; no=1 due now, no=2 due +30 days"
+      - "C7: full → 1 installment for full amount due now"
+      - "C7: installment_count is now optional (auto-set for split/full)"
+    breaking_changes: []
+    migrations_required:
+      - "scripts/policy-c7-migration.sql — ALTER TABLE policy_billing_plan MODIFY COLUMN billing_type"
+
+  - version: "2.2.0"
+    date: "2026-03-23"
+    author: "system"
+    description: "M1 — Deposit Capacity Formula Enforcement"
+    changes:
+      - "M1: DepositRequirement.Evaluate now re-derives monthly_max_cap from policy_package_rate"
+      - "M1: Formula: deposit_capacity = monthly_max_cap × multiplier; thresholds from pcts"
+      - "M1: New GET /api/v1/policy/:policyId/deposit endpoint (DepositRequirement.Get)"
+    breaking_changes: []
+    migrations_required: []
+
   - version: "2.1.0"
     date: "2026-03-23"
     author: "Claude Sonnet 4.6"

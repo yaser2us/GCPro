@@ -4,6 +4,7 @@ import { TransactionService } from './services/transaction.service';
 import { OutboxService } from './services/outbox.service';
 import { EventBusService } from './services/event-bus.service';
 import { OutboxProcessorService } from './services/outbox-processor.service';
+import { JwtService } from './services/jwt.service';
 import { OutboxEvent } from './entities/outbox-event.entity';
 import { AuthGuard } from './guards/auth.guard';
 import { PermissionsGuard } from './guards/permissions.guard';
@@ -38,6 +39,7 @@ import { StepRunner } from './steps/step.runner';
     EventBusService,
     OutboxProcessorService,
     StepRunner,
+    JwtService,
     // Guards
     AuthGuard,
     PermissionsGuard,
@@ -49,6 +51,7 @@ import { StepRunner } from './steps/step.runner';
     EventBusService,
     OutboxProcessorService,
     StepRunner,
+    JwtService,
     AuthGuard,
     PermissionsGuard,
   ],

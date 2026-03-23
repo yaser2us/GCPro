@@ -1,43 +1,50 @@
 import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 import { Actor } from '../types/actor.type';
+import { JwtService } from '../services/jwt.service';
 
 /**
- * Simple Auth Guard - validates and extracts actor from request
+ * AuthGuard — validates requests via JWT Bearer token or X-User-Id header (dev fallback).
  *
- * In production, this would:
- * - Verify JWT token
- * - Decode user_id and role from token
- * - Attach actor to request
- *
- * For now (demo/testing), we'll accept a simple header:
- * X-User-Id: <user_id>
- * X-User-Role: <role>
+ * Priority:
+ * 1. Authorization: Bearer <jwt>  — verifies signature, extracts user_id + roles
+ * 2. X-User-Id header             — dev/testing fallback (accepted without token)
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
+  constructor(private readonly jwtService: JwtService) {}
+
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest();
 
-    // Extract user from headers (simplified for demo)
-    const userId = request.headers['x-user-id'];
-    const userRole = request.headers['x-user-role'] || 'USER';
+    // 1. Try JWT Bearer token
+    const authHeader: string | undefined = request.headers['authorization'];
+    if (authHeader?.startsWith('Bearer ')) {
+      const token = authHeader.slice(7);
+      const payload = this.jwtService.verify(token);
+      if (!payload) throw new UnauthorizedException('Invalid or expired token');
 
-    if (!userId) {
-      throw new UnauthorizedException('Missing X-User-Id header');
+      const actor: Actor = {
+        actor_user_id: String(payload.user_id),
+        actor_role: payload.roles?.[0] ?? 'USER',
+        correlation_id: request.headers['x-correlation-id'] || uuidv4(),
+        causation_id: request.headers['x-causation-id'] || uuidv4(),
+      };
+      request.actor = actor;
+      return true;
     }
 
-    // Create actor object
+    // 2. Fallback: X-User-Id header (dev / testing)
+    const userId = request.headers['x-user-id'];
+    if (!userId) throw new UnauthorizedException('Missing Authorization header');
+
     const actor: Actor = {
       actor_user_id: userId,
-      actor_role: userRole,
+      actor_role: request.headers['x-user-role'] || 'USER',
       correlation_id: request.headers['x-correlation-id'] || uuidv4(),
       causation_id: request.headers['x-causation-id'] || uuidv4(),
     };
-
-    // Attach to request for @CurrentActor() decorator
     request.actor = actor;
-
     return true;
   }
 }

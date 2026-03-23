@@ -257,7 +257,18 @@ export class PolicyController {
   }
 
   /**
-   * EVALUATE DEPOSIT REQUIREMENT ENDPOINT
+   * GET DEPOSIT STATUS — M1
+   * GET /api/v1/policy/:policyId/deposit
+   */
+  @Get(':policyId/deposit')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('policy:deposit:evaluate')
+  async getDepositStatus(@Param('policyId') policyId: string) {
+    return this.workflowService.getDepositStatus(Number(policyId));
+  }
+
+  /**
+   * EVALUATE DEPOSIT REQUIREMENT ENDPOINT — M1
    * Spec: specs/policy/policy.pillar.v2.yml lines 1988-2021
    */
   @Post(':policyId/deposit/evaluate')

@@ -29,6 +29,8 @@ import { PolicyStatusEventRepository } from './repositories/policy-status-event.
 import { PolicyWorkflowService } from './services/policy.workflow.service';
 import { PolicyPaymentSucceededHandler } from './handlers/policy-payment-succeeded.handler';
 import { PolicyPaymentSucceededConsumer } from './consumers/policy-payment-succeeded.consumer';
+import { PolicyActivatedHandler } from './handlers/policy-activated.handler';
+import { PolicyActivatedConsumer } from './consumers/policy-activated.consumer';
 import { ClaimSettledHandler } from './handlers/claim-settled.handler';
 import { ClaimSettledConsumer } from './consumers/claim-settled.consumer';
 import { PolicyController } from './controllers/policy.controller';
@@ -74,6 +76,8 @@ import { PolicyAdminController } from './controllers/policy-admin.controller';
     PolicyWorkflowService,
     PolicyPaymentSucceededHandler,
     PolicyPaymentSucceededConsumer,
+    PolicyActivatedHandler,
+    PolicyActivatedConsumer,
     ClaimSettledHandler,
     ClaimSettledConsumer,
   ],

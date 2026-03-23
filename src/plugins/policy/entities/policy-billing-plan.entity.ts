@@ -17,8 +17,9 @@ export class PolicyBillingPlan {
   @Column({ type: 'bigint' })
   policy_id: number;
 
+  // C7: added 'split' (50/50 two-installment) and 'full' (single upfront)
   @Column({ type: 'varchar', length: 20 })
-  billing_type: 'annual' | 'monthly' | 'quarterly';
+  billing_type: 'annual' | 'monthly' | 'quarterly' | 'split' | 'full';
 
   @Column({ type: 'decimal', precision: 12, scale: 2, default: '0.00' })
   total_amount: string;

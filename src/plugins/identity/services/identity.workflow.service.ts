@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { TransactionService } from '../../../corekit/services/transaction.service';
 import { OutboxService } from '../../../corekit/services/outbox.service';
+import { JwtService } from '../../../corekit/services/jwt.service';
 import type { Actor } from '../../../corekit/types/actor.type';
 import { UserReadRepository } from '../repositories/user-read.repo';
 import { DeviceTokenRepository } from '../repositories/device-token.repo';
@@ -9,6 +10,7 @@ import { RegistrationTokenRepository } from '../repositories/registration-token.
 import { VerificationStatusRepository } from '../repositories/verification-status.repo';
 import { OnboardingProgressRepository } from '../repositories/onboarding-progress.repo';
 import { LoginDto } from '../dto/login.dto';
+import { AuthLoginDto } from '../dto/auth-login.dto';
 import { DeviceTokenRegisterDto } from '../dto/device-token-register.dto';
 import { RegistrationTokenIssueDto } from '../dto/registration-token-issue.dto';
 import { RegistrationTokenVerifyDto } from '../dto/registration-token-verify.dto';
@@ -25,6 +27,7 @@ export class IdentityWorkflowService {
   constructor(
     private readonly txService: TransactionService,
     private readonly outboxService: OutboxService,
+    private readonly jwtService: JwtService,
     private readonly userReadRepo: UserReadRepository,
     private readonly deviceTokenRepo: DeviceTokenRepository,
     private readonly registrationTokenRepo: RegistrationTokenRepository,
@@ -102,6 +105,82 @@ export class IdentityWorkflowService {
 
       const sessionDevice = await this.deviceTokenRepo.findById(deviceTokenId, queryRunner);
       return { user: authUser, device_token: sessionDevice };
+    });
+  }
+
+  /**
+   * LoginWithPassword — POST /v1/auth/login
+   * C1: Accepts phone_number + password, verifies bcrypt hash, returns signed JWT.
+   * Unauthenticated entry point — no auth guard required.
+   */
+  async loginWithPassword(dto: AuthLoginDto) {
+    return this.txService.run(async (queryRunner) => {
+      // GUARD: user must exist
+      const authUser = await this.userReadRepo.findByPhoneNumber(dto.phone_number, queryRunner);
+      if (!authUser) throw new UnauthorizedException('INVALID_CREDENTIALS');
+
+      // GUARD: user must be active
+      if (authUser.status !== 'active') throw new ForbiddenException('USER_ACCOUNT_INACTIVE');
+
+      // GUARD: password credential must exist
+      const [credential] = await queryRunner.manager.query(
+        `SELECT id, secret_hash FROM user_credential WHERE user_id = ? AND type = 'password' LIMIT 1`,
+        [authUser.id],
+      );
+      if (!credential || !credential.secret_hash) throw new UnauthorizedException('INVALID_CREDENTIALS');
+
+      // GUARD: password must match
+      const passwordValid = await bcrypt.compare(dto.password, credential.secret_hash);
+      if (!passwordValid) throw new UnauthorizedException('INVALID_CREDENTIALS');
+
+      // Resolve account_id via raw SQL (user_account table, person plugin owns it)
+      const [accountRow] = await queryRunner.manager.query(
+        `SELECT id FROM account WHERE primary_user_id = ? AND status = 'active' LIMIT 1`,
+        [authUser.id],
+      ).catch(() => [null]);
+
+      // Resolve roles from role_assignment (raw SQL, no cross-module dep)
+      const roleRows: { code: string }[] = await queryRunner.manager.query(
+        `SELECT r.code FROM role_assignment ra JOIN role r ON r.id = ra.role_id
+         WHERE ra.user_id = ? AND (ra.expires_at IS NULL OR ra.expires_at > NOW())`,
+        [authUser.id],
+      ).catch(() => []);
+
+      const roles = roleRows.map((r) => r.code);
+      const account_id: number | null = accountRow ? Number(accountRow.id) : null;
+
+      // Sign JWT
+      const token = this.jwtService.sign({
+        user_id: authUser.id,
+        account_id,
+        roles,
+        permissions: [],
+      });
+
+      // EMIT
+      await this.outboxService.enqueue(
+        {
+          event_name: 'USER_LOGGED_IN',
+          event_version: 1,
+          aggregate_type: 'USER',
+          aggregate_id: String(authUser.id),
+          actor_user_id: String(authUser.id),
+          occurred_at: new Date(),
+          correlation_id: String(authUser.id),
+          causation_id: String(authUser.id),
+          payload: {
+            user_id: authUser.id,
+            auth_method: 'password',
+          },
+        },
+        queryRunner,
+      );
+
+      return {
+        access_token: token,
+        token_type: 'Bearer',
+        user: { id: authUser.id, phone_number: authUser.phone_number, status: authUser.status },
+      };
     });
   }
 

@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Identity API",
-    "description": "Postman collection for the Identity pillar — auth (login/logout/me), device tokens, registration tokens, verification status, onboarding progress.\nBased on specs/identity/identity.pillar.v2.yml\nAll endpoints: /v1/identity/",
+    "description": "Postman collection for the Identity pillar — auth (login/logout/me), device tokens, registration tokens, verification status, onboarding progress.\nBased on specs/identity/identity.pillar.v2.yml (v2.1.0)\n\nv2.1.0 additions:\n- C1: POST /v1/auth/login — password-based login, returns JWT\n- C1: GET  /v1/auth/me   — current user from JWT\nAll endpoints: /v1/identity/ and /v1/auth/",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -14,7 +14,8 @@
     { "key": "target_account_id",   "value": "2",                           "type": "string" },
     { "key": "target_phone",        "value": "+60123456789",                "type": "string" },
     { "key": "device_token_id",     "value": "",                            "type": "string" },
-    { "key": "registration_token_id", "value": "",                          "type": "string" }
+    { "key": "registration_token_id", "value": "",                          "type": "string" },
+    { "key": "jwt_token",             "value": "",                           "type": "string" }
   ],
   "event": [
     {
@@ -37,6 +38,86 @@
     }
   ],
   "item": [
+    {
+      "name": "0. C1 — Password Login (JWT)",
+      "description": "C1: Password-based login. Returns JWT access token.\nPOST /v1/auth/login + GET /v1/auth/me",
+      "item": [
+        {
+          "name": "C1.1 — Login with Password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.access_token) {",
+                  "  pm.environment.set('jwt_token', jsonData.access_token);",
+                  "  pm.collectionVariables.set('jwt_token', jsonData.access_token);",
+                  "}",
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Has access_token', function () { pm.expect(jsonData.access_token).to.exist; });",
+                  "pm.test('token_type is Bearer', function () { pm.expect(jsonData.token_type).to.eql('Bearer'); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number\": \"+60123456789\",\n  \"password\": \"secret123\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "auth", "login"]
+            },
+            "description": "C1 — Password-based login. Returns signed JWT.\n\nBody: phone_number + password\nResponse: { access_token, token_type, user }"
+          },
+          "response": []
+        },
+        {
+          "name": "C1.2 — Get Me (JWT)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{jwt_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/auth/me",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "auth", "me"]
+            },
+            "description": "C1 — Get current user from JWT claims."
+          },
+          "response": []
+        },
+        {
+          "name": "C1.3 — Login invalid password (expect 401)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number\": \"+60123456789\",\n  \"password\": \"wrongpassword\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "auth", "login"]
+            },
+            "description": "Expect 401 INVALID_CREDENTIALS"
+          },
+          "response": []
+        }
+      ]
+    },
     {
       "name": "1. Auth",
       "item": [

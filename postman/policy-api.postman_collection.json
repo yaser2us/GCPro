@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "8f3c2a1d-4e9b-4c3a-9d2e-1f5a7b9c6e3d",
     "name": "Policy API - Complete Workflow",
-    "description": "Complete test suite for Policy Pillar\n\nBased on: specs/policy/policy.pillar.v2.yml (v2.1.0)\n\nCovers:\n- M4: Package Auto-Selection (GET /package-lookup)\n- Master data setup (packages, rates)\n- Policy creation and activation\n- Member management\n- Benefit usage (reserve → confirm → release)\n- Billing plan and installments\n- Deposit requirement evaluation\n- Remediation case management",
+    "description": "Complete test suite for Policy Pillar\n\nBased on: specs/policy/policy.pillar.v2.yml (v2.3.0)\n\nv2.3.0 additions:\n- C7: Split Payment 50/50 — billing_type='split' creates 2 installments at 50% each\n- C7: billing_type='full' creates 1 upfront installment\n\nv2.2.0 additions:\n- M1: Deposit Capacity Formula — GET /deposit + POST /deposit/evaluate (re-derives from rate table)\n\nCovers:\n- M4: Package Auto-Selection (GET /package-lookup)\n- M1: Deposit Capacity Formula Enforcement\n- C7: Split Payment 50/50\n- Master data setup (packages, rates)\n- Policy creation and activation\n- Member management\n- Benefit usage (reserve → confirm → release)\n- Billing plan and installments\n- Deposit requirement evaluation\n- Remediation case management",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -667,10 +667,69 @@
       "description": "3-phase benefit usage workflow"
     },
     {
-      "name": "4. Billing & Installments",
+      "name": "4. Billing & Installments (C7)",
       "item": [
         {
-          "name": "4.1 Create Billing Plan",
+          "name": "C7.1 — Create Split Billing Plan (50/50)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', function () { pm.response.to.have.status(201); });",
+                  "var json = pm.response.json();",
+                  "pm.test('installment_count is 2', function () { pm.expect(json.installment_count).to.eql(2); });",
+                  "pm.test('billing_type is split', function () { pm.expect(json.billing_type).to.eql('split'); });",
+                  "if (json.billing_plan_id) pm.collectionVariables.set('billing_plan_id', json.billing_plan_id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-User-Id",   "value": "{{user_id}}", "type": "text" },
+              { "key": "X-User-Role", "value": "{{user_role}}", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"billing_type\": \"split\",\n  \"total_amount\": 9600.00,\n  \"idempotency_key\": \"billing-split-{{$guid}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/policy/{{policy_id}}/billing-plan/create",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "policy", "{{policy_id}}", "billing-plan", "create"]
+            },
+            "description": "C7 — 50/50 split payment.\n\nCreates 2 installments:\n- No.1: 4800.00, due now\n- No.2: 4800.00, due in 30 days\n\nPolicy activates after installment_no=1 paid."
+          },
+          "response": []
+        },
+        {
+          "name": "C7.2 — Create Full Upfront Billing Plan",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-User-Id",   "value": "{{user_id}}", "type": "text" },
+              { "key": "X-User-Role", "value": "{{user_role}}", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"billing_type\": \"full\",\n  \"total_amount\": 9600.00,\n  \"idempotency_key\": \"billing-full-{{$guid}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/policy/{{policy_id}}/billing-plan/create",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "policy", "{{policy_id}}", "billing-plan", "create"]
+            },
+            "description": "C7 — Full upfront payment. Creates 1 installment for full amount due now."
+          },
+          "response": []
+        },
+        {
+          "name": "4.3 Create Billing Plan (monthly — existing)",
           "event": [
             {
               "listen": "test",
@@ -801,33 +860,37 @@
       "description": "Billing plan and installment payment workflows"
     },
     {
-      "name": "5. Deposit Requirement",
+      "name": "5. Deposit Requirement (M1)",
+      "description": "M1 — Deposit Capacity Formula Enforcement\nFormula: deposit_capacity = monthly_max_cap × multiplier; thresholds from pcts\nRate re-derived from policy_package_rate on each evaluate call.",
       "item": [
         {
-          "name": "5.1 Evaluate Deposit Requirement",
+          "name": "M1.1 — Get Deposit Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Id",   "value": "{{user_id}}", "type": "text" },
+              { "key": "X-User-Role", "value": "{{user_role}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/policy/{{policy_id}}/deposit",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "policy", "{{policy_id}}", "deposit"]
+            },
+            "description": "M1 — Read current deposit requirement status.\nReturns stored thresholds + status without recalculating."
+          },
+          "response": []
+        },
+        {
+          "name": "M1.2 — Evaluate Deposit (balance OK)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Status code is 200', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "if (pm.response.code === 200) {",
-                  "    console.log('✅ Deposit Requirement Evaluated');",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            },
-            {
-              "listen": "prerequest",
-              "script": {
-                "exec": [
-                  "pm.request.headers.add({",
-                  "    key: 'Idempotency-Key',",
-                  "    value: pm.variables.replaceIn('{{$guid}}'),",
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Has deposit_capacity', function () { pm.expect(pm.response.json().deposit_capacity).to.be.a('number'); });",
+                  "pm.test('Status is ok or warning', function () {",
+                  "  pm.expect(['ok','warning','urgent','critical']).to.include(pm.response.json().status);",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -837,36 +900,46 @@
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "X-User-Id",
-                "value": "{{user_id}}",
-                "type": "text"
-              },
-              {
-                "key": "X-User-Role",
-                "value": "{{user_role}}",
-                "type": "text"
-              }
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-User-Id",   "value": "{{user_id}}", "type": "text" },
+              { "key": "X-User-Role", "value": "{{user_role}}", "type": "text" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"current_balance\": 8000.00,\n  \"idempotency_key\": \"deposit-{{$guid}}\"\n}"
+              "raw": "{\n  \"current_balance\": 8000.00\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/v1/policy/{{policy_id}}/deposit/evaluate",
               "host": ["{{base_url}}"],
               "path": ["api", "v1", "policy", "{{policy_id}}", "deposit", "evaluate"]
             },
-            "description": "Evaluates deposit requirement status"
+            "description": "M1 — Re-derives monthly_max_cap from policy_package_rate, recomputes all thresholds, evaluates balance.\n\nFormula:\n  deposit_capacity = monthly_max_cap × deposit_capacity_multiplier\n  min_required     = deposit_capacity × min_deposit_pct\n  warning_amount   = deposit_capacity × warning_pct\n\nWith monthly_max_cap=5000, multiplier=2.0: deposit_capacity=10000, min_required=5000\nBalance 8000 → status=warning"
+          },
+          "response": []
+        },
+        {
+          "name": "M1.3 — Evaluate Deposit (balance critical)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-User-Id",   "value": "{{user_id}}", "type": "text" },
+              { "key": "X-User-Role", "value": "{{user_role}}", "type": "text" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_balance\": 1000.00\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/policy/{{policy_id}}/deposit/evaluate",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "policy", "{{policy_id}}", "deposit", "evaluate"]
+            },
+            "description": "M1 — Balance well below min_required → expect status=critical"
           },
           "response": []
         }
-      ],
-      "description": "Deposit requirement evaluation"
+      ]
     },
     {
       "name": "6. Remediation Cases",

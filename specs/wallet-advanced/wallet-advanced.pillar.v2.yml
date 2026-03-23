@@ -1,4 +1,4 @@
-version: "2.0.0"
+version: "2.1.0"
 spec_id: "wallet-advanced.pillar.v2"
 domain: "wallet-advanced"
 plugin: "wallet-advanced"
@@ -2567,6 +2567,18 @@ commands:
 # ──────────────────────────────────────────────────────────────────────────────
 
 changelog:
+  - version: "2.1.0"
+    date: "2026-03-23"
+    author: "system"
+    description: "H6 — Mission Coins Spend Restriction"
+    changes:
+      - "H6: COIN wallet creation now seeds 3 wallet_policy_gate rows: allow_withdrawal=off, allow_transfer=off, allow_annual_fee_payment=on"
+      - "H6: CreateSpendIntent checks wallet_policy_gate when currency=COIN; rejects with WALLET_OPERATION_NOT_PERMITTED if gate is off"
+      - "H6: purpose_code='annual_fee' bypasses restriction; all other purposes blocked on COIN wallets"
+      - "H6: SpendIntentCreateDto extended with optional purpose_code field"
+    breaking_changes: []
+    migrations_required: []
+
   - version: "2.0.0"
     date: "2026-03-23"
     author: "system"

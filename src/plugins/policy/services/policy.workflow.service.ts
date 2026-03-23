@@ -708,34 +708,62 @@ export class PolicyWorkflowService {
         });
       }
 
+      // C7: Resolve installment schedule based on billing_type
+      // split → 2 installments at 50/50; no=1 due now, no=2 due +30 days
+      // full  → 1 installment for full amount due now
+      // annual/monthly/quarterly → existing behaviour (caller provides installment_count)
+      type InstallmentDef = { no: number; amount: number; dueAt: Date };
+      const now = new Date();
+      let installments: InstallmentDef[];
+      let resolvedCount: number;
+
+      if (request.billing_type === 'split') {
+        const half = parseFloat((request.total_amount / 2).toFixed(2));
+        // Ensure both halves sum to total (handle odd cent)
+        const secondHalf = parseFloat((request.total_amount - half).toFixed(2));
+        const dueSecond = new Date(now);
+        dueSecond.setDate(dueSecond.getDate() + 30);
+        installments = [
+          { no: 1, amount: half, dueAt: new Date(now) },
+          { no: 2, amount: secondHalf, dueAt: dueSecond },
+        ];
+        resolvedCount = 2;
+      } else if (request.billing_type === 'full') {
+        installments = [{ no: 1, amount: request.total_amount, dueAt: new Date(now) }];
+        resolvedCount = 1;
+      } else {
+        const count = request.installment_count ?? 1;
+        const amt = parseFloat((request.total_amount / count).toFixed(2));
+        installments = Array.from({ length: count }, (_, i) => {
+          const due = new Date(now);
+          due.setMonth(due.getMonth() + i + 1);
+          return { no: i + 1, amount: amt, dueAt: due };
+        });
+        resolvedCount = count;
+      }
+
       // WRITE: Create billing plan
       const planId = await this.billingPlanRepo.create(
         {
           policy_id: Number(request.policy_id),
           billing_type: request.billing_type,
           total_amount: String(request.total_amount),
-          installment_count: request.installment_count,
+          installment_count: resolvedCount,
           status: 'pending',
         },
         queryRunner,
       );
 
-      // WRITE: Generate installment records based on plan
-      const installmentAmount = request.total_amount / request.installment_count;
-      const now = new Date();
-
-      for (let i = 0; i < request.installment_count; i++) {
-        const dueDate = new Date(now);
-        dueDate.setMonth(dueDate.getMonth() + i + 1); // First installment due next month
-
+      // WRITE: Create installment records
+      for (const inst of installments) {
         await this.installmentRepo.upsert(
           {
             billing_plan_id: planId,
-            installment_no: i + 1,
-            amount: String(installmentAmount.toFixed(2)),
-            due_at: dueDate,
+            installment_no: inst.no,
+            amount: String(inst.amount.toFixed(2)),
+            due_at: inst.dueAt,
             status: 'pending',
-            idempotency_key: `${idempotencyKey}-installment-${i + 1}`,
+            idempotency_key: `${idempotencyKey}-installment-${inst.no}`,
           },
           queryRunner,
         );
@@ -763,7 +791,14 @@ export class PolicyWorkflowService {
 
       return {
         billing_plan_id: planId,
-        installment_count: request.installment_count,
+        billing_type: request.billing_type,
+        installment_count: resolvedCount,
+        total_amount: request.total_amount,
+        installments: installments.map((i) => ({
+          installment_no: i.no,
+          amount: i.amount,
+          due_at: i.dueAt,
+        })),
       };
     });
 
@@ -862,10 +897,19 @@ export class PolicyWorkflowService {
   }
 
   /**
-   * EVALUATE DEPOSIT REQUIREMENT COMMAND
+   * EVALUATE DEPOSIT REQUIREMENT COMMAND — M1
    * Source: specs/policy/policy.pillar.v2.yml lines 1988-2021
    *
    * HTTP: POST /api/v1/policy/:policyId/deposit/evaluate
+   *
+   * M1 formula:
+   *   deposit_capacity = monthly_max_cap × deposit_capacity_multiplier (default 2.0)
+   *   min_required     = deposit_capacity × min_deposit_pct            (default 0.5)
+   *   warning_amount   = deposit_capacity × warning_pct                (default 0.6)
+   *   urgent_amount    = deposit_capacity × urgent_pct                 (default 0.5)
+   *
+   * monthly_max_cap comes from the current active policy_package_rate for the holder's
+   * age band + smoker profile. Falls back to policy_package.monthly_max_cap_default.
    */
   async evaluateDepositRequirement(
     request: EvaluateDepositRequirementRequestDto,
@@ -873,74 +917,144 @@ export class PolicyWorkflowService {
     idempotencyKey: string,
   ) {
     const result = await this.txService.run(async (queryRunner) => {
-      // LOAD: policy_deposit_requirement
+      // GUARD: deposit requirement record must exist
       const depositReq = await this.depositReqRepo.findByPolicyId(
         Number(request.policy_id),
         queryRunner,
       );
       if (!depositReq) {
-        throw new NotFoundException({
-          code: 'DEPOSIT_REQUIREMENT_NOT_FOUND',
-          message: `Deposit requirement not found for policy ${request.policy_id}`,
-        });
+        throw new NotFoundException('DEPOSIT_REQUIREMENT_NOT_FOUND');
       }
 
-      // Calculate status based on thresholds
-      let status: 'ok' | 'warning' | 'urgent' | 'critical' = 'ok';
-      const minRequired = parseFloat(depositReq.min_required_amount);
-      const warning = parseFloat(depositReq.warning_amount);
-      const urgent = parseFloat(depositReq.urgent_amount);
+      // GUARD: policy must exist
+      const policy = await this.policyRepo.findById(Number(request.policy_id), queryRunner);
+      if (!policy) throw new NotFoundException('POLICY_NOT_FOUND');
 
+      // M1: Re-derive monthly_max_cap from current rate table
+      // Join policy → policy_package → age_band (via holder DOB) → policy_package_rate
+      const rateRows: any[] = await queryRunner.manager.query(
+        `SELECT ppr.monthly_max_cap, pp.deposit_capacity_multiplier, pp.min_deposit_pct,
+                pp.warning_pct, pp.urgent_pct
+         FROM policy p
+         JOIN policy_package pp ON pp.code = p.package_code_snapshot
+         JOIN person per ON per.id = p.holder_person_id
+         JOIN age_band ab ON per.dob IS NOT NULL
+              AND ab.min_age <= TIMESTAMPDIFF(YEAR, per.dob, CURDATE())
+              AND ab.max_age >= TIMESTAMPDIFF(YEAR, per.dob, CURDATE())
+         JOIN policy_package_rate ppr ON ppr.package_id = pp.id
+              AND ppr.age_band_id = ab.id
+              AND ppr.effective_from <= NOW()
+              AND (ppr.effective_to IS NULL OR ppr.effective_to > NOW())
+         LEFT JOIN policy_member pm ON pm.policy_id = p.id AND pm.role = 'holder'
+         LEFT JOIN smoker_profile sp ON sp.id = ppr.smoker_profile_id
+         WHERE p.id = ?
+         ORDER BY ppr.effective_from DESC
+         LIMIT 1`,
+        [request.policy_id],
+      );
+
+      // M1: Compute deposit capacity amounts
+      let monthlyMaxCap: number;
+      let depositCapacityMultiplier: number;
+      let minDepositPct: number;
+      let warningPct: number;
+      let urgentPct: number;
+
+      if (rateRows.length > 0) {
+        const row = rateRows[0];
+        monthlyMaxCap = parseFloat(row.monthly_max_cap);
+        depositCapacityMultiplier = parseFloat(row.deposit_capacity_multiplier ?? '2.0');
+        minDepositPct = parseFloat(row.min_deposit_pct ?? '0.5');
+        warningPct = parseFloat(row.warning_pct ?? '0.6');
+        urgentPct = parseFloat(row.urgent_pct ?? '0.5');
+      } else {
+        // Fallback: use values stored in existing deposit requirement record
+        monthlyMaxCap = parseFloat(depositReq.monthly_max_cap);
+        depositCapacityMultiplier = 2.0;
+        minDepositPct = 0.5;
+        warningPct = 0.6;
+        urgentPct = 0.5;
+      }
+
+      const depositCapacity = monthlyMaxCap * depositCapacityMultiplier;
+      const minRequired = depositCapacity * minDepositPct;
+      const warningAmount = depositCapacity * warningPct;
+      const urgentAmount = depositCapacity * urgentPct;
+
+      // Evaluate current balance against thresholds
+      let status: 'ok' | 'warning' | 'urgent' | 'critical' = 'ok';
       if (request.current_balance < minRequired) {
         status = 'critical';
-      } else if (request.current_balance < urgent) {
+      } else if (request.current_balance < urgentAmount) {
         status = 'urgent';
-      } else if (request.current_balance < warning) {
+      } else if (request.current_balance < warningAmount) {
         status = 'warning';
       }
 
-      // WRITE: Update deposit requirement
+      // WRITE: Update deposit requirement with recomputed amounts + new status
       await this.depositReqRepo.update(
         depositReq.id,
         {
+          monthly_max_cap: String(monthlyMaxCap.toFixed(2)),
+          deposit_capacity_amount: String(depositCapacity.toFixed(2)),
+          min_required_amount: String(minRequired.toFixed(2)),
+          warning_amount: String(warningAmount.toFixed(2)),
+          urgent_amount: String(urgentAmount.toFixed(2)),
           status,
           last_evaluated_at: new Date(),
         },
         queryRunner,
       );
 
-      // EMIT: DEPOSIT_REQUIREMENT_EVALUATED event (if status changed)
-      if (status !== 'ok') {
-        await this.outboxService.enqueue(
-          {
-            event_name: 'DEPOSIT_REQUIREMENT_EVALUATED',
-            event_version: 1,
-            aggregate_type: 'POLICY',
-            aggregate_id: String(request.policy_id),
-            actor_user_id: actor.actor_user_id,
-            occurred_at: new Date(),
-            correlation_id: actor.correlation_id || `evaluate-deposit-${request.policy_id}-${Date.now()}`,
-            causation_id: actor.causation_id || `cmd-evaluate-deposit-${request.policy_id}`,
-            payload: {
-              policy_id: request.policy_id,
-              status,
-              current_balance: request.current_balance,
-              min_required: minRequired,
-            },
-            dedupe_key: idempotencyKey,
+      // EMIT
+      await this.outboxService.enqueue(
+        {
+          event_name: 'DEPOSIT_REQUIREMENT_EVALUATED',
+          event_version: 1,
+          aggregate_type: 'POLICY',
+          aggregate_id: String(request.policy_id),
+          actor_user_id: actor.actor_user_id,
+          occurred_at: new Date(),
+          correlation_id: actor.correlation_id || idempotencyKey,
+          causation_id: actor.causation_id || idempotencyKey,
+          payload: {
+            policy_id: request.policy_id,
+            status,
+            current_balance: request.current_balance,
+            deposit_capacity: depositCapacity,
+            min_required: minRequired,
+            warning_amount: warningAmount,
+            urgent_amount: urgentAmount,
           },
-          queryRunner,
-        );
-      }
+          dedupe_key: idempotencyKey,
+        },
+        queryRunner,
+      );
 
       return {
+        policy_id: Number(request.policy_id),
         status,
-        current_amount: request.current_balance,
-        required_amount: minRequired,
+        current_balance: request.current_balance,
+        monthly_max_cap: monthlyMaxCap,
+        deposit_capacity: depositCapacity,
+        min_required_amount: minRequired,
+        warning_amount: warningAmount,
+        urgent_amount: urgentAmount,
       };
     });
 
     return result;
+  }
+
+  /**
+   * GET DEPOSIT STATUS — M1
+   * HTTP: GET /api/v1/policy/:policyId/deposit
+   * Returns the current policy_deposit_requirement record.
+   */
+  async getDepositStatus(policyId: number) {
+    const depositReq = await this.depositReqRepo.findByPolicyId(policyId);
+    if (!depositReq) throw new NotFoundException('DEPOSIT_REQUIREMENT_NOT_FOUND');
+    return depositReq;
   }
 
   /**

@@ -16,6 +16,10 @@ import { MissionProgressRepository } from './repositories/mission-progress.repo'
 import { MissionSubmissionFileRepository } from './repositories/mission-submission-file.repo';
 import { MissionsWorkflowService } from './services/missions.workflow.service';
 import { MissionsController } from './controllers/missions.controller';
+import { UserActivatedHandler } from './handlers/user-activated.handler';
+import { UserLoggedInHandler } from './handlers/user-logged-in.handler';
+import { UserActivatedConsumer } from './consumers/user-activated.consumer';
+import { UserLoggedInConsumer } from './consumers/user-logged-in.consumer';
 
 /**
  * Missions Module
@@ -51,6 +55,12 @@ import { MissionsController } from './controllers/missions.controller';
     MissionSubmissionFileRepository,
     // Services (business logic)
     MissionsWorkflowService,
+    // M10: Event handlers
+    UserActivatedHandler,
+    UserLoggedInHandler,
+    // M10: Event consumers
+    UserActivatedConsumer,
+    UserLoggedInConsumer,
   ],
   exports: [
     // Export services in case other modules need them

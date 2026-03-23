@@ -21,6 +21,7 @@ import { OnboardingProgressRepository } from './repositories/onboarding-progress
 import { IdentityWorkflowService } from './services/identity.workflow.service';
 
 // Controllers
+import { AuthController } from './controllers/auth.controller';
 import { IdentityAuthController } from './controllers/identity-auth.controller';
 import { IdentityDeviceTokenController } from './controllers/identity-device-token.controller';
 import { IdentityRegistrationTokenController } from './controllers/identity-registration-token.controller';
@@ -49,6 +50,7 @@ import { GuidelineAcceptedHandler } from './handlers/guideline-accepted.handler'
     ]),
   ],
   controllers: [
+    AuthController,
     IdentityAuthController,
     IdentityDeviceTokenController,
     IdentityRegistrationTokenController,

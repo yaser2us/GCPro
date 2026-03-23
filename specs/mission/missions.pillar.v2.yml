@@ -1,4 +1,4 @@
-version: "2.0.0"
+version: "2.1.0"
 spec_id: "missions.pillar.v2"
 domain: "missions"
 plugin: "missions"
@@ -816,6 +816,25 @@ dtos:
       - { name: "feedback", type: "string", required: false }
 
 events:
+  # External events consumed by missions plugin (M10)
+  - name: "USER_ACTIVATED"
+    version: 1
+    aggregate_type: "USER"
+    source_plugin: "identity"
+    description: "Consumed by missions plugin to auto-assign streak/milestone missions"
+    consumed_by:
+      - handler: "UserActivatedHandler"
+        action: "Assigns all active cadence=daily and cadence=one_time missions to the new user; initialises mission_progress rows"
+
+  - name: "USER_LOGGED_IN"
+    version: 1
+    aggregate_type: "USER"
+    source_plugin: "identity"
+    description: "Consumed by missions plugin to increment login metric on streak assignments"
+    consumed_by:
+      - handler: "UserLoggedInHandler"
+        action: "Increments current_value of login-metric progress rows for the user's active daily assignments; marks completed when target reached"
+
   - name: "MISSION_DEFINITION_CREATED"
     version: 1
     aggregate_type: "MISSION_DEFINITION"
@@ -1605,6 +1624,20 @@ commands:
         items: "events"
 
 changelog:
+  - version: "2.1.0"
+    date: "2026-03-23"
+    author: "Platform Team"
+    description: "M10 — Streak/Milestone Rewards: event-driven auto-assign and progress tracking"
+    changes:
+      - "Added UserActivatedHandler: auto-assigns all active daily/one_time missions on USER_ACTIVATED"
+      - "Added UserLoggedInHandler: increments login-metric progress on USER_LOGGED_IN, marks completed when target reached"
+      - "Added UserActivatedConsumer and UserLoggedInConsumer: fire-and-forget subscriptions"
+      - "Seeded streak_login_7day (cadence=daily, target=7, reward=100 COIN) and milestone_first_carer (cadence=one_time, target=1, reward=50 COIN) via scripts/mission-m10-seed.sql"
+      - "Documented consumed events USER_ACTIVATED and USER_LOGGED_IN in spec"
+    breaking_changes: []
+    migrations_required:
+      - "Run scripts/mission-m10-seed.sql to insert mission definitions"
+
   - version: "2.0"
     date: "2026-03-09"
     author: "Platform Team"
@@ -1654,6 +1687,8 @@ coverage:
     mission_progress:
       touched_by:
         - "MissionProgress.Record"
+        - "UserActivatedHandler (M10)"
+        - "UserLoggedInHandler (M10)"
     mission_submission:
       touched_by:
         - "MissionSubmission.Submit"
@@ -1702,6 +1737,14 @@ coverage:
     MISSION_REWARD_GRANTED:
       emitted_by:
         - "MissionSubmission.Approve"
+
+  external_events_consumed:
+    USER_ACTIVATED:
+      handled_by:
+        - "UserActivatedHandler"
+    USER_LOGGED_IN:
+      handled_by:
+        - "UserLoggedInHandler"
 
   aggregate_transitions:
     MISSION_DEFINITION:

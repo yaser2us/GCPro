@@ -1,4 +1,4 @@
-version: "2.0.0"
+version: "2.1.0"
 spec_id: "wallet.pillar.v2"
 domain: "wallet"
 plugin: "wallet"
@@ -1198,6 +1198,12 @@ coverage:
 # ──────────────────────────────────────────────────────────────────────────────
 
 changelog:
+  - version: "2.1.0"
+    date: "2026-03-23"
+    changes:
+      - "H6: Wallet.Create now seeds wallet_policy_gate entries when currency=COIN"
+      - "H6: Gates: allow_withdrawal=off, allow_transfer=off, allow_annual_fee_payment=on"
+
   - version: "2.0.0"
     date: "2026-03-16"
     changes:

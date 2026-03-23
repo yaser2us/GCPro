@@ -10,6 +10,7 @@ import { AccountRepository } from '../repositories/account.repo';
 import { AccountPersonRepository } from '../repositories/account-person.repo';
 import { WalletRepository } from '../repositories/wallet.repo';
 import { WalletBalanceSnapshotRepository } from '../repositories/wallet-balance-snapshot.repo';
+import { WalletPolicyGateRepository } from '../repositories/wallet-policy-gate.repo';
 import { LedgerTxnRepository } from '../repositories/ledger-txn.repo';
 import { LedgerEntryRepository } from '../repositories/ledger-entry.repo';
 import { AccountCreateRequestDto } from '../dto/account-create.request.dto';
@@ -34,6 +35,7 @@ export class WalletWorkflowService {
     private readonly accountPersonRepo: AccountPersonRepository,
     private readonly walletRepo: WalletRepository,
     private readonly balanceSnapshotRepo: WalletBalanceSnapshotRepository,
+    private readonly policyGateRepo: WalletPolicyGateRepository,
     private readonly ledgerTxnRepo: LedgerTxnRepository,
     private readonly ledgerEntryRepo: LedgerEntryRepository,
   ) {}
@@ -162,6 +164,22 @@ export class WalletWorkflowService {
         },
         queryRunner,
       );
+
+      // H6: Seed wallet_policy_gate entries for COIN wallets
+      // Mission Coins can only be used for annual_fee payments
+      if ((request.currency ?? 'COIN') === 'COIN') {
+        const COIN_GATES = [
+          { gate_code: 'allow_withdrawal',           status: 'off' },
+          { gate_code: 'allow_transfer',             status: 'off' },
+          { gate_code: 'allow_annual_fee_payment',   status: 'on'  },
+        ];
+        for (const gate of COIN_GATES) {
+          await this.policyGateRepo.upsert(
+            { wallet_id, gate_code: gate.gate_code, status: gate.status },
+            queryRunner,
+          );
+        }
+      }
 
       // EMIT: WALLET_CREATED event
       await this.outboxService.enqueue(

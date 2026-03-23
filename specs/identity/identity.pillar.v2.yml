@@ -1,4 +1,4 @@
-version: "2.0.0"
+version: "2.1.0"
 spec_id: "identity.pillar.v2"
 domain: "identity"
 plugin: "identity"
@@ -714,6 +714,78 @@ commands:
 
   # ── AUTH ─────────────────────────────────────────────────────────────────────
 
+  LoginWithPassword:
+    id: C1
+    description: >
+      C1 — Authenticate a user via phone_number + password (bcrypt).
+      Verifies password against user_credential.secret_hash, then signs and returns a
+      JWT access token. Token payload: { user_id, account_id, roles[], permissions[] }.
+      No auth header required — unauthenticated entry point.
+    path: "/v1/auth/login"
+    method: POST
+    idempotent: false
+    permissions: []
+    input:
+      dto: AuthLoginDto
+      fields:
+        - phone_number: string (required)
+        - password: string (required)
+    steps:
+      - kind: read
+        description: "Look up user by phone_number"
+        table: user
+        filter: "phone_number = dto.phone_number"
+        assign: authUser
+      - kind: guard
+        description: "User must exist"
+        expression: "authUser != null"
+        error: "INVALID_CREDENTIALS"
+      - kind: guard
+        description: "User account must be active"
+        expression: "authUser.status == 'active'"
+        error: "USER_ACCOUNT_INACTIVE"
+      - kind: read
+        description: "Load password credential"
+        table: user_credential
+        filter: "user_id = authUser.id AND type = 'password' LIMIT 1"
+        assign: credential
+      - kind: guard
+        description: "Password credential must exist and have a hash"
+        expression: "credential != null AND credential.secret_hash != null"
+        error: "INVALID_CREDENTIALS"
+      - kind: call
+        description: "bcrypt.compare(dto.password, credential.secret_hash)"
+        assign: passwordValid
+      - kind: guard
+        description: "Password must match"
+        expression: "passwordValid == true"
+        error: "INVALID_CREDENTIALS"
+      - kind: read
+        description: "Resolve account_id (optional — may not have account yet)"
+        table: account
+        filter: "primary_user_id = authUser.id AND status = 'active' LIMIT 1"
+        assign: accountRow
+      - kind: read
+        description: "Resolve roles from role_assignment"
+        table: role_assignment JOIN role
+        filter: "user_id = authUser.id AND (expires_at IS NULL OR expires_at > now())"
+        assign: roleRows
+      - kind: write
+        description: "Sign JWT: { user_id, account_id, roles, permissions: [] }"
+        returns: access_token
+      - kind: emit
+        event: USER_LOGGED_IN
+        payload:
+          user_id: authUser.id
+          auth_method: "password"
+    output:
+      access_token: string (JWT)
+      token_type: "Bearer"
+      user:
+        id: number
+        phone_number: string
+        status: string
+
   Login:
     description: >
       Authenticate a user via OTP. Looks up the user by channel_value, finds the
@@ -1258,6 +1330,16 @@ commands:
 # ──────────────────────────────────────────────────────────────────────────────
 
 changelog:
+  - version: "2.1.0"
+    date: "2026-03-23"
+    author: "system"
+    description: "C1: Add password-based login at POST /v1/auth/login"
+    changes:
+      - "C1: New LoginWithPassword command — phone_number + password → signed JWT"
+      - "C1: New AuthController at /v1/auth/* (login, me)"
+      - "C1: JwtService added to CoreKitModule (global)"
+      - "C1: AuthGuard updated to accept Authorization: Bearer <jwt> (X-User-Id fallback kept)"
+
   - version: "2.0.0"
     date: "2026-03-23"
     author: "system"

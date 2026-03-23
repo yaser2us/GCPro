@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { TransactionService } from '../../../corekit/services/transaction.service';
 import { OutboxService } from '../../../corekit/services/outbox.service';
@@ -240,6 +241,25 @@ export class WalletAdvancedWorkflowService {
     idempotencyKey: string,
   ) {
     return this.txService.run(async (queryRunner) => {
+      // H6: Gate check for COIN wallets — only annual_fee purpose is allowed
+      if (dto.currency === 'COIN') {
+        const purposeCode = dto.purpose_code ?? '';
+        const gateCode = purposeGateCode(purposeCode);
+        if (gateCode) {
+          const gate = await this.policyGateRepo.findByWalletIdAndGateCode(
+            dto.wallet_id,
+            gateCode,
+            queryRunner,
+          );
+          if (gate && gate.status !== 'on') {
+            throw new ForbiddenException('WALLET_OPERATION_NOT_PERMITTED');
+          }
+        } else if (purposeCode !== 'annual_fee') {
+          // Unknown purpose on COIN wallet → deny unless explicitly allowed
+          throw new ForbiddenException('WALLET_OPERATION_NOT_PERMITTED');
+        }
+      }
+
       const insertedId = await this.spendIntentRepo.insert(
         {
           wallet_id: dto.wallet_id,
@@ -1275,4 +1295,17 @@ export class WalletAdvancedWorkflowService {
       return result;
     });
   }
+}
+
+/**
+ * H6: Maps a purpose_code to the gate_code that must be 'on' for it to proceed.
+ * Returns null if the purpose_code is 'annual_fee' (always allowed).
+ */
+function purposeGateCode(purposeCode: string): string | null {
+  const map: Record<string, string> = {
+    withdrawal: 'allow_withdrawal',
+    transfer:   'allow_transfer',
+  };
+  if (purposeCode === 'annual_fee') return null; // always allowed
+  return map[purposeCode] ?? `allow_${purposeCode}`;
 }
