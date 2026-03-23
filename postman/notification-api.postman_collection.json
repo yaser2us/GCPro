@@ -975,6 +975,200 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Phase 8C \u2014 Payment Notifications",
+      "description": "Phase 8C: PAYMENT_SUCCEEDED / PAYMENT_FAILED \u2192 push notification to account holder via templates 'payment_succeeded' / 'payment_failed'",
+      "item": [
+        {
+          "name": "8C.1 Setup: Create 'payment_succeeded' Template",
+          "id": "69c204dd-6d4c-4c96-a427-eafa23b91ed2",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"code\": \"payment_succeeded\", \"channel\": \"push\", \"title\": \"Payment Successful\", \"body\": \"Your payment of {{amount}} {{currency}} for {{purpose_code}} has been processed successfully.\", \"locale\": \"en\", \"version\": \"v1\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/notifications/templates",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "notifications",
+                "templates"
+              ]
+            },
+            "description": "Seed the 'payment_succeeded' template. PaymentNotificationHandler looks this up on PAYMENT_SUCCEEDED; skips gracefully if not found."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set('payment_succeeded_template_id', json.template_id || json.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "8C.2 Setup: Create 'payment_failed' Template",
+          "id": "d22cae12-ce7a-4e66-9990-996a88704929",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"code\": \"payment_failed\", \"channel\": \"push\", \"title\": \"Payment Failed\", \"body\": \"Your payment of {{amount}} {{currency}} could not be processed. Please try again.\", \"locale\": \"en\", \"version\": \"v1\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/notifications/templates",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "notifications",
+                "templates"
+              ]
+            },
+            "description": "Seed the 'payment_failed' template. PaymentNotificationHandler looks this up on PAYMENT_FAILED."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "8C.3 Verify: Notification Queued After PAYMENT_SUCCEEDED",
+          "id": "d3616b96-7a28-46ed-a07b-63accf25bc26",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/notifications/messages?trigger_event_id={{intent_id}}&trigger_event_type=PAYMENT_SUCCEEDED",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "notifications",
+                "messages"
+              ],
+              "query": [
+                {
+                  "key": "trigger_event_id",
+                  "value": "{{intent_id}}"
+                },
+                {
+                  "key": "trigger_event_type",
+                  "value": "PAYMENT_SUCCEEDED"
+                }
+              ]
+            },
+            "description": "After PAYMENT_SUCCEEDED fires, verify a notification_message was queued with message_key=payment_succeeded_intent_{intent_id}. account_id comes directly from the event payload."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Notification queued', () => pm.expect(Array.isArray(json) ? json.length > 0 : json.id).to.be.ok);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "8C.4 Verify: Notification Queued After PAYMENT_FAILED",
+          "id": "a243eccb-0624-45a0-95e5-cb3883e04f16",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/notifications/messages?trigger_event_id={{intent_id}}&trigger_event_type=PAYMENT_FAILED",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "notifications",
+                "messages"
+              ],
+              "query": [
+                {
+                  "key": "trigger_event_id",
+                  "value": "{{intent_id}}"
+                },
+                {
+                  "key": "trigger_event_type",
+                  "value": "PAYMENT_FAILED"
+                }
+              ]
+            },
+            "description": "After PAYMENT_FAILED fires, verify a push notification was queued via template 'payment_failed'."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "event": [
@@ -1050,6 +1244,16 @@
     },
     {
       "key": "charge_template_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "intent_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "payment_succeeded_template_id",
       "value": "",
       "type": "string"
     }

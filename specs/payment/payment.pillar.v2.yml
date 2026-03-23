@@ -11,7 +11,7 @@
 # - Assumptions: Payment gateway integration via webhooks, support for multiple providers (Stripe, etc.)
 # ============================================================================
 
-version: "2.0.0"
+version: "2.1.0"
 spec_id: "payment.pillar.v2"
 domain: "payment"
 plugin: "payment"
@@ -1476,6 +1476,15 @@ commands:
 # ──────────────────────────────────────────────────────────────────────────────
 
 changelog:
+  - version: "2.1.0"
+    date: "2026-03-23"
+    changes:
+      - "Phase 8A: PolicyPaymentSucceededConsumer + Handler — PAYMENT_SUCCEEDED (purpose_code=premium) → policy activated"
+      - "Phase 8B: DepositTopupPaymentConsumer (C4) — PAYMENT_SUCCEEDED (purpose_code=deposit_topup) → wallet credit (already built)"
+      - "Phase 8C: PaymentNotificationConsumer + Handler — PAYMENT_SUCCEEDED/PAYMENT_FAILED → push notification receipt"
+      - "Phase 8C: Templates: 'payment_succeeded', 'payment_failed' — graceful skip if not seeded"
+      - "Updated implementation_checklist: policy/wallet/notification items marked done"
+
   - version: "2.0.0"
     date: "2026-03-22"
     author: "Claude Sonnet 4.5"
@@ -1716,23 +1725,24 @@ integration:
 
   implementation_checklist:
     policy:
-      - "[ ] PolicyPaymentSucceededConsumer implemented"
-      - "[ ] Policy activation logic"
-      - "[ ] Idempotency check on payment_intent.id"
-      - "[ ] Error handling and retry logic"
+      - "[x] PolicyPaymentSucceededConsumer implemented"
+      - "[x] Policy activation logic (pending → active, records policy_status_event)"
+      - "[x] Idempotency check on policy.status (skip if already active)"
+      - "[x] Error handling and retry logic (re-throws for outbox retry)"
       - "[ ] E2E test: payment → policy activation"
 
     wallet:
-      - "[ ] WalletPaymentSucceededConsumer implemented"
-      - "[ ] Wallet credit logic for topup/deposit"
-      - "[ ] Idempotency check on ledger_txn"
-      - "[ ] Error handling and retry logic"
+      - "[x] WalletPaymentSucceededConsumer implemented (DepositTopupPaymentConsumer — C4)"
+      - "[x] Wallet credit logic for topup/deposit (purpose_code=deposit_topup)"
+      - "[x] Idempotency check on ledger_txn (idempotency_key on wallet_deposit_intent)"
+      - "[x] Error handling and retry logic"
       - "[ ] E2E test: payment → wallet credit"
 
     notification:
-      - "[ ] PaymentNotificationConsumer implemented"
-      - "[ ] Email receipt template"
-      - "[ ] SMS confirmation template"
+      - "[x] PaymentNotificationConsumer implemented (Phase 8C)"
+      - "[x] Push receipt notification via template 'payment_succeeded'"
+      - "[x] Push failure notification via template 'payment_failed'"
+      - "[ ] Email receipt template seed data"
       - "[ ] E2E test: payment → notifications sent"
 
     payment:

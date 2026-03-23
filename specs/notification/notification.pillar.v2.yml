@@ -1,5 +1,5 @@
 name: notification
-version: v2.2.0
+version: v2.3.0
 description: Multi-channel notification system with delivery tracking, templates, scheduling, and user preferences
 
 ################################################################################
@@ -821,6 +821,14 @@ integration:
       recommended_interval: every 1 minute
 
 changelog:
+  - version: v2.3.0
+    date: 2026-03-23
+    changes:
+      - "Phase 8C: PaymentNotificationHandler — on PAYMENT_SUCCEEDED/PAYMENT_FAILED queues push via templates 'payment_succeeded'/'payment_failed'"
+      - "Phase 8C: account_id resolved directly from event payload (no cross-plugin read)"
+      - "Phase 8C: Idempotency key: payment_succeeded_intent_{intent_id} / payment_failed_intent_{intent_id}"
+      - "Phase 8C: Graceful skip if template not found; fire-and-forget error handling"
+
   - version: v2.2.0
     date: 2026-03-23
     changes:

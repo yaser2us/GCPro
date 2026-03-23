@@ -1,4 +1,4 @@
-version: "2.1.0"
+version: "2.2.0"
 spec_id: "identity.pillar.v2"
 domain: "identity"
 plugin: "identity"
@@ -1330,6 +1330,14 @@ commands:
 # ──────────────────────────────────────────────────────────────────────────────
 
 changelog:
+  - version: "2.2.0"
+    date: "2026-03-23"
+    changes:
+      - "Phase 8: KycVerifiedConsumer + KycVerifiedHandler — KYC_VERIFIED → upserts verification_status (type=kyc, status=verified)"
+      - "Phase 8: GuidelineAcceptedConsumer + GuidelineAcceptedHandler — GUIDELINE_ACCEPTED → upserts onboarding_progress (step_code=guideline_accepted)"
+      - "Phase 8: Both consumers registered in IdentityModule providers"
+      - "Updated implementation_checklist: consumers + login/logout/me/OTP cooldown marked done"
+
   - version: "2.1.0"
     date: "2026-03-23"
     author: "system"
@@ -1621,12 +1629,12 @@ integration:
       - "[✓] GUIDELINE_ACCEPTED event emitted by Foundation.acceptGuideline command"
 
     identity:
-      - "[ ] KycVerifiedConsumer implemented at src/plugins/identity/consumers/kyc-verified.consumer.ts"
-      - "[ ] GuidelineAcceptedConsumer implemented at src/plugins/identity/consumers/guideline-accepted.consumer.ts"
-      - "[ ] Login command implemented with OTP verify + device_token upsert"
-      - "[ ] Logout command implemented (user-self-revoke)"
-      - "[ ] GetCurrentUser query implemented at GET /v1/identity/me"
-      - "[ ] OTP cooldown guard implemented in IssueRegistrationToken"
+      - "[x] KycVerifiedConsumer implemented at src/plugins/identity/consumers/kyc-verified.consumer.ts"
+      - "[x] GuidelineAcceptedConsumer implemented at src/plugins/identity/consumers/guideline-accepted.consumer.ts"
+      - "[x] Login command implemented (POST /v1/identity/login — OTP verify + device_token upsert)"
+      - "[x] Logout command implemented (POST /v1/identity/logout)"
+      - "[x] GetCurrentUser query implemented at GET /v1/identity/me"
+      - "[x] OTP cooldown guard implemented in IssueRegistrationToken (60s per channel_value)"
       - "[ ] outbox_event_consumer rows created per consumer on processing"
       - "[ ] Integration test: KYC_VERIFIED → verification_status.status = verified"
       - "[ ] Integration test: GUIDELINE_ACCEPTED → onboarding_progress.state = completed"

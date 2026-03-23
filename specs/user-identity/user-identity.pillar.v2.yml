@@ -1,4 +1,4 @@
-version: "2.0.0"
+version: "2.1.0"
 spec_id: "user-identity.pillar.v2"
 domain: "user-identity"
 plugin: "user-identity"
@@ -1030,6 +1030,14 @@ commands:
 # ──────────────────────────────────────────────────────────────────────────────
 
 changelog:
+  - version: "2.1.0"
+    date: "2026-03-23"
+    changes:
+      - "Phase 8: KycVerifiedConsumer + KycVerifiedHandler — KYC_VERIFIED → upserts verification_status in user plugin"
+      - "Phase 8: GuidelineAcceptedConsumer + GuidelineAcceptedHandler — GUIDELINE_ACCEPTED → upserts onboarding_progress in user plugin"
+      - "Phase 8: Both consumers registered in UserModule"
+      - "Updated implementation_checklist: consumer items marked done"
+
   - version: "2.0.0"
     date: "2026-03-22"
     author: "system"
@@ -1215,8 +1223,9 @@ integration:
       - "[✓] GUIDELINE_ACCEPTED event emitted by Foundation.acceptGuideline command"
 
     user-identity:
-      - "[ ] KycVerifiedConsumer implemented"
-      - "[ ] GuidelineAcceptedConsumer implemented"
+      - "[x] KycVerifiedConsumer implemented at src/plugins/user/consumers/kyc-verified.consumer.ts"
+      - "[x] GuidelineAcceptedConsumer implemented at src/plugins/user/consumers/guideline-accepted.consumer.ts"
+      - "[x] Both consumers registered in UserModule providers"
       - "[ ] outbox_event_consumer rows created per consumer on processing"
       - "[ ] Integration test: KYC_VERIFIED → verification_status.status = verified"
       - "[ ] Integration test: GUIDELINE_ACCEPTED → onboarding_progress.state = completed"

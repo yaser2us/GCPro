@@ -1,4 +1,4 @@
-version: "2.1.0"
+version: "2.2.0"
 spec_id: "foundation.pillar.v2"
 domain: "foundation"
 plugin: "foundation"
@@ -2503,6 +2503,13 @@ commands:
 # -------------------------------------------------------
 
 changelog:
+  - version: "2.2.0"
+    date: "2026-03-23"
+    changes:
+      - "Phase 8: KYCVerifiedConsumer + GuidelineAcceptedConsumer implemented in user plugin and wired into UserModule"
+      - "Phase 8: KYCVerifiedConsumer + GuidelineAcceptedConsumer also implemented in identity plugin"
+      - "Updated implementation_checklist: user consumer items marked done"
+
   - version: "2.1.0"
     date: "2026-03-23"
     author: "Claude Sonnet 4.6"
@@ -2702,9 +2709,9 @@ integration:
 
   implementation_checklist:
     user:
-      - "[ ] Implement KYCVerifiedConsumer in user plugin"
-      - "[ ] Implement GuidelineAcceptedConsumer in user plugin"
-      - "[ ] Wire consumers into UserModule"
+      - "[x] Implement KYCVerifiedConsumer in user plugin (src/plugins/user/consumers/kyc-verified.consumer.ts)"
+      - "[x] Implement GuidelineAcceptedConsumer in user plugin (src/plugins/user/consumers/guideline-accepted.consumer.ts)"
+      - "[x] Wire consumers into UserModule"
 
     foundation:
       - "[✓] KYC_VERIFIED event defined and emitted by KYC.Verify command"

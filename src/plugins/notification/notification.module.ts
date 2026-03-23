@@ -18,6 +18,8 @@ import { ClaimEventNotificationHandler } from './handlers/claim-event-notificati
 import { ClaimEventNotificationConsumer } from './consumers/claim-event-notification.consumer';
 import { CrowdChargeNotificationHandler } from './handlers/crowd-charge-notification.handler';
 import { CrowdChargeNotificationConsumer } from './consumers/crowd-charge-notification.consumer';
+import { PaymentNotificationHandler } from './handlers/payment-notification.handler';
+import { PaymentNotificationConsumer } from './consumers/payment-notification.consumer';
 import { NotificationController } from './controllers/notification.controller';
 
 /**
@@ -54,6 +56,8 @@ import { NotificationController } from './controllers/notification.controller';
     ClaimEventNotificationConsumer,          // Phase 5
     CrowdChargeNotificationHandler,          // Phase 7D: crowd charge → notification
     CrowdChargeNotificationConsumer,         // Phase 7D
+    PaymentNotificationHandler,              // Phase 8C: payment outcome → notification
+    PaymentNotificationConsumer,             // Phase 8C
   ],
   controllers: [NotificationController],
   exports: [NotificationWorkflowService, NotificationScheduleDispatcherService],
