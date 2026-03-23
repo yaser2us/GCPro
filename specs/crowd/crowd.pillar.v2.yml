@@ -1877,10 +1877,10 @@ integration:
 
     crowd:
       - "[x] Spec generated (this document)"
-      - "[ ] Implement all 10 commands"
-      - "[ ] Implement distributed lock in Period.Calculate"
-      - "[ ] Register CrowdModule in app.module.ts"
-      - "[ ] Build Postman collection"
+      - "[x] Implement all 10 commands (crowd.workflow.service.ts — 927 lines)"
+      - "[x] Implement distributed lock in Period.Calculate"
+      - "[x] Register CrowdModule in app.module.ts"
+      - "[x] Build Postman collection (postman/crowd-api.postman_collection.json)"
 
   testing_strategy:
     end_to_end_test: |

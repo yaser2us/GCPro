@@ -346,6 +346,14 @@ export class IdentityWorkflowService {
       );
       if (recentCount > 0) throw new ConflictException('REGISTRATION_TOKEN_COOLDOWN_ACTIVE');
 
+      // Generate OTP server-side when neither token nor otp_hash is provided
+      let otp_plain: string | null = null;
+      let otp_hash = dto.otp_hash ?? null;
+      if (!dto.token && !dto.otp_hash) {
+        otp_plain = Math.floor(100000 + Math.random() * 900000).toString();
+        otp_hash = await bcrypt.hash(otp_plain, 10);
+      }
+
       // WRITE
       const id = await this.registrationTokenRepo.insert(
         {
@@ -354,7 +362,7 @@ export class IdentityWorkflowService {
           channel_value: dto.channel_value,
           invite_code: dto.invite_code ?? null,
           token: dto.token ?? null,
-          otp_hash: dto.otp_hash ?? null,
+          otp_hash,
           status: 'pending',
           meta_json: dto.meta_json ?? null,
           expires_at: new Date(dto.expires_at),
@@ -364,7 +372,7 @@ export class IdentityWorkflowService {
 
       const result = await this.registrationTokenRepo.findById(id, queryRunner);
 
-      // EMIT
+      // EMIT — include otp_plain only when server-generated (not caller-hashed or magic-link)
       await this.outboxService.enqueue(
         {
           event_name: 'REGISTRATION_TOKEN_ISSUED',
@@ -376,10 +384,12 @@ export class IdentityWorkflowService {
           correlation_id: idempotencyKey,
           causation_id: idempotencyKey,
           payload: {
+            registration_token_id: id,
             purpose: result!.purpose,
             channel_type: result!.channel_type,
             channel_value: result!.channel_value,
             expires_at: result!.expires_at,
+            ...(otp_plain ? { otp_plain } : {}),
           },
         },
         queryRunner,

@@ -928,6 +928,194 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Phase 9A+9B \u2014 Accrual \u2192 Wallet Credit/Debit",
+      "description": "Phase 9A: ACCRUAL_RECORDED \u2192 credits commission participant wallet. Phase 9B: ACCRUAL_VOIDED \u2192 debits/reverses.",
+      "item": [
+        {
+          "name": "9A. Record Commission Accrual (triggers wallet credit)",
+          "id": "a0d2f4fc-ffce-400a-856b-fabdbc98e7b4",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "record-accrual-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"program_id\": \"{{program_id}}\", \"participant_id\": \"{{participant_id}}\", \"source_ref_type\": \"referral_conversion\", \"source_ref_id\": \"{{conversion_id}}\", \"amount\": \"25.50\", \"currency\": \"COIN\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/commission/accruals",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "commission",
+                "accruals"
+              ]
+            },
+            "description": "POST creates a commission_accrual, emits ACCRUAL_RECORDED. CommissionAccrualConsumer (wallet plugin) picks it up and credits participant.wallet_id. Idempotency_key=commission_accrual_{accrual_id}."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set('accrual_id', json.accrual_id || json.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "9A. Verify: Wallet Balance Credited",
+          "id": "251d1f39-451c-4946-91ea-fd21b9ebc97e",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/wallet/{{commission_wallet_id}}/balance",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "{{commission_wallet_id}}",
+                "balance"
+              ]
+            },
+            "description": "Verify commission participant wallet was credited after ACCRUAL_RECORDED. CommissionAccrualHandler emits WALLET_CREDITED."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Balance returned', () => pm.expect(json.available_balance).to.be.a('number'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "9B. Void Accrual (triggers wallet debit reversal)",
+          "id": "450b6a91-bf4f-43c7-9175-9e4c3c2051c2",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "void-accrual-{{accrual_id}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"void_reason\": \"Conversion refunded\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/commission/accruals/{{accrual_id}}/void",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "commission",
+                "accruals",
+                "{{accrual_id}}",
+                "void"
+              ]
+            },
+            "description": "Void an accrual \u2192 emits ACCRUAL_VOIDED. CommissionAccrualConsumer debits the participant wallet (reversal). Guards INSUFFICIENT_BALANCE. Idempotency_key=commission_accrual_void_{accrual_id}."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "9B. Verify: Wallet Balance Debited (Reversal)",
+          "id": "98117e20-9d3f-4787-bda1-0c6ead824409",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/wallet/{{commission_wallet_id}}/balance",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "{{commission_wallet_id}}",
+                "balance"
+              ]
+            },
+            "description": "Verify wallet balance reverted after ACCRUAL_VOIDED. CommissionAccrualHandler emits WALLET_DEBITED."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Balance decreased', () => pm.expect(json.available_balance).to.be.a('number'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "variable": [
@@ -1035,6 +1223,16 @@
     },
     {
       "key": "commission_wallet_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "accrual_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "participant_id",
       "value": "",
       "type": "string"
     }

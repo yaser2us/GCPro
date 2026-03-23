@@ -1,4 +1,4 @@
-version: "2.2.0"
+version: "2.3.0"
 spec_id: "identity.pillar.v2"
 domain: "identity"
 plugin: "identity"
@@ -1330,6 +1330,15 @@ commands:
 # ──────────────────────────────────────────────────────────────────────────────
 
 changelog:
+  - version: "2.3.0"
+    date: "2026-03-23"
+    changes:
+      - "Phase 9C: IssueRegistrationToken now generates OTP server-side (6-digit) when dto.otp_hash not provided"
+      - "Phase 9C: REGISTRATION_TOKEN_ISSUED event payload now includes otp_plain (server-generated only) + registration_token_id"
+      - "Phase 9C: RegistrationTokenIssuedConsumer (notification plugin) — delivers OTP via template 'otp_delivery'"
+      - "Phase 9D: UserLoggedInConsumer (notification plugin) — sends login alert via template 'login_alert'"
+      - "Updated implementation_checklist: notification consumer items marked done"
+
   - version: "2.2.0"
     date: "2026-03-23"
     changes:
@@ -1642,8 +1651,8 @@ integration:
       - "[ ] Integration test: OTP cooldown — second IssueRegistrationToken within 60s rejected"
 
     notification:
-      - "[ ] RegistrationTokenIssuedConsumer implemented"
-      - "[ ] UserLoggedInConsumer implemented"
+      - "[x] RegistrationTokenIssuedConsumer implemented (Phase 9C) — OTP delivery via template 'otp_delivery'"
+      - "[x] UserLoggedInConsumer implemented (Phase 9D) — login alert via template 'login_alert'"
 
   testing_strategy:
     end_to_end_test: |

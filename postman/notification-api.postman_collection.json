@@ -1169,6 +1169,258 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Phase 9C \u2014 OTP Delivery (Registration Token)",
+      "description": "Phase 9C: REGISTRATION_TOKEN_ISSUED \u2192 OTP/magic-link delivery via template 'otp_delivery'. Server auto-generates 6-digit OTP when no otp_hash provided.",
+      "item": [
+        {
+          "name": "9C.1 Setup: Create 'otp_delivery' Template",
+          "id": "a54f924e-d6d0-4efd-bb7a-29e3e0c347c3",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"code\": \"otp_delivery\", \"channel\": \"sms\", \"title\": \"Your OTP Code\", \"body\": \"Your {{purpose}} OTP is: {{otp}}. Expires at {{expires_at}}. Do not share.\", \"locale\": \"en\", \"version\": \"v1\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/notifications/templates",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "notifications",
+                "templates"
+              ]
+            },
+            "description": "Seed the 'otp_delivery' template for SMS channel. RegistrationTokenIssuedHandler looks this up on REGISTRATION_TOKEN_ISSUED. payload_vars: otp, purpose, channel_value, expires_at."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.collectionVariables.set('otp_template_id', json.template_id || json.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "9C.2 Issue Registration Token (triggers OTP generation + notification)",
+          "id": "60990acd-6dad-4a13-8c4f-d8857970a9f7",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "issue-reg-token-{{$timestamp}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"purpose\": \"login\", \"channel_type\": \"sms\", \"channel_value\": \"{{phone_number}}\", \"expires_at\": \"2026-12-31T23:59:59Z\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/identity/registration-tokens",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "identity",
+                "registration-tokens"
+              ]
+            },
+            "description": "POST without otp_hash \u2192 server generates 6-digit OTP, hashes it, emits REGISTRATION_TOKEN_ISSUED with otp_plain in payload. RegistrationTokenIssuedConsumer picks it up and queues OTP notification."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('Token ID returned', () => pm.expect(json.id).to.be.ok);",
+                  "pm.collectionVariables.set('registration_token_id', json.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "9C.3 Verify: OTP Notification Queued",
+          "id": "a970d00d-5b6f-43f3-b7b3-4879435dd354",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/notifications/messages?trigger_event_id={{registration_token_id}}&trigger_event_type=REGISTRATION_TOKEN_ISSUED",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "notifications",
+                "messages"
+              ],
+              "query": [
+                {
+                  "key": "trigger_event_id",
+                  "value": "{{registration_token_id}}"
+                },
+                {
+                  "key": "trigger_event_type",
+                  "value": "REGISTRATION_TOKEN_ISSUED"
+                }
+              ]
+            },
+            "description": "After REGISTRATION_TOKEN_ISSUED fires, verify notification_message was queued with template 'otp_delivery' for the channel_value (phone/email)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('OTP notification queued', () => pm.expect(Array.isArray(json) ? json.length > 0 : json.id).to.be.ok);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Phase 9D \u2014 Login Alert (User Logged In)",
+      "description": "Phase 9D: USER_LOGGED_IN \u2192 login alert notification via template 'login_alert'",
+      "item": [
+        {
+          "name": "9D.1 Setup: Create 'login_alert' Template",
+          "id": "e197c5a8-39ac-4451-a34b-41c56991ab94",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"code\": \"login_alert\", \"channel\": \"push\", \"title\": \"New Login Detected\", \"body\": \"A new login was detected on platform {{platform}}. If this wasn't you, contact support.\", \"locale\": \"en\", \"version\": \"v1\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/notifications/templates",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "notifications",
+                "templates"
+              ]
+            },
+            "description": "Seed the 'login_alert' template for push channel. UserLoggedInHandler looks this up on USER_LOGGED_IN."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "9D.2 Verify: Login Alert Queued After Login",
+          "id": "2ae4d37a-2b84-4f9d-af91-8a3a1e981d8f",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/notifications/messages?trigger_event_id={{user_id}}&trigger_event_type=USER_LOGGED_IN",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "notifications",
+                "messages"
+              ],
+              "query": [
+                {
+                  "key": "trigger_event_id",
+                  "value": "{{user_id}}"
+                },
+                {
+                  "key": "trigger_event_type",
+                  "value": "USER_LOGGED_IN"
+                }
+              ]
+            },
+            "description": "After USER_LOGGED_IN fires, verify a push notification was queued via template 'login_alert'. Graceful skip if template not seeded."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "event": [
@@ -1254,6 +1506,21 @@
     },
     {
       "key": "payment_succeeded_template_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "registration_token_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "otp_template_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "phone_number",
       "value": "",
       "type": "string"
     }

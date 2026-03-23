@@ -1,5 +1,5 @@
 name: notification
-version: v2.3.0
+version: v2.4.0
 description: Multi-channel notification system with delivery tracking, templates, scheduling, and user preferences
 
 ################################################################################
@@ -821,6 +821,16 @@ integration:
       recommended_interval: every 1 minute
 
 changelog:
+  - version: v2.4.0
+    date: 2026-03-23
+    changes:
+      - "Phase 9C: RegistrationTokenIssuedHandler — on REGISTRATION_TOKEN_ISSUED delivers OTP via template 'otp_delivery'"
+      - "Phase 9C: Uses otp_plain from event payload (server-generated) or token (magic-link)"
+      - "Phase 9C: Destination resolved from channel_value in event payload (no cross-plugin read)"
+      - "Phase 9C: Graceful skip if template 'otp_delivery' not found; fire-and-forget"
+      - "Phase 9D: UserLoggedInHandler — on USER_LOGGED_IN sends login alert via template 'login_alert'"
+      - "Phase 9D: Graceful skip if user_id missing or template not found"
+
   - version: v2.3.0
     date: 2026-03-23
     changes:

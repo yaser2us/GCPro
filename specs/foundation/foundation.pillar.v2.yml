@@ -2716,7 +2716,7 @@ integration:
     foundation:
       - "[✓] KYC_VERIFIED event defined and emitted by KYC.Verify command"
       - "[✓] GUIDELINE_ACCEPTED event defined and emitted by Guideline.Accept command"
-      - "[ ] Implement foundation plugin entities, repos, service, controllers"
+      - "[x] Implement foundation plugin entities, repos, service, controllers (foundation.workflow.service.ts — 873 lines)"
 
   testing_strategy:
     end_to_end_test: |

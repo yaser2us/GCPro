@@ -20,6 +20,10 @@ import { CrowdChargeNotificationHandler } from './handlers/crowd-charge-notifica
 import { CrowdChargeNotificationConsumer } from './consumers/crowd-charge-notification.consumer';
 import { PaymentNotificationHandler } from './handlers/payment-notification.handler';
 import { PaymentNotificationConsumer } from './consumers/payment-notification.consumer';
+import { RegistrationTokenIssuedHandler } from './handlers/registration-token-issued.handler';
+import { RegistrationTokenIssuedConsumer } from './consumers/registration-token-issued.consumer';
+import { UserLoggedInHandler } from './handlers/user-logged-in.handler';
+import { UserLoggedInConsumer } from './consumers/user-logged-in.consumer';
 import { NotificationController } from './controllers/notification.controller';
 
 /**
@@ -58,6 +62,10 @@ import { NotificationController } from './controllers/notification.controller';
     CrowdChargeNotificationConsumer,         // Phase 7D
     PaymentNotificationHandler,              // Phase 8C: payment outcome → notification
     PaymentNotificationConsumer,             // Phase 8C
+    RegistrationTokenIssuedHandler,          // Phase 9C: OTP delivery
+    RegistrationTokenIssuedConsumer,         // Phase 9C
+    UserLoggedInHandler,                     // Phase 9D: login alert
+    UserLoggedInConsumer,                    // Phase 9D
   ],
   controllers: [NotificationController],
   exports: [NotificationWorkflowService, NotificationScheduleDispatcherService],

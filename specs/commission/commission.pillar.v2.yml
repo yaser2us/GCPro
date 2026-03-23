@@ -1,4 +1,4 @@
-version: "2.1.0"
+version: "2.2.0"
 spec_id: "commission.pillar.v2"
 domain: "commission"
 plugin: "commission"
@@ -1343,16 +1343,16 @@ integration:
 
   implementation_checklist:
     wallet_pillar:
-      - "[ ] Create CommissionAccrualConsumer class"
-      - "[ ] Subscribe to ACCRUAL_RECORDED event"
-      - "[ ] Implement wallet credit logic with idempotency"
-      - "[ ] Subscribe to ACCRUAL_VOIDED event"
-      - "[ ] Implement wallet debit logic with balance checks"
-      - "[ ] Create CommissionPayoutConsumer class"
-      - "[ ] Subscribe to PAYOUT_BATCH_COMPLETED event"
-      - "[ ] Implement batch payout debit logic"
-      - "[ ] Add error handling for insufficient balance"
-      - "[ ] Add logging for audit trail"
+      - "[x] Create CommissionAccrualConsumer class (src/plugins/wallet/consumers/commission-accrual.consumer.ts)"
+      - "[x] Subscribe to ACCRUAL_RECORDED event"
+      - "[x] Implement wallet credit logic with idempotency (idempotency_key=commission_accrual_{accrual_id})"
+      - "[x] Subscribe to ACCRUAL_VOIDED event"
+      - "[x] Implement wallet debit logic with balance checks (INSUFFICIENT_BALANCE guard)"
+      - "[x] Create CommissionPayoutConsumer class (src/plugins/wallet/consumers/commission-payout.consumer.ts)"
+      - "[x] Subscribe to PAYOUT_BATCH_COMPLETED event (Phase 7B)"
+      - "[x] Implement batch payout debit logic"
+      - "[x] Add error handling for insufficient balance"
+      - "[x] Add logging for audit trail"
       - "[ ] Write integration tests (commission → wallet)"
 
     commission_pillar:
@@ -1947,6 +1947,16 @@ commands:
 # ──────────────────────────────────────────────────────────────────────────────
 
 changelog:
+  - version: "2.2.0"
+    date: "2026-03-23"
+    changes:
+      - "Phase 9A: CommissionAccrualHandler + CommissionAccrualConsumer — ACCRUAL_RECORDED → credits commission participant wallet"
+      - "Phase 9B: Same handler — ACCRUAL_VOIDED → debits wallet (reversal), guards against INSUFFICIENT_BALANCE"
+      - "Phase 9A/9B: Idempotency keys: commission_accrual_{id} / commission_accrual_void_{id}"
+      - "Phase 9A/9B: Emits WALLET_CREDITED / WALLET_DEBITED events"
+      - "Phase 7B: CommissionPayoutConsumer (wallet plugin) — PAYOUT_BATCH_COMPLETED → wallet debit per payout_item"
+      - "Updated implementation_checklist: all wallet_pillar items marked done"
+
   - version: "2.1.0"
     date: "2026-03-23"
     changes:

@@ -1,4 +1,4 @@
-version: "2.5.0"
+version: "2.6.0"
 spec_id: "wallet.pillar.v2"
 domain: "wallet"
 plugin: "wallet"
@@ -1270,11 +1270,31 @@ coverage:
       source_plugin: "crowd"
       note: "Phase 7C: creates wallet_deposit_intent for claimant GC_WALLET (MYR); emits CROWD_PAYOUT_WALLET_CREDITED"
 
+    ACCRUAL_RECORDED:
+      consumed_by:
+        - "WALLET.PROCESS_COMMISSION_ACCRUAL_CREDIT"
+      source_plugin: "commission"
+      note: "Phase 9A: credits commission participant wallet; idempotency_key=commission_accrual_{accrual_id}; emits WALLET_CREDITED"
+
+    ACCRUAL_VOIDED:
+      consumed_by:
+        - "WALLET.PROCESS_COMMISSION_ACCRUAL_VOID"
+      source_plugin: "commission"
+      note: "Phase 9B: debits/reverses commission participant wallet; guards INSUFFICIENT_BALANCE; emits WALLET_DEBITED"
+
 # ──────────────────────────────────────────────────────────────────────────────
 # CHANGELOG
 # ──────────────────────────────────────────────────────────────────────────────
 
 changelog:
+  - version: "2.6.0"
+    date: "2026-03-23"
+    changes:
+      - "Phase 9A: CommissionAccrualHandler — on ACCRUAL_RECORDED credits commission participant wallet (COIN)"
+      - "Phase 9A: Idempotency key: commission_accrual_{accrual_id}; emits WALLET_CREDITED"
+      - "Phase 9B: Same handler — on ACCRUAL_VOIDED debits wallet (reversal); guards INSUFFICIENT_BALANCE; emits WALLET_DEBITED"
+      - "Phase 9A/9B: CommissionAccrualConsumer registered in WalletModule"
+
   - version: "2.5.0"
     date: "2026-03-23"
     changes:
