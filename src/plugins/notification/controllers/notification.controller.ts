@@ -7,8 +7,11 @@ import {
   Body,
   Query,
   ParseIntPipe,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { NotificationWorkflowService } from '../services/notification.workflow.service';
+import { NotificationScheduleDispatcherService } from '../services/notification-schedule-dispatcher.service';
 import { NotificationMessageSendRequestDto } from '../dto/notification-message-send.request.dto';
 import { NotificationDeliveryRecordRequestDto } from '../dto/notification-delivery-record.request.dto';
 import { NotificationTemplateCreateRequestDto } from '../dto/notification-template-create.request.dto';
@@ -24,7 +27,10 @@ import { NotificationChannelPreferenceSetRequestDto } from '../dto/notification-
  */
 @Controller('v1')
 export class NotificationController {
-  constructor(private readonly notificationWorkflow: NotificationWorkflowService) {}
+  constructor(
+    private readonly notificationWorkflow: NotificationWorkflowService,
+    private readonly dispatcher: NotificationScheduleDispatcherService,
+  ) {}
 
   /**
    * POST /v1/notifications/send
@@ -217,6 +223,17 @@ export class NotificationController {
       request,
     );
     return { success: true };
+  }
+
+  /**
+   * POST /v1/notifications/schedule/dispatch
+   * NotificationSchedule.Dispatch — cron endpoint (every minute)
+   * Processes all pending notification_schedule rows whose fire_at has passed.
+   */
+  @Post('notifications/schedule/dispatch')
+  @HttpCode(HttpStatus.OK)
+  async dispatchSchedules() {
+    return this.dispatcher.dispatchDue();
   }
 
   /**

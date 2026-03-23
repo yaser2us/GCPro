@@ -1,4 +1,4 @@
-version: "2.0.0"
+version: "2.2.0"
 spec_id: "claim.pillar.v2"
 domain: "claim"
 plugin: "claim"
@@ -2466,6 +2466,18 @@ commands:
 # ──────────────────────────────────────────────────────────────────────────────
 
 changelog:
+  - version: "2.2.0"
+    date: "2026-03-23"
+    author: "system"
+    description: "Phase 5 — Cross-plugin event integration"
+    changes:
+      - "Phase 5: CLAIM_SETTLED → wallet plugin creates wallet_deposit_intent for claimant GC_WALLET"
+      - "Phase 5: CLAIM_SETTLED emits CLAIM_PAYOUT_INITIATED after deposit_intent created"
+      - "Phase 5: CLAIM_SUBMITTED/APPROVED/REJECTED/SETTLED → notification plugin queues push notifications"
+      - "Phase 5: claim_case.account_id used for cross-plugin wallet + notification lookup"
+    breaking_changes: []
+    migrations_required: []
+
   - version: "2.1.0"
     date: "2026-03-22"
     author: "Claude Sonnet 4.5"

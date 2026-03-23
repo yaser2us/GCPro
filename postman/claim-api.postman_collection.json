@@ -62,8 +62,8 @@
                   "    const response = pm.response.json();",
                   "    if (response.provider_id) {",
                   "        pm.collectionVariables.set('provider_id', response.provider_id);",
-                  "        console.log('✅ Provider Created:', response.provider_id);",
-                  "        console.log('📋 Provider Code:', response.provider_code);",
+                  "        console.log('\u2705 Provider Created:', response.provider_id);",
+                  "        console.log('\ud83d\udccb Provider Code:', response.provider_code);",
                   "    }",
                   "}",
                   "",
@@ -111,8 +111,15 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/admin/medical-provider",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "admin", "medical-provider"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "medical-provider"
+              ]
             },
             "description": "Creates a medical provider (admin only)"
           },
@@ -130,7 +137,7 @@
                   "});",
                   "",
                   "if (pm.response.code === 200) {",
-                  "    console.log('✅ Provider Updated');",
+                  "    console.log('\u2705 Provider Updated');",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -173,8 +180,16 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/admin/medical-provider/{{provider_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "admin", "medical-provider", "{{provider_id}}"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "medical-provider",
+                "{{provider_id}}"
+              ]
             },
             "description": "Updates medical provider details (admin only)"
           },
@@ -192,7 +207,7 @@
                   "});",
                   "",
                   "if (pm.response.code === 200) {",
-                  "    console.log('✅ Provider Deactivated');",
+                  "    console.log('\u2705 Provider Deactivated');",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -235,8 +250,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/admin/medical-provider/{{provider_id}}/deactivate",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "admin", "medical-provider", "{{provider_id}}", "deactivate"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "admin",
+                "medical-provider",
+                "{{provider_id}}",
+                "deactivate"
+              ]
             },
             "description": "Deactivates a medical provider (admin only)"
           },
@@ -259,8 +283,8 @@
                   "    const response = pm.response.json();",
                   "    if (response.claim_id) {",
                   "        pm.collectionVariables.set('claim_id', response.claim_id);",
-                  "        console.log('✅ Claim Submitted:', response.claim_id);",
-                  "        console.log('📋 Claim Number:', response.claim_number);",
+                  "        console.log('\u2705 Claim Submitted:', response.claim_id);",
+                  "        console.log('\ud83d\udccb Claim Number:', response.claim_number);",
                   "    }",
                   "}",
                   "",
@@ -308,8 +332,15 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/claim/submit",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "claim", "submit"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "claim",
+                "submit"
+              ]
             },
             "description": "Submits a new claim with medical details and supporting documents"
           },
@@ -327,7 +358,7 @@
                   "});",
                   "",
                   "if (pm.response.code === 200) {",
-                  "    console.log('✅ Reviewer Assigned');",
+                  "    console.log('\u2705 Reviewer Assigned');",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -370,8 +401,16 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/claim/{{claim_id}}/assign-reviewer",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "claim", "{{claim_id}}", "assign-reviewer"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "claim",
+                "{{claim_id}}",
+                "assign-reviewer"
+              ]
             },
             "description": "Assigns a reviewer to the claim for evaluation"
           },
@@ -389,7 +428,7 @@
                   "});",
                   "",
                   "if (pm.response.code === 201) {",
-                  "    console.log('✅ Document Added');",
+                  "    console.log('\u2705 Document Added');",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -432,8 +471,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/claim/{{claim_id}}/documents/add",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "claim", "{{claim_id}}", "documents", "add"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "claim",
+                "{{claim_id}}",
+                "documents",
+                "add"
+              ]
             },
             "description": "Adds an additional document to an existing claim"
           },
@@ -451,7 +499,7 @@
                   "});",
                   "",
                   "if (pm.response.code === 201) {",
-                  "    console.log('✅ Fraud Signal Recorded');",
+                  "    console.log('\u2705 Fraud Signal Recorded');",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -494,8 +542,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/claim/{{claim_id}}/fraud-signal/record",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "claim", "{{claim_id}}", "fraud-signal", "record"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "claim",
+                "{{claim_id}}",
+                "fraud-signal",
+                "record"
+              ]
             },
             "description": "Records a fraud detection signal for the claim"
           },
@@ -513,7 +570,7 @@
                   "});",
                   "",
                   "if (pm.response.code === 200) {",
-                  "    console.log('✅ Claim Approved');",
+                  "    console.log('\u2705 Claim Approved');",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -556,8 +613,16 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/claim/{{claim_id}}/approve",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "claim", "{{claim_id}}", "approve"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "claim",
+                "{{claim_id}}",
+                "approve"
+              ]
             },
             "description": "Approves the claim with an approved amount"
           },
@@ -575,7 +640,7 @@
                   "});",
                   "",
                   "if (pm.response.code === 200) {",
-                  "    console.log('✅ Claim Rejected');",
+                  "    console.log('\u2705 Claim Rejected');",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -618,8 +683,16 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/claim/{{claim_id}}/reject",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "claim", "{{claim_id}}", "reject"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "claim",
+                "{{claim_id}}",
+                "reject"
+              ]
             },
             "description": "Rejects the claim (use instead of approve for negative outcomes)"
           },
@@ -637,7 +710,7 @@
                   "});",
                   "",
                   "if (pm.response.code === 200) {",
-                  "    console.log('✅ Claim Settled');",
+                  "    console.log('\u2705 Claim Settled');",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -680,8 +753,16 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/claim/{{claim_id}}/settle",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "claim", "{{claim_id}}", "settle"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "claim",
+                "{{claim_id}}",
+                "settle"
+              ]
             },
             "description": "Settles the approved claim and triggers payout"
           },
@@ -704,8 +785,8 @@
                   "    const response = pm.response.json();",
                   "    if (response.gl_id) {",
                   "        pm.collectionVariables.set('gl_id', response.gl_id);",
-                  "        console.log('✅ Guarantee Letter Issued:', response.gl_id);",
-                  "        console.log('📋 GL Number:', response.gl_number);",
+                  "        console.log('\u2705 Guarantee Letter Issued:', response.gl_id);",
+                  "        console.log('\ud83d\udccb GL Number:', response.gl_number);",
                   "    }",
                   "}",
                   "",
@@ -753,8 +834,15 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/guarantee-letter/issue",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "guarantee-letter", "issue"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "guarantee-letter",
+                "issue"
+              ]
             },
             "description": "Issues a guarantee letter for pre-approved medical treatment"
           },
@@ -772,7 +860,7 @@
                   "});",
                   "",
                   "if (pm.response.code === 200) {",
-                  "    console.log('✅ Guarantee Letter Cancelled');",
+                  "    console.log('\u2705 Guarantee Letter Cancelled');",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -815,8 +903,16 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/guarantee-letter/{{gl_id}}/cancel",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "guarantee-letter", "{{gl_id}}", "cancel"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "guarantee-letter",
+                "{{gl_id}}",
+                "cancel"
+              ]
             },
             "description": "Cancels an active guarantee letter"
           },
@@ -839,7 +935,7 @@
                   "    const response = pm.response.json();",
                   "    if (response.medical_case_id) {",
                   "        pm.collectionVariables.set('medical_case_id', response.medical_case_id);",
-                  "        console.log('✅ Medical Case Created:', response.medical_case_id);",
+                  "        console.log('\u2705 Medical Case Created:', response.medical_case_id);",
                   "    }",
                   "}",
                   "",
@@ -887,8 +983,15 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/medical-case/create",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "medical-case", "create"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "medical-case",
+                "create"
+              ]
             },
             "description": "Creates a medical case for tracking ongoing treatment"
           },
@@ -906,7 +1009,7 @@
                   "});",
                   "",
                   "if (pm.response.code === 200) {",
-                  "    console.log('✅ Medical Case Updated');",
+                  "    console.log('\u2705 Medical Case Updated');",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -949,8 +1052,16 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/medical-case/{{medical_case_id}}/update",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "medical-case", "{{medical_case_id}}", "update"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "medical-case",
+                "{{medical_case_id}}",
+                "update"
+              ]
             },
             "description": "Updates medical case status and discharge information"
           },
@@ -973,7 +1084,7 @@
                   "    const response = pm.response.json();",
                   "    if (response.case_id) {",
                   "        pm.collectionVariables.set('underwriting_case_id', response.case_id);",
-                  "        console.log('✅ Underwriting Case Created:', response.case_id, response.case_no);",
+                  "        console.log('\u2705 Underwriting Case Created:', response.case_id, response.case_no);",
                   "    }",
                   "}",
                   "",
@@ -1021,8 +1132,15 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/underwriting/create",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "underwriting", "create"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "underwriting",
+                "create"
+              ]
             },
             "description": "Creates a new underwriting case for medical evaluation"
           },
@@ -1039,7 +1157,7 @@
                   "    const response = pm.response.json();",
                   "    if (response.underwriting_case_id) {",
                   "        pm.collectionVariables.set('underwriting_case_id', response.underwriting_case_id);",
-                  "        console.log('✅ Underwriting Decision Recorded:', response.underwriting_case_id);",
+                  "        console.log('\u2705 Underwriting Decision Recorded:', response.underwriting_case_id);",
                   "    }",
                   "}",
                   "",
@@ -1087,8 +1205,16 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/underwriting/{{underwriting_case_id}}/record-decision",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "underwriting", "{{underwriting_case_id}}", "record-decision"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "underwriting",
+                "{{underwriting_case_id}}",
+                "record-decision"
+              ]
             },
             "description": "Records underwriting decision with terms, exclusions, and loadings"
           },
@@ -1106,7 +1232,7 @@
                   "});",
                   "",
                   "if (pm.response.code === 201) {",
-                  "    console.log('✅ Underwriting Evidence Added');",
+                  "    console.log('\u2705 Underwriting Evidence Added');",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -1149,8 +1275,16 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/underwriting/{{underwriting_case_id}}/add-evidence",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "underwriting", "{{underwriting_case_id}}", "add-evidence"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "underwriting",
+                "{{underwriting_case_id}}",
+                "add-evidence"
+              ]
             },
             "description": "Adds supporting evidence to underwriting case"
           },
@@ -1158,6 +1292,49 @@
         }
       ],
       "description": "Medical underwriting decision recording and evidence collection"
+    },
+    {
+      "name": "Phase 5 \u2014 Cross-plugin Integration (Verify)",
+      "item": [
+        {
+          "name": "Phase5: Settle Claim \u2192 triggers wallet payout + notification",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/claim/{{claim_id}}/settle",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "claim",
+                "{{claim_id}}",
+                "settle"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"approved_amount\": 1500.0,\n  \"period_key\": \"2026-03\",\n  \"policy_id\": \"{{policy_id}}\",\n  \"item_code\": \"outpatient\"\n}"
+            },
+            "description": "Phase 5: After settle, verify: (1) wallet_deposit_intent created in DB for claimant GC_WALLET; (2) CLAIM_PAYOUT_INITIATED event in outbox; (3) notification_message queued with template_code=claim_settled."
+          }
+        }
+      ]
     }
   ]
 }

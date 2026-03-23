@@ -13,6 +13,9 @@ import { NotificationScheduleRepository } from './repositories/notification-sche
 import { NotificationPreferenceRepository } from './repositories/notification-preference.repo';
 import { NotificationChannelPreferenceRepository } from './repositories/notification-channel-preference.repo';
 import { NotificationWorkflowService } from './services/notification.workflow.service';
+import { NotificationScheduleDispatcherService } from './services/notification-schedule-dispatcher.service';
+import { ClaimEventNotificationHandler } from './handlers/claim-event-notification.handler';
+import { ClaimEventNotificationConsumer } from './consumers/claim-event-notification.consumer';
 import { NotificationController } from './controllers/notification.controller';
 
 /**
@@ -44,8 +47,11 @@ import { NotificationController } from './controllers/notification.controller';
     NotificationPreferenceRepository,
     NotificationChannelPreferenceRepository,
     NotificationWorkflowService,
+    NotificationScheduleDispatcherService,  // Phase 5: schedule dispatcher
+    ClaimEventNotificationHandler,           // Phase 5: claim event → notification
+    ClaimEventNotificationConsumer,          // Phase 5
   ],
   controllers: [NotificationController],
-  exports: [NotificationWorkflowService],
+  exports: [NotificationWorkflowService, NotificationScheduleDispatcherService],
 })
 export class NotificationModule {}

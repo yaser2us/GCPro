@@ -1,5 +1,5 @@
 name: notification
-version: v2
+version: v2.1.0
 description: Multi-channel notification system with delivery tracking, templates, scheduling, and user preferences
 
 ################################################################################
@@ -91,24 +91,32 @@ schema:
   notification_schedule:
     columns:
       id: { type: bigint, pk: true, ai: true }
-      message_id: { type: bigint, null: false }
+      message_id: { type: bigint, null: true, note: "NULL for generic ref-based schedules (cross-plugin)" }
+      ref_type: { type: varchar(50), null: true, note: "Cross-plugin ref type (e.g. policy_remediation_case)" }
+      ref_id: { type: bigint, null: true, note: "ID of the referenced entity" }
       schedule_type: { type: varchar(20), null: false }
       step_no: { type: int, null: false, default: 1 }
       delay_minutes: { type: int, null: false, default: 0 }
       status: { type: varchar(20), null: false, default: pending }
       fire_at: { type: datetime, null: false }
       fired_at: { type: datetime, null: true }
+      payload_json: { type: json, null: true, note: "Arbitrary payload for the dispatcher to act on" }
       meta: { type: json, null: true }
+      created_at: { type: datetime, null: false, default: CURRENT_TIMESTAMP }
+      updated_at: { type: datetime, null: false, default: CURRENT_TIMESTAMP, on_update: CURRENT_TIMESTAMP }
     indexes:
       - name: idx_schedule_fire
         columns: [status, fire_at]
       - name: idx_schedule_message
         columns: [message_id]
+      - name: idx_schedule_ref
+        columns: [ref_type, ref_id]
     foreign_keys:
       - column: message_id
         references: notification_message.id
         on_delete: RESTRICT
         on_update: RESTRICT
+        nullable: true
 
   notification_preference:
     columns:
@@ -774,7 +782,53 @@ coverage:
 ################################################################################
 # CHANGELOG
 ################################################################################
+integration:
+  consumes:
+    - event: CLAIM_SUBMITTED
+      source_plugin: claim
+      handler: src/plugins/notification/handlers/claim-event-notification.handler.ts
+      action: Queue push notification to claimant (template=claim_submitted)
+      graceful_skip: true  # skips if template not seeded
+
+    - event: CLAIM_APPROVED
+      source_plugin: claim
+      handler: src/plugins/notification/handlers/claim-event-notification.handler.ts
+      action: Queue push notification to claimant (template=claim_approved)
+      graceful_skip: true
+
+    - event: CLAIM_REJECTED
+      source_plugin: claim
+      handler: src/plugins/notification/handlers/claim-event-notification.handler.ts
+      action: Queue push notification to claimant (template=claim_rejected)
+      graceful_skip: true
+
+    - event: CLAIM_SETTLED
+      source_plugin: claim
+      handler: src/plugins/notification/handlers/claim-event-notification.handler.ts
+      action: Queue push notification to claimant (template=claim_settled)
+      graceful_skip: true
+
+  emits:
+    - event: GRACE_EXPIRY_DUE
+      triggers:
+        - NotificationSchedule.Dispatch (schedule_type=grace_expiry)
+      payload: "{ remediation_case_id, policy_id, reason_code, schedule_id }"
+      consumed_by: policy plugin (GraceExpiryDueConsumer)
+
+  cron_endpoints:
+    - path: POST /v1/notifications/schedule/dispatch
+      description: Process all pending notification_schedule rows whose fire_at <= NOW()
+      recommended_interval: every 1 minute
+
 changelog:
+  - version: v2.1.0
+    date: 2026-03-23
+    changes:
+      - "Phase 5: notification_schedule extended — message_id now nullable, added ref_type, ref_id, payload_json, created_at, updated_at"
+      - "Phase 5: NotificationScheduleDispatcherService — processes due schedules; grace_expiry type emits GRACE_EXPIRY_DUE"
+      - "Phase 5: POST /v1/notifications/schedule/dispatch — cron endpoint"
+      - "Phase 5: ClaimEventNotificationHandler — queues push notifications on CLAIM_SUBMITTED/APPROVED/REJECTED/SETTLED"
+
   - version: v2.0.0
     date: 2026-03-15
     changes:

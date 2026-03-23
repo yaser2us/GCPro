@@ -2564,6 +2564,49 @@
           }
         }
       ]
+    },
+    {
+      "name": "Phase 5 \u2014 Claim Payout",
+      "item": [
+        {
+          "name": "Phase5: Simulate CLAIM_SETTLED \u2192 wallet deposit intent",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/wallet/claim-payout/test",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "claim-payout",
+                "test"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"_note\": \"This is triggered automatically by CLAIM_SETTLED event. No direct HTTP endpoint \\u2014 use claim API to settle a claim.\",\n  \"flow\": \"CLAIM_SETTLED event \\u2192 ClaimSettledPayoutConsumer \\u2192 ClaimSettledPayoutHandler \\u2192 wallet_deposit_intent \\u2192 CLAIM_PAYOUT_INITIATED\"\n}"
+            },
+            "description": "Phase 5: CLAIM_SETTLED automatically triggers wallet_deposit_intent creation for the claimant's GC_WALLET. Emits CLAIM_PAYOUT_INITIATED. This folder documents the flow \u2014 trigger via claim-api.postman_collection settle endpoint."
+          }
+        }
+      ]
     }
   ]
 }

@@ -53,6 +53,7 @@ import { PersonCreatedHandler } from './handlers/person-created.handler';
 import { CrowdChargeHandler } from './handlers/crowd-charge.handler';
 import { AutoTopupHandler } from './handlers/auto-topup.handler';                       // C4
 import { DepositTopupPaymentHandler } from './handlers/deposit-topup-payment.handler'; // C4
+import { ClaimSettledPayoutHandler } from './handlers/claim-settled-payout.handler';   // Phase 5
 
 // Event Consumers (one per event source)
 import { MissionRewardConsumer } from './consumers/mission-reward.consumer';
@@ -62,6 +63,7 @@ import { PersonCreatedConsumer } from './consumers/person-created.consumer';
 import { CrowdPeriodCalculatedConsumer } from './consumers/crowd-period-calculated.consumer';
 import { AutoTopupConsumer } from './consumers/auto-topup.consumer';                             // C4
 import { DepositTopupPaymentConsumer } from './consumers/deposit-topup-payment.consumer';       // C4
+import { ClaimSettledPayoutConsumer } from './consumers/claim-settled-payout.consumer';         // Phase 5
 
 // Controllers
 import { WalletController } from './controllers/wallet.controller';
@@ -179,6 +181,7 @@ import { PaymentSourceController } from './controllers/payment-source.controller
     CrowdChargeHandler,             // C6
     AutoTopupHandler,               // C4
     DepositTopupPaymentHandler,     // C4
+    ClaimSettledPayoutHandler,      // Phase 5
 
     // Event Consumers (one per event source)
     MissionRewardConsumer,
@@ -188,6 +191,7 @@ import { PaymentSourceController } from './controllers/payment-source.controller
     CrowdPeriodCalculatedConsumer,  // C6
     AutoTopupConsumer,              // C4
     DepositTopupPaymentConsumer,    // C4
+    ClaimSettledPayoutConsumer,     // Phase 5
   ],
   exports: [
     // Export shared services for other modules

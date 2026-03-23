@@ -1,4 +1,4 @@
-version: "2.2.0"
+version: "2.3.0"
 spec_id: "wallet.pillar.v2"
 domain: "wallet"
 plugin: "wallet"
@@ -1246,11 +1246,23 @@ coverage:
       source_plugin: "payment"
       note: "C4: only handles purpose_code=deposit_topup; credits deposit wallet"
 
+    CLAIM_SETTLED:
+      consumed_by:
+        - "WALLET.PROCESS_CLAIM_PAYOUT"
+      source_plugin: "claim"
+      note: "Phase 5: creates wallet_deposit_intent for claimant GC_WALLET; emits CLAIM_PAYOUT_INITIATED"
+
 # ──────────────────────────────────────────────────────────────────────────────
 # CHANGELOG
 # ──────────────────────────────────────────────────────────────────────────────
 
 changelog:
+  - version: "2.3.0"
+    date: "2026-03-23"
+    changes:
+      - "Phase 5: ClaimSettledPayoutHandler — on CLAIM_SETTLED creates wallet_deposit_intent for claimant GC_WALLET"
+      - "Phase 5: Emits CLAIM_PAYOUT_INITIATED after deposit_intent created"
+
   - version: "2.2.0"
     date: "2026-03-23"
     changes:

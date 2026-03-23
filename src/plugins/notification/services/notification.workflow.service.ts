@@ -743,13 +743,13 @@ export class NotificationWorkflowService {
         qr,
       );
 
-      await this.messageRepo.update(
-        schedule.message_id,
-        {
-          status: 'queued',
-        },
-        qr,
-      );
+      if (schedule.message_id) {
+        await this.messageRepo.update(
+          schedule.message_id,
+          { status: 'queued' },
+          qr,
+        );
+      }
 
       // Emit: NotificationSchedule.Fired event
 

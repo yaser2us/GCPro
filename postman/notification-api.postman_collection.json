@@ -1,723 +1,944 @@
 {
-	"info": {
-		"_postman_id": "notification-api-v1",
-		"name": "Notification API",
-		"description": "Complete Notification System API - Multi-channel notifications with templates, scheduling, and preferences\n\nSource: specs/notification/notification.pillar.v2.yml",
-		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-	},
-	"item": [
-		{
-			"name": "Message Lifecycle",
-			"item": [
-				{
-					"name": "Send Notification",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"message_key\": \"order-12345-shipped\",\n  \"template_code\": \"order_shipped\",\n  \"account_id\": \"1\",\n  \"person_id\": \"100\",\n  \"channel\": \"email\",\n  \"destination\": \"customer@example.com\",\n  \"payload_vars\": {\n    \"first_name\": \"John\",\n    \"order_id\": \"12345\",\n    \"tracking_url\": \"https://track.example.com/12345\"\n  },\n  \"trigger_event_id\": \"order-123\",\n  \"trigger_event_type\": \"Order.Shipped\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/v1/notifications/send",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notifications", "send"]
-						},
-						"description": "Queue a notification message for delivery.\n\nIdempotency: Via UNIQUE(message_key)"
-					},
-					"response": []
-				},
-				{
-					"name": "Send Scheduled Notification",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"message_key\": \"reminder-meeting-2026-03-16\",\n  \"template_code\": \"meeting_reminder\",\n  \"account_id\": \"1\",\n  \"person_id\": \"100\",\n  \"channel\": \"email\",\n  \"destination\": \"user@example.com\",\n  \"scheduled_for\": \"2026-03-16T09:00:00Z\",\n  \"payload_vars\": {\n    \"meeting_title\": \"Q1 Review\",\n    \"meeting_time\": \"10:00 AM\",\n    \"meeting_link\": \"https://meet.example.com/q1-review\"\n  }\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/v1/notifications/send",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notifications", "send"]
-						},
-						"description": "Send notification scheduled for future delivery"
-					},
-					"response": []
-				},
-				{
-					"name": "Process Next Message",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/v1/notifications/process-next",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notifications", "process-next"]
-						},
-						"description": "Pick next queued message and prepare for delivery (worker endpoint)"
-					},
-					"response": []
-				},
-				{
-					"name": "Mark Message Sent",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/v1/notifications/{{message_id}}/mark-sent",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notifications", "{{message_id}}", "mark-sent"]
-						},
-						"description": "Mark message as successfully delivered"
-					},
-					"response": []
-				},
-				{
-					"name": "Mark Message Failed",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/v1/notifications/{{message_id}}/mark-failed",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notifications", "{{message_id}}", "mark-failed"]
-						},
-						"description": "Mark message as failed after exhausting all retry attempts"
-					},
-					"response": []
-				},
-				{
-					"name": "Retry Message",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/v1/notifications/{{message_id}}/retry",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notifications", "{{message_id}}", "retry"]
-						},
-						"description": "Reset failed message for manual retry"
-					},
-					"response": []
-				},
-				{
-					"name": "Cancel Message",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/v1/notifications/{{message_id}}/cancel",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notifications", "{{message_id}}", "cancel"]
-						},
-						"description": "Cancel a queued or scheduled message"
-					},
-					"response": []
-				}
-			],
-			"description": "Message lifecycle management - send, process, track delivery"
-		},
-		{
-			"name": "Delivery Tracking",
-			"item": [
-				{
-					"name": "Record Delivery Attempt",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							},
-							{
-								"key": "Idempotency-Key",
-								"value": "{{$guid}}"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"provider\": \"sendgrid\",\n  \"status\": \"sent\",\n  \"provider_ref\": \"SG-MESSAGE-ID-12345\",\n  \"provider_payload\": {\n    \"message_id\": \"SG-MESSAGE-ID-12345\",\n    \"timestamp\": \"2026-03-16T10:30:00Z\"\n  }\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/v1/notifications/{{message_id}}/attempts",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notifications", "{{message_id}}", "attempts"]
-						},
-						"description": "Record delivery attempt result (success or failure)\n\nIdempotency: Via Idempotency-Key header"
-					},
-					"response": []
-				},
-				{
-					"name": "Record Failed Delivery",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							},
-							{
-								"key": "Idempotency-Key",
-								"value": "{{$guid}}"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"provider\": \"sendgrid\",\n  \"status\": \"failed\",\n  \"error_code\": \"SMTP_ERROR\",\n  \"error_message\": \"Recipient mailbox is full\",\n  \"provider_payload\": {\n    \"error_details\": \"550 Mailbox full\"\n  }\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/v1/notifications/{{message_id}}/attempts",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notifications", "{{message_id}}", "attempts"]
-						},
-						"description": "Record failed delivery attempt with error details"
-					},
-					"response": []
-				}
-			],
-			"description": "Track delivery attempts and provider responses"
-		},
-		{
-			"name": "Templates",
-			"item": [
-				{
-					"name": "Create Email Template",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"code\": \"order_shipped\",\n  \"name\": \"Order Shipped Notification\",\n  \"channel\": \"email\",\n  \"locale\": \"en\",\n  \"subject_tpl\": \"Your order #{{order_id}} has shipped!\",\n  \"body_tpl\": \"Hello {{first_name}},\\n\\nGreat news! Your order #{{order_id}} has been shipped and is on its way.\\n\\nTrack your order: {{tracking_url}}\\n\\nThank you for your business!\",\n  \"variables_schema_json\": {\n    \"first_name\": { \"type\": \"string\", \"required\": true },\n    \"order_id\": { \"type\": \"string\", \"required\": true },\n    \"tracking_url\": { \"type\": \"string\", \"required\": true }\n  },\n  \"version\": \"v1\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/v1/notification-templates",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notification-templates"]
-						},
-						"description": "Create a new notification template\n\nIdempotency: Via UNIQUE(code, version, locale, channel)"
-					},
-					"response": []
-				},
-				{
-					"name": "Create SMS Template",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"code\": \"order_shipped\",\n  \"name\": \"Order Shipped SMS\",\n  \"channel\": \"sms\",\n  \"locale\": \"en\",\n  \"body_tpl\": \"Hi {{first_name}}, your order #{{order_id}} has shipped! Track: {{tracking_url}}\",\n  \"variables_schema_json\": {\n    \"first_name\": { \"type\": \"string\", \"required\": true },\n    \"order_id\": { \"type\": \"string\", \"required\": true },\n    \"tracking_url\": { \"type\": \"string\", \"required\": true }\n  },\n  \"version\": \"v1\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/v1/notification-templates",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notification-templates"]
-						},
-						"description": "Create SMS template (no subject)"
-					},
-					"response": []
-				},
-				{
-					"name": "Update Template",
-					"request": {
-						"method": "PUT",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"code\": \"order_shipped\",\n  \"name\": \"Order Shipped Notification (Updated)\",\n  \"channel\": \"email\",\n  \"locale\": \"en\",\n  \"subject_tpl\": \"🚚 Your order #{{order_id}} is on the way!\",\n  \"body_tpl\": \"Hello {{first_name}},\\n\\nExciting news! Your order #{{order_id}} has shipped.\\n\\nEstimated delivery: {{delivery_date}}\\nTrack your package: {{tracking_url}}\\n\\nThank you for choosing us!\",\n  \"variables_schema_json\": {\n    \"first_name\": { \"type\": \"string\", \"required\": true },\n    \"order_id\": { \"type\": \"string\", \"required\": true },\n    \"tracking_url\": { \"type\": \"string\", \"required\": true },\n    \"delivery_date\": { \"type\": \"string\", \"required\": false }\n  }\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/v1/notification-templates/{{template_id}}",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notification-templates", "{{template_id}}"]
-						},
-						"description": "Update template - creates new version, archives old"
-					},
-					"response": []
-				},
-				{
-					"name": "Deactivate Template",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/v1/notification-templates/{{template_id}}/deactivate",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notification-templates", "{{template_id}}", "deactivate"]
-						},
-						"description": "Deactivate template - prevents new messages from using it"
-					},
-					"response": []
-				},
-				{
-					"name": "Activate Template",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/v1/notification-templates/{{template_id}}/activate",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notification-templates", "{{template_id}}", "activate"]
-						},
-						"description": "Activate inactive template"
-					},
-					"response": []
-				}
-			],
-			"description": "Template management with versioning"
-		},
-		{
-			"name": "Scheduling",
-			"item": [
-				{
-					"name": "Create One-Time Schedule",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							},
-							{
-								"key": "Idempotency-Key",
-								"value": "{{$guid}}"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"schedule_type\": \"one_time\",\n  \"fire_at\": \"2026-03-17T10:00:00Z\",\n  \"meta\": {\n    \"description\": \"Send tomorrow at 10am\"\n  }\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/v1/notifications/{{message_id}}/schedules",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notifications", "{{message_id}}", "schedules"]
-						},
-						"description": "Schedule notification for specific future time\n\nIdempotency: Via Idempotency-Key header"
-					},
-					"response": []
-				},
-				{
-					"name": "Create Reminder Workflow",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							},
-							{
-								"key": "Idempotency-Key",
-								"value": "{{$guid}}"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"schedule_type\": \"reminder_workflow\",\n  \"step_no\": 1,\n  \"delay_minutes\": 1440,\n  \"fire_at\": \"2026-03-17T10:00:00Z\",\n  \"meta\": {\n    \"workflow\": \"payment_reminder\",\n    \"step_description\": \"First reminder - 24 hours before due\"\n  }\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/v1/notifications/{{message_id}}/schedules",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notifications", "{{message_id}}", "schedules"]
-						},
-						"description": "Create multi-step reminder workflow schedule"
-					},
-					"response": []
-				},
-				{
-					"name": "Fire Schedule",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/v1/notification-schedules/{{schedule_id}}/fire",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notification-schedules", "{{schedule_id}}", "fire"]
-						},
-						"description": "Execute scheduled notification (worker endpoint)"
-					},
-					"response": []
-				},
-				{
-					"name": "Cancel Schedule",
-					"request": {
-						"method": "POST",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/v1/notification-schedules/{{schedule_id}}/cancel",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notification-schedules", "{{schedule_id}}", "cancel"]
-						},
-						"description": "Cancel pending scheduled notification"
-					},
-					"response": []
-				}
-			],
-			"description": "Schedule notifications for future delivery"
-		},
-		{
-			"name": "User Preferences",
-			"item": [
-				{
-					"name": "Get Preferences",
-					"request": {
-						"method": "GET",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/v1/notification-preferences?account_id=1&person_id=100",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notification-preferences"],
-							"query": [
-								{
-									"key": "account_id",
-									"value": "1"
-								},
-								{
-									"key": "person_id",
-									"value": "100"
-								}
-							]
-						},
-						"description": "Get notification preferences (auto-creates if not exists)"
-					},
-					"response": []
-				},
-				{
-					"name": "Update Preferences - Set Quiet Hours",
-					"request": {
-						"method": "PUT",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"status\": \"active\",\n  \"quiet_hours\": {\n    \"enabled\": true,\n    \"timezone\": \"America/Los_Angeles\",\n    \"start\": \"22:00\",\n    \"end\": \"08:00\"\n  },\n  \"meta\": {\n    \"last_updated_by\": \"user\",\n    \"reason\": \"User preference update\"\n  }\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/v1/notification-preferences/{{preference_id}}",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notification-preferences", "{{preference_id}}"]
-						},
-						"description": "Update preferences with quiet hours configuration"
-					},
-					"response": []
-				},
-				{
-					"name": "Update Preferences - Opt Out",
-					"request": {
-						"method": "PUT",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"status\": \"inactive\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/v1/notification-preferences/{{preference_id}}",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notification-preferences", "{{preference_id}}"]
-						},
-						"description": "Opt out of all notifications"
-					},
-					"response": []
-				},
-				{
-					"name": "Enable Email Channel",
-					"request": {
-						"method": "PUT",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"channel\": \"email\",\n  \"enabled\": true,\n  \"destination\": \"user@example.com\",\n  \"priority\": 1,\n  \"meta\": {\n    \"verified\": true,\n    \"verified_at\": \"2026-03-16T10:00:00Z\"\n  }\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/v1/notification-preferences/{{preference_id}}/channels/email",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notification-preferences", "{{preference_id}}", "channels", "email"]
-						},
-						"description": "Enable and configure email notifications"
-					},
-					"response": []
-				},
-				{
-					"name": "Enable SMS Channel",
-					"request": {
-						"method": "PUT",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"channel\": \"sms\",\n  \"enabled\": true,\n  \"destination\": \"+1234567890\",\n  \"priority\": 2,\n  \"meta\": {\n    \"verified\": true,\n    \"carrier\": \"Verizon\"\n  }\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/v1/notification-preferences/{{preference_id}}/channels/sms",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notification-preferences", "{{preference_id}}", "channels", "sms"]
-						},
-						"description": "Enable and configure SMS notifications"
-					},
-					"response": []
-				},
-				{
-					"name": "Disable Push Channel",
-					"request": {
-						"method": "PUT",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"channel\": \"push\",\n  \"enabled\": false\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/v1/notification-preferences/{{preference_id}}/channels/push",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notification-preferences", "{{preference_id}}", "channels", "push"]
-						},
-						"description": "Disable push notifications"
-					},
-					"response": []
-				}
-			],
-			"description": "Manage user notification preferences and channel settings"
-		},
-		{
-			"name": "Complete Workflows",
-			"item": [
-				{
-					"name": "1. Create Email Template",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"var jsonData = pm.response.json();",
-									"pm.environment.set(\"template_id\", jsonData.template_id);"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"code\": \"welcome_email\",\n  \"name\": \"Welcome Email\",\n  \"channel\": \"email\",\n  \"locale\": \"en\",\n  \"subject_tpl\": \"Welcome to GCPro, {{first_name}}!\",\n  \"body_tpl\": \"Hi {{first_name}},\\n\\nWelcome to GCPro! We're excited to have you on board.\\n\\nGet started: {{dashboard_url}}\\n\\nBest regards,\\nThe GCPro Team\",\n  \"version\": \"v1\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/v1/notification-templates",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notification-templates"]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "2. Send Welcome Notification",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"var jsonData = pm.response.json();",
-									"pm.environment.set(\"message_id\", jsonData.message_id);"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"message_key\": \"welcome-user-{{$timestamp}}\",\n  \"template_code\": \"welcome_email\",\n  \"account_id\": \"1\",\n  \"person_id\": \"100\",\n  \"channel\": \"email\",\n  \"destination\": \"newuser@example.com\",\n  \"payload_vars\": {\n    \"first_name\": \"Alice\",\n    \"dashboard_url\": \"https://app.gcpro.com/dashboard\"\n  },\n  \"trigger_event_type\": \"User.Created\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/v1/notifications/send",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notifications", "send"]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "3. Process Message",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"var jsonData = pm.response.json();",
-									"if (jsonData && jsonData.message_id) {",
-									"  pm.environment.set(\"message_id\", jsonData.message_id);",
-									"  pm.environment.set(\"attempt_no\", jsonData.attempt_no);",
-									"}"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [],
-						"url": {
-							"raw": "{{base_url}}/v1/notifications/process-next",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notifications", "process-next"]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "4. Record Successful Delivery",
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							},
-							{
-								"key": "Idempotency-Key",
-								"value": "{{$guid}}"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"provider\": \"sendgrid\",\n  \"status\": \"sent\",\n  \"provider_ref\": \"SG-{{$timestamp}}\"\n}"
-						},
-						"url": {
-							"raw": "{{base_url}}/v1/notifications/{{message_id}}/attempts",
-							"host": ["{{base_url}}"],
-							"path": ["v1", "notifications", "{{message_id}}", "attempts"]
-						}
-					},
-					"response": []
-				}
-			],
-			"description": "Complete end-to-end workflow examples"
-		}
-	],
-	"event": [
-		{
-			"listen": "prerequest",
-			"script": {
-				"type": "text/javascript",
-				"exec": [
-					"// Add X-User-Id header",
-					"pm.request.headers.add({",
-					"  key: 'X-User-Id',",
-					"  value: pm.collectionVariables.get('user_id') || '1'",
-					"});",
-					"",
-					"// Add Idempotency-Key for POST/PUT requests",
-					"if (pm.request.method === 'POST' || pm.request.method === 'PUT') {",
-					"  const existingKey = pm.request.headers.get('Idempotency-Key');",
-					"  if (!existingKey) {",
-					"    pm.request.headers.add({",
-					"      key: 'Idempotency-Key',",
-					"      value: pm.variables.replaceIn('{{$guid}}')",
-					"    });",
-					"  }",
-					"}"
-				]
-			}
-		},
-		{
-			"listen": "test",
-			"script": {
-				"type": "text/javascript",
-				"exec": [
-					""
-				]
-			}
-		}
-	],
-	"variable": [
-		{
-			"key": "base_url",
-			"value": "http://localhost:3000",
-			"type": "string"
-		},
-		{
-			"key": "user_id",
-			"value": "1",
-			"type": "string"
-		},
-		{
-			"key": "template_id",
-			"value": "1",
-			"type": "string"
-		},
-		{
-			"key": "message_id",
-			"value": "1",
-			"type": "string"
-		},
-		{
-			"key": "schedule_id",
-			"value": "1",
-			"type": "string"
-		},
-		{
-			"key": "preference_id",
-			"value": "1",
-			"type": "string"
-		}
-	]
+  "info": {
+    "_postman_id": "notification-api-v1",
+    "name": "Notification API",
+    "description": "Complete Notification System API - Multi-channel notifications with templates, scheduling, and preferences\n\nSource: specs/notification/notification.pillar.v2.yml",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Message Lifecycle",
+      "item": [
+        {
+          "name": "Send Notification",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message_key\": \"order-12345-shipped\",\n  \"template_code\": \"order_shipped\",\n  \"account_id\": \"1\",\n  \"person_id\": \"100\",\n  \"channel\": \"email\",\n  \"destination\": \"customer@example.com\",\n  \"payload_vars\": {\n    \"first_name\": \"John\",\n    \"order_id\": \"12345\",\n    \"tracking_url\": \"https://track.example.com/12345\"\n  },\n  \"trigger_event_id\": \"order-123\",\n  \"trigger_event_type\": \"Order.Shipped\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/notifications/send",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notifications",
+                "send"
+              ]
+            },
+            "description": "Queue a notification message for delivery.\n\nIdempotency: Via UNIQUE(message_key)"
+          },
+          "response": []
+        },
+        {
+          "name": "Send Scheduled Notification",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message_key\": \"reminder-meeting-2026-03-16\",\n  \"template_code\": \"meeting_reminder\",\n  \"account_id\": \"1\",\n  \"person_id\": \"100\",\n  \"channel\": \"email\",\n  \"destination\": \"user@example.com\",\n  \"scheduled_for\": \"2026-03-16T09:00:00Z\",\n  \"payload_vars\": {\n    \"meeting_title\": \"Q1 Review\",\n    \"meeting_time\": \"10:00 AM\",\n    \"meeting_link\": \"https://meet.example.com/q1-review\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/notifications/send",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notifications",
+                "send"
+              ]
+            },
+            "description": "Send notification scheduled for future delivery"
+          },
+          "response": []
+        },
+        {
+          "name": "Process Next Message",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/notifications/process-next",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notifications",
+                "process-next"
+              ]
+            },
+            "description": "Pick next queued message and prepare for delivery (worker endpoint)"
+          },
+          "response": []
+        },
+        {
+          "name": "Mark Message Sent",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/notifications/{{message_id}}/mark-sent",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notifications",
+                "{{message_id}}",
+                "mark-sent"
+              ]
+            },
+            "description": "Mark message as successfully delivered"
+          },
+          "response": []
+        },
+        {
+          "name": "Mark Message Failed",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/notifications/{{message_id}}/mark-failed",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notifications",
+                "{{message_id}}",
+                "mark-failed"
+              ]
+            },
+            "description": "Mark message as failed after exhausting all retry attempts"
+          },
+          "response": []
+        },
+        {
+          "name": "Retry Message",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/notifications/{{message_id}}/retry",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notifications",
+                "{{message_id}}",
+                "retry"
+              ]
+            },
+            "description": "Reset failed message for manual retry"
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel Message",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/notifications/{{message_id}}/cancel",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notifications",
+                "{{message_id}}",
+                "cancel"
+              ]
+            },
+            "description": "Cancel a queued or scheduled message"
+          },
+          "response": []
+        }
+      ],
+      "description": "Message lifecycle management - send, process, track delivery"
+    },
+    {
+      "name": "Delivery Tracking",
+      "item": [
+        {
+          "name": "Record Delivery Attempt",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"sendgrid\",\n  \"status\": \"sent\",\n  \"provider_ref\": \"SG-MESSAGE-ID-12345\",\n  \"provider_payload\": {\n    \"message_id\": \"SG-MESSAGE-ID-12345\",\n    \"timestamp\": \"2026-03-16T10:30:00Z\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/notifications/{{message_id}}/attempts",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notifications",
+                "{{message_id}}",
+                "attempts"
+              ]
+            },
+            "description": "Record delivery attempt result (success or failure)\n\nIdempotency: Via Idempotency-Key header"
+          },
+          "response": []
+        },
+        {
+          "name": "Record Failed Delivery",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"sendgrid\",\n  \"status\": \"failed\",\n  \"error_code\": \"SMTP_ERROR\",\n  \"error_message\": \"Recipient mailbox is full\",\n  \"provider_payload\": {\n    \"error_details\": \"550 Mailbox full\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/notifications/{{message_id}}/attempts",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notifications",
+                "{{message_id}}",
+                "attempts"
+              ]
+            },
+            "description": "Record failed delivery attempt with error details"
+          },
+          "response": []
+        }
+      ],
+      "description": "Track delivery attempts and provider responses"
+    },
+    {
+      "name": "Templates",
+      "item": [
+        {
+          "name": "Create Email Template",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"order_shipped\",\n  \"name\": \"Order Shipped Notification\",\n  \"channel\": \"email\",\n  \"locale\": \"en\",\n  \"subject_tpl\": \"Your order #{{order_id}} has shipped!\",\n  \"body_tpl\": \"Hello {{first_name}},\\n\\nGreat news! Your order #{{order_id}} has been shipped and is on its way.\\n\\nTrack your order: {{tracking_url}}\\n\\nThank you for your business!\",\n  \"variables_schema_json\": {\n    \"first_name\": { \"type\": \"string\", \"required\": true },\n    \"order_id\": { \"type\": \"string\", \"required\": true },\n    \"tracking_url\": { \"type\": \"string\", \"required\": true }\n  },\n  \"version\": \"v1\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/notification-templates",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notification-templates"
+              ]
+            },
+            "description": "Create a new notification template\n\nIdempotency: Via UNIQUE(code, version, locale, channel)"
+          },
+          "response": []
+        },
+        {
+          "name": "Create SMS Template",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"order_shipped\",\n  \"name\": \"Order Shipped SMS\",\n  \"channel\": \"sms\",\n  \"locale\": \"en\",\n  \"body_tpl\": \"Hi {{first_name}}, your order #{{order_id}} has shipped! Track: {{tracking_url}}\",\n  \"variables_schema_json\": {\n    \"first_name\": { \"type\": \"string\", \"required\": true },\n    \"order_id\": { \"type\": \"string\", \"required\": true },\n    \"tracking_url\": { \"type\": \"string\", \"required\": true }\n  },\n  \"version\": \"v1\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/notification-templates",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notification-templates"
+              ]
+            },
+            "description": "Create SMS template (no subject)"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Template",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"order_shipped\",\n  \"name\": \"Order Shipped Notification (Updated)\",\n  \"channel\": \"email\",\n  \"locale\": \"en\",\n  \"subject_tpl\": \"\ud83d\ude9a Your order #{{order_id}} is on the way!\",\n  \"body_tpl\": \"Hello {{first_name}},\\n\\nExciting news! Your order #{{order_id}} has shipped.\\n\\nEstimated delivery: {{delivery_date}}\\nTrack your package: {{tracking_url}}\\n\\nThank you for choosing us!\",\n  \"variables_schema_json\": {\n    \"first_name\": { \"type\": \"string\", \"required\": true },\n    \"order_id\": { \"type\": \"string\", \"required\": true },\n    \"tracking_url\": { \"type\": \"string\", \"required\": true },\n    \"delivery_date\": { \"type\": \"string\", \"required\": false }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/notification-templates/{{template_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notification-templates",
+                "{{template_id}}"
+              ]
+            },
+            "description": "Update template - creates new version, archives old"
+          },
+          "response": []
+        },
+        {
+          "name": "Deactivate Template",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/notification-templates/{{template_id}}/deactivate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notification-templates",
+                "{{template_id}}",
+                "deactivate"
+              ]
+            },
+            "description": "Deactivate template - prevents new messages from using it"
+          },
+          "response": []
+        },
+        {
+          "name": "Activate Template",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/notification-templates/{{template_id}}/activate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notification-templates",
+                "{{template_id}}",
+                "activate"
+              ]
+            },
+            "description": "Activate inactive template"
+          },
+          "response": []
+        }
+      ],
+      "description": "Template management with versioning"
+    },
+    {
+      "name": "Scheduling",
+      "item": [
+        {
+          "name": "Create One-Time Schedule",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"schedule_type\": \"one_time\",\n  \"fire_at\": \"2026-03-17T10:00:00Z\",\n  \"meta\": {\n    \"description\": \"Send tomorrow at 10am\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/notifications/{{message_id}}/schedules",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notifications",
+                "{{message_id}}",
+                "schedules"
+              ]
+            },
+            "description": "Schedule notification for specific future time\n\nIdempotency: Via Idempotency-Key header"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Reminder Workflow",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"schedule_type\": \"reminder_workflow\",\n  \"step_no\": 1,\n  \"delay_minutes\": 1440,\n  \"fire_at\": \"2026-03-17T10:00:00Z\",\n  \"meta\": {\n    \"workflow\": \"payment_reminder\",\n    \"step_description\": \"First reminder - 24 hours before due\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/notifications/{{message_id}}/schedules",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notifications",
+                "{{message_id}}",
+                "schedules"
+              ]
+            },
+            "description": "Create multi-step reminder workflow schedule"
+          },
+          "response": []
+        },
+        {
+          "name": "Fire Schedule",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/notification-schedules/{{schedule_id}}/fire",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notification-schedules",
+                "{{schedule_id}}",
+                "fire"
+              ]
+            },
+            "description": "Execute scheduled notification (worker endpoint)"
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel Schedule",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/notification-schedules/{{schedule_id}}/cancel",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notification-schedules",
+                "{{schedule_id}}",
+                "cancel"
+              ]
+            },
+            "description": "Cancel pending scheduled notification"
+          },
+          "response": []
+        }
+      ],
+      "description": "Schedule notifications for future delivery"
+    },
+    {
+      "name": "User Preferences",
+      "item": [
+        {
+          "name": "Get Preferences",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/notification-preferences?account_id=1&person_id=100",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notification-preferences"
+              ],
+              "query": [
+                {
+                  "key": "account_id",
+                  "value": "1"
+                },
+                {
+                  "key": "person_id",
+                  "value": "100"
+                }
+              ]
+            },
+            "description": "Get notification preferences (auto-creates if not exists)"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Preferences - Set Quiet Hours",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"active\",\n  \"quiet_hours\": {\n    \"enabled\": true,\n    \"timezone\": \"America/Los_Angeles\",\n    \"start\": \"22:00\",\n    \"end\": \"08:00\"\n  },\n  \"meta\": {\n    \"last_updated_by\": \"user\",\n    \"reason\": \"User preference update\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/notification-preferences/{{preference_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notification-preferences",
+                "{{preference_id}}"
+              ]
+            },
+            "description": "Update preferences with quiet hours configuration"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Preferences - Opt Out",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"inactive\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/notification-preferences/{{preference_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notification-preferences",
+                "{{preference_id}}"
+              ]
+            },
+            "description": "Opt out of all notifications"
+          },
+          "response": []
+        },
+        {
+          "name": "Enable Email Channel",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"channel\": \"email\",\n  \"enabled\": true,\n  \"destination\": \"user@example.com\",\n  \"priority\": 1,\n  \"meta\": {\n    \"verified\": true,\n    \"verified_at\": \"2026-03-16T10:00:00Z\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/notification-preferences/{{preference_id}}/channels/email",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notification-preferences",
+                "{{preference_id}}",
+                "channels",
+                "email"
+              ]
+            },
+            "description": "Enable and configure email notifications"
+          },
+          "response": []
+        },
+        {
+          "name": "Enable SMS Channel",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"channel\": \"sms\",\n  \"enabled\": true,\n  \"destination\": \"+1234567890\",\n  \"priority\": 2,\n  \"meta\": {\n    \"verified\": true,\n    \"carrier\": \"Verizon\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/notification-preferences/{{preference_id}}/channels/sms",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notification-preferences",
+                "{{preference_id}}",
+                "channels",
+                "sms"
+              ]
+            },
+            "description": "Enable and configure SMS notifications"
+          },
+          "response": []
+        },
+        {
+          "name": "Disable Push Channel",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"channel\": \"push\",\n  \"enabled\": false\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/notification-preferences/{{preference_id}}/channels/push",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notification-preferences",
+                "{{preference_id}}",
+                "channels",
+                "push"
+              ]
+            },
+            "description": "Disable push notifications"
+          },
+          "response": []
+        }
+      ],
+      "description": "Manage user notification preferences and channel settings"
+    },
+    {
+      "name": "Complete Workflows",
+      "item": [
+        {
+          "name": "1. Create Email Template",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.environment.set(\"template_id\", jsonData.template_id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"welcome_email\",\n  \"name\": \"Welcome Email\",\n  \"channel\": \"email\",\n  \"locale\": \"en\",\n  \"subject_tpl\": \"Welcome to GCPro, {{first_name}}!\",\n  \"body_tpl\": \"Hi {{first_name}},\\n\\nWelcome to GCPro! We're excited to have you on board.\\n\\nGet started: {{dashboard_url}}\\n\\nBest regards,\\nThe GCPro Team\",\n  \"version\": \"v1\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/notification-templates",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notification-templates"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2. Send Welcome Notification",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "pm.environment.set(\"message_id\", jsonData.message_id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message_key\": \"welcome-user-{{$timestamp}}\",\n  \"template_code\": \"welcome_email\",\n  \"account_id\": \"1\",\n  \"person_id\": \"100\",\n  \"channel\": \"email\",\n  \"destination\": \"newuser@example.com\",\n  \"payload_vars\": {\n    \"first_name\": \"Alice\",\n    \"dashboard_url\": \"https://app.gcpro.com/dashboard\"\n  },\n  \"trigger_event_type\": \"User.Created\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/notifications/send",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notifications",
+                "send"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3. Process Message",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData && jsonData.message_id) {",
+                  "  pm.environment.set(\"message_id\", jsonData.message_id);",
+                  "  pm.environment.set(\"attempt_no\", jsonData.attempt_no);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/v1/notifications/process-next",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notifications",
+                "process-next"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "4. Record Successful Delivery",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"sendgrid\",\n  \"status\": \"sent\",\n  \"provider_ref\": \"SG-{{$timestamp}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/notifications/{{message_id}}/attempts",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notifications",
+                "{{message_id}}",
+                "attempts"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Complete end-to-end workflow examples"
+    },
+    {
+      "name": "Phase 5 \u2014 Schedule Dispatcher (Cron)",
+      "item": [
+        {
+          "name": "Dispatch Due Schedules (cron every 1 min)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/notifications/schedule/dispatch",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "notifications",
+                "schedule",
+                "dispatch"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "description": "Phase 5: Processes all pending notification_schedule rows whose fire_at <= NOW(). Called by cron every minute. For grace_expiry schedules, emits GRACE_EXPIRY_DUE which triggers policy freeze."
+          }
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Add X-User-Id header",
+          "pm.request.headers.add({",
+          "  key: 'X-User-Id',",
+          "  value: pm.collectionVariables.get('user_id') || '1'",
+          "});",
+          "",
+          "// Add Idempotency-Key for POST/PUT requests",
+          "if (pm.request.method === 'POST' || pm.request.method === 'PUT') {",
+          "  const existingKey = pm.request.headers.get('Idempotency-Key');",
+          "  if (!existingKey) {",
+          "    pm.request.headers.add({",
+          "      key: 'Idempotency-Key',",
+          "      value: pm.variables.replaceIn('{{$guid}}')",
+          "    });",
+          "  }",
+          "}"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          ""
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "user_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "template_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "message_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "schedule_id",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "preference_id",
+      "value": "1",
+      "type": "string"
+    }
+  ]
 }

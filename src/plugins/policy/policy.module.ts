@@ -35,6 +35,7 @@ import { ClaimSettledHandler } from './handlers/claim-settled.handler';
 import { ClaimSettledConsumer } from './consumers/claim-settled.consumer';
 import { WalletThresholdBreachedHandler } from './handlers/wallet-threshold-breached.handler';
 import { WalletThresholdBreachedConsumer } from './consumers/wallet-threshold-breached.consumer';
+import { GraceExpiryDueConsumer } from './consumers/grace-expiry-due.consumer';         // Phase 5 / H4
 import { PolicyController } from './controllers/policy.controller';
 import { PolicyAdminController } from './controllers/policy-admin.controller';
 
@@ -85,6 +86,8 @@ import { PolicyAdminController } from './controllers/policy-admin.controller';
     // C8: Deposit threshold → remediation case
     WalletThresholdBreachedHandler,
     WalletThresholdBreachedConsumer,
+    // Phase 5 / H4: Grace expiry dispatch → expire remediation case
+    GraceExpiryDueConsumer,
   ],
   controllers: [PolicyController, PolicyAdminController],
   exports: [PolicyWorkflowService],
