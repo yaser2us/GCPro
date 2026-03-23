@@ -1,0 +1,56 @@
+$kind: http-request
+description: >-
+  Fields (from RegistrationTokenIssueDto):
+
+  - purpose: 'registration' | 'phone_verify' | 'email_verify' | 'password_reset'
+  | 'login' (optional, defaults to 'registration')
+
+  - channel_type: 'email' | 'sms' | 'whatsapp' (required)
+
+  - channel_value: email address or phone number (required)
+
+  - invite_code: optional referral/invite code
+
+  - token: magic-link token (optional)
+
+  - otp_hash: bcrypt hash of OTP digits (optional)
+
+  - expires_at: ISO 8601 datetime (required)
+
+  - meta_json: arbitrary metadata object (optional)
+
+
+  Cooldown: rejects with REGISTRATION_TOKEN_COOLDOWN_ACTIVE if a pending token
+  for this channel_value was created within the last 60 seconds.
+url: "{{base_url}}/v1/identity/registration-tokens"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "purpose": "registration",
+      "channel_type": "sms",
+      "channel_value": "{{target_phone}}",
+      "otp_hash": "$2b$10$exampleBcryptHashOfOTP123456",
+      "expires_at": "2099-12-31T23:59:59.000Z",
+      "meta_json": { "ip": "127.0.0.1" }
+    }
+scripts:
+  - type: beforeRequest
+    code: "pm.request.headers.add({ key: 'Idempotency-Key', value:
+      pm.variables.replaceIn('{{$guid}}') });"
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Status is 201', () => pm.response.to.have.status(201));
+      const json = pm.response.json();
+      if (json && json.id) {
+        pm.collectionVariables.set('registration_token_id', json.id);
+        console.log('registration_token_id set to', json.id);
+      }
+    language: text/javascript
+order: 1000

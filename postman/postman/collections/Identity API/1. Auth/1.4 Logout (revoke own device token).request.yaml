@@ -1,0 +1,39 @@
+$kind: http-request
+description: |-
+  Authenticated (identity:user). Actor must own the device_token_id.
+
+  Body field (from LogoutDto inline — controller @Body('device_token_id')):
+  - device_token_id: number — ID of the device token to revoke
+
+  Guards:
+  - DEVICE_TOKEN_NOT_FOUND
+  - DEVICE_TOKEN_NOT_OWNED_BY_USER (user_id mismatch)
+  - DEVICE_TOKEN_ALREADY_REVOKED
+url: "{{base_url}}/v1/identity/logout"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{user_user_id}}"
+  x-user-role: "{{user_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "device_token_id": {{device_token_id}}
+    }
+scripts:
+  - type: beforeRequest
+    code: "pm.request.headers.add({ key: 'Idempotency-Key', value:
+      pm.variables.replaceIn('{{$guid}}') });"
+    language: text/javascript
+  - type: afterResponse
+    code: >-
+      pm.test('Status is 200', () => pm.response.to.have.status(200));
+
+      const json = pm.response.json();
+
+      if (json) {
+        pm.test('Device token is revoked', () => pm.expect(json.status).to.equal('revoked'));
+      }
+    language: text/javascript
+order: 4000

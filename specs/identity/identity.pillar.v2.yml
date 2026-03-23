@@ -1,0 +1,1581 @@
+version: "2.0.0"
+spec_id: "identity.pillar.v2"
+domain: "identity"
+plugin: "identity"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# OWNERSHIP
+# ──────────────────────────────────────────────────────────────────────────────
+
+ownership:
+  owner_plugin: "identity"
+  owns_tables:
+    - "device_token"
+    - "registration_token"
+    - "verification_status"
+    - "onboarding_progress"
+  cross_plugin_writes: false
+  cross_plugin_integration:
+    allowed_via:
+      - "command_api"
+      - "outbox_events"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DEPENDENCIES
+# ──────────────────────────────────────────────────────────────────────────────
+
+dependencies:
+  corekit:
+    transaction_wrapper: "withTxn"
+    outbox_service: "OutboxService.emit"
+    guard_helper: "guard"
+    domain_error: "DomainError"
+
+  core_tables_readonly:
+    - table_name: "user"
+      usage: "device_token.user_id FK → user.id; onboarding_progress.user_id FK → user.id; Login reads user by channel_value; GetCurrentUser reads user by actor.user_id"
+      access: "readonly_fk"
+
+    - table_name: "account"
+      usage: "verification_status.account_id FK → account.id"
+      access: "readonly_fk"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CONVENTIONS
+# ──────────────────────────────────────────────────────────────────────────────
+
+conventions:
+  workflow_discipline:
+    - "guard"
+    - "write"
+    - "emit"
+    - "commit"
+
+  status_mutation_policy: "Status fields may only be mutated through commands."
+
+  outbox:
+    required_envelope_fields:
+      - "event_name"
+      - "event_version"
+      - "aggregate_type"
+      - "aggregate_id"
+      - "actor_user_id"
+      - "occurred_at"
+      - "correlation_id"
+      - "causation_id"
+
+  idempotency:
+    required_header: "Idempotency-Key"
+    default_scope: "actor_user_id + command_name"
+    db_strategy:
+      - "UNIQUE(idempotency_key) where applicable"
+      - "MySQL ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)"
+      - "device_token: upsert via UNIQUE(platform, token)"
+      - "verification_status: upsert via UNIQUE(account_id, type)"
+      - "onboarding_progress: upsert via UNIQUE(user_id, step_code)"
+
+  otp_cooldown:
+    policy: "IssueRegistrationToken enforces a 60-second cooldown per channel_value to prevent OTP spam."
+    enforcement: "count pending registration_tokens for channel_value created within last 60 seconds; reject if count > 0"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SCHEMA
+# ──────────────────────────────────────────────────────────────────────────────
+
+schema:
+  tables:
+
+    device_token:
+      description: >
+        Push notification device tokens per user.
+        Tracks which devices a user has registered across platforms (fcm, apns, web, etc.).
+        Revocation removes a token from the active set without hard-delete.
+        UNIQUE(platform, token) enforces one row per physical device credential.
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Surrogate primary key"
+        user_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "Owning user; FK → user.id CASCADE"
+        platform:
+          type: varchar
+          length: 16
+          nullable: false
+          description: "Push platform: fcm | apns | web"
+        token:
+          type: varchar
+          length: 512
+          nullable: false
+          description: "Raw device push token issued by the platform"
+        status:
+          type: varchar
+          length: 32
+          nullable: false
+          default: "active"
+          description: "Lifecycle: active | inactive | revoked"
+        last_seen_at:
+          type: datetime
+          nullable: true
+          description: "Last time this device token was used or refreshed"
+        created_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Row creation timestamp"
+        updated_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Last update timestamp"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          uk_device_token:
+            columns: ["platform", "token"]
+        indexes:
+          idx_device_user:
+            columns: ["user_id"]
+          idx_device_status:
+            columns: ["status"]
+        foreign_keys:
+          fk_device_token_user:
+            columns: ["user_id"]
+            references: "user(id)"
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+
+    registration_token:
+      description: >
+        Short-lived tokens used for email/phone verification, OTP delivery, and
+        magic-link authentication. Multiple pending tokens per channel are allowed
+        (resend flow). Expiry and consume logic decide which token is valid.
+        No UNIQUE constraint — idempotency is enforced via Idempotency-Key header for tracing.
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Surrogate primary key"
+        purpose:
+          type: varchar
+          length: 32
+          nullable: false
+          default: "registration"
+          description: "Intent: registration | phone_verify | email_verify | password_reset | login"
+        channel_type:
+          type: varchar
+          length: 16
+          nullable: false
+          description: "Delivery channel: email | sms | whatsapp"
+        channel_value:
+          type: varchar
+          length: 255
+          nullable: false
+          description: "Email address or phone number"
+        invite_code:
+          type: varchar
+          length: 64
+          nullable: true
+          description: "Optional referral or invite code submitted at registration time"
+        token:
+          type: varchar
+          length: 128
+          nullable: true
+          description: "Magic-link token (URL-safe random string)"
+        otp_hash:
+          type: varchar
+          length: 255
+          nullable: true
+          description: "Bcrypt hash of the OTP digits"
+        status:
+          type: varchar
+          length: 32
+          nullable: false
+          default: "pending"
+          description: "Lifecycle: pending | verified | consumed | expired"
+        meta_json:
+          type: json
+          nullable: true
+          description: "Arbitrary metadata: IP address, user-agent, locale, etc."
+        expires_at:
+          type: datetime
+          nullable: false
+          description: "Token expiry time; enforced by guard in VerifyRegistrationToken"
+        created_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Row creation timestamp"
+      constraints:
+        primary_key: ["id"]
+        unique_keys: {}
+        indexes:
+          idx_regtok_channel:
+            columns: ["channel_type", "channel_value"]
+          idx_regtok_invite:
+            columns: ["invite_code"]
+          idx_regtok_token:
+            columns: ["token"]
+          idx_regtok_status_expires:
+            columns: ["status", "expires_at"]
+        foreign_keys: {}
+
+    verification_status:
+      description: >
+        Tracks per-account verification state across multiple dimensions
+        (email, phone, kyc, id_document). UNIQUE(account_id, type) ensures
+        one authoritative status per dimension per account.
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Surrogate primary key"
+        account_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "Account being verified; FK → account.id CASCADE"
+        type:
+          type: varchar
+          length: 32
+          nullable: false
+          description: "Verification dimension: email | phone | kyc | id_document"
+        status:
+          type: varchar
+          length: 32
+          nullable: false
+          description: "Result: unverified | pending | verified | failed | expired"
+        meta_json:
+          type: json
+          nullable: true
+          description: "Provider response, reference IDs, audit notes"
+        updated_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Last status change timestamp"
+        created_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Row creation timestamp"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          uk_verification_account_type:
+            columns: ["account_id", "type"]
+        indexes:
+          idx_verification_status:
+            columns: ["type", "status"]
+        foreign_keys:
+          fk_verification_account:
+            columns: ["account_id"]
+            references: "account(id)"
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+
+    onboarding_progress:
+      description: >
+        Tracks completion state of each onboarding step per user.
+        UNIQUE(user_id, step_code) ensures one authoritative state per step.
+        Steps are upserted individually; no master-detail table required.
+      columns:
+        id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          auto_increment: true
+          description: "Surrogate primary key"
+        user_id:
+          type: bigint
+          unsigned: true
+          nullable: false
+          description: "User whose onboarding is tracked; FK → user.id CASCADE"
+        step_code:
+          type: varchar
+          length: 64
+          nullable: false
+          description: "Onboarding step identifier: profile_complete | kyc_verified | guideline_accepted | device_registered | etc."
+        state:
+          type: varchar
+          length: 16
+          nullable: false
+          description: "Step state: pending | completed | skipped | failed"
+        meta_json:
+          type: json
+          nullable: true
+          description: "Step-specific metadata (e.g. completed_at, source event)"
+        updated_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          on_update: "CURRENT_TIMESTAMP"
+          description: "Last state change timestamp"
+        created_at:
+          type: datetime
+          nullable: false
+          default: "CURRENT_TIMESTAMP"
+          description: "Row creation timestamp"
+      constraints:
+        primary_key: ["id"]
+        unique_keys:
+          uk_onboarding_user_step:
+            columns: ["user_id", "step_code"]
+        indexes:
+          idx_onboarding_user_state:
+            columns: ["user_id", "state"]
+        foreign_keys:
+          fk_onboarding_user:
+            columns: ["user_id"]
+            references: "user(id)"
+            on_delete: "CASCADE"
+            on_update: "CASCADE"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# RESOURCES
+# ──────────────────────────────────────────────────────────────────────────────
+
+resources:
+  - name: DeviceToken
+    kind: aggregate
+    table: device_token
+    primary_key: id
+    statuses:
+      - active
+      - inactive
+      - revoked
+    api_surface:
+      - "POST /v1/identity/device-tokens"
+      - "POST /v1/identity/device-tokens/:deviceTokenId/revoke"
+      - "POST /v1/identity/logout"
+
+  - name: RegistrationToken
+    kind: aggregate
+    table: registration_token
+    primary_key: id
+    statuses:
+      - pending
+      - verified
+      - consumed
+      - expired
+    api_surface:
+      - "POST /v1/identity/registration-tokens"
+      - "POST /v1/identity/registration-tokens/:registrationTokenId/verify"
+      - "POST /v1/identity/registration-tokens/:registrationTokenId/consume"
+      - "POST /v1/identity/registration-tokens/:registrationTokenId/expire"
+      - "POST /v1/identity/login"
+
+  - name: VerificationStatus
+    kind: aggregate
+    table: verification_status
+    primary_key: id
+    statuses:
+      - unverified
+      - pending
+      - verified
+      - failed
+      - expired
+    api_surface:
+      - "POST /v1/identity/verification-status"
+
+  - name: OnboardingProgress
+    kind: aggregate
+    table: onboarding_progress
+    primary_key: id
+    statuses:
+      - pending
+      - completed
+      - skipped
+      - failed
+    api_surface:
+      - "POST /v1/identity/onboarding-progress"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# AGGREGATES
+# ──────────────────────────────────────────────────────────────────────────────
+
+aggregates:
+  DEVICE_TOKEN:
+    root_table: "device_token"
+    primary_key: "id"
+    statuses:
+      - active
+      - inactive
+      - revoked
+
+  REGISTRATION_TOKEN:
+    root_table: "registration_token"
+    primary_key: "id"
+    statuses:
+      - pending
+      - verified
+      - consumed
+      - expired
+
+  VERIFICATION_STATUS:
+    root_table: "verification_status"
+    primary_key: "id"
+    statuses:
+      - unverified
+      - pending
+      - verified
+      - failed
+      - expired
+
+  ONBOARDING_PROGRESS:
+    root_table: "onboarding_progress"
+    primary_key: "id"
+    statuses:
+      - pending
+      - completed
+      - skipped
+      - failed
+
+# ──────────────────────────────────────────────────────────────────────────────
+# TYPES
+# ──────────────────────────────────────────────────────────────────────────────
+
+types:
+  Actor:
+    fields:
+      actor_user_id: string
+      actor_role: string
+      correlation_id: "string | undefined"
+      causation_id: "string | undefined"
+
+  DeviceTokenSummary:
+    fields:
+      id: number
+      user_id: number
+      platform: string
+      status: string
+      last_seen_at: "Date | null"
+      created_at: Date
+
+  RegistrationTokenSummary:
+    fields:
+      id: number
+      purpose: string
+      channel_type: string
+      channel_value: string
+      status: string
+      expires_at: Date
+      created_at: Date
+
+  VerificationStatusSummary:
+    fields:
+      id: number
+      account_id: number
+      type: string
+      status: string
+      updated_at: Date
+
+  OnboardingProgressSummary:
+    fields:
+      id: number
+      user_id: number
+      step_code: string
+      state: string
+      updated_at: Date
+
+  CurrentUserSummary:
+    fields:
+      user_id: number
+      phone_number: "string | null"
+      email: "string | null"
+      email_verified_at: "Date | null"
+      status: string
+      created_at: Date
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DTOs
+# ──────────────────────────────────────────────────────────────────────────────
+
+dtos:
+  DeviceTokenRegisterDto:
+    description: "Register a new device push token for a user"
+    fields:
+      user_id:
+        type: number
+        required: true
+        description: "User to register the device for"
+      platform:
+        type: string
+        required: true
+        max_len: 16
+        description: "Push platform: fcm | apns | web"
+      token:
+        type: string
+        required: true
+        max_len: 512
+        description: "Raw device token issued by the platform"
+
+  LoginDto:
+    description: "Authenticate a user via OTP and register the caller's device token"
+    fields:
+      channel_type:
+        type: string
+        required: true
+        max_len: 16
+        description: "Channel the OTP was sent to: sms | email | whatsapp"
+      channel_value:
+        type: string
+        required: true
+        max_len: 255
+        description: "Phone number or email address matching the OTP channel"
+      otp_plain:
+        type: string
+        required: true
+        max_len: 16
+        description: "Plain OTP digits submitted by the user"
+      platform:
+        type: string
+        required: true
+        max_len: 16
+        description: "Device platform for session token registration: fcm | apns | web"
+      device_token:
+        type: string
+        required: true
+        max_len: 512
+        description: "Push token for the device establishing this session"
+
+  RegistrationTokenIssueDto:
+    description: "Issue a new email/phone verification token or OTP"
+    fields:
+      purpose:
+        type: string
+        required: false
+        max_len: 32
+        default: "registration"
+        description: "Intent: registration | phone_verify | email_verify | password_reset | login"
+      channel_type:
+        type: string
+        required: true
+        max_len: 16
+        description: "email | sms | whatsapp"
+      channel_value:
+        type: string
+        required: true
+        max_len: 255
+        description: "Email address or phone number"
+      invite_code:
+        type: string
+        required: false
+        max_len: 64
+        description: "Optional referral or invite code"
+      token:
+        type: string
+        required: false
+        max_len: 128
+        description: "Magic-link token (if applicable; otherwise generated server-side)"
+      otp_hash:
+        type: string
+        required: false
+        max_len: 255
+        description: "Pre-hashed OTP (if caller hashes; otherwise generated server-side)"
+      expires_at:
+        type: string
+        required: true
+        description: "ISO 8601 expiry datetime"
+      meta_json:
+        type: object
+        required: false
+        description: "Arbitrary metadata (IP, user-agent, locale)"
+
+  RegistrationTokenVerifyDto:
+    description: "Verify a registration token or OTP submitted by the user"
+    fields:
+      token:
+        type: string
+        required: false
+        max_len: 128
+        description: "Magic-link token (required if OTP not provided)"
+      otp_plain:
+        type: string
+        required: false
+        max_len: 16
+        description: "Plain OTP value to compare against otp_hash (required if token not provided)"
+
+  VerificationStatusUpsertDto:
+    description: "Upsert verification state for a given account and verification type"
+    fields:
+      account_id:
+        type: number
+        required: true
+        description: "Account being verified"
+      type:
+        type: string
+        required: true
+        max_len: 32
+        description: "Dimension: email | phone | kyc | id_document"
+      status:
+        type: string
+        required: true
+        max_len: 32
+        description: "Result: unverified | pending | verified | failed | expired"
+      meta_json:
+        type: object
+        required: false
+        description: "Provider response, reference IDs, audit notes"
+
+  OnboardingProgressUpsertDto:
+    description: "Upsert the state of a single onboarding step for a user"
+    fields:
+      user_id:
+        type: number
+        required: true
+        description: "User whose onboarding is tracked"
+      step_code:
+        type: string
+        required: true
+        max_len: 64
+        description: "Onboarding step key: profile_complete | kyc_verified | guideline_accepted | device_registered"
+      state:
+        type: string
+        required: true
+        max_len: 16
+        description: "Step state: pending | completed | skipped | failed"
+      meta_json:
+        type: object
+        required: false
+        description: "Step-specific metadata"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# EVENTS
+# ──────────────────────────────────────────────────────────────────────────────
+
+events:
+  - name: DEVICE_TOKEN_REGISTERED
+    version: 1
+    aggregate_type: DEVICE_TOKEN
+    description: "A device push token was registered or re-activated for a user"
+
+  - name: DEVICE_TOKEN_REVOKED
+    version: 1
+    aggregate_type: DEVICE_TOKEN
+    description: "A device push token was revoked and will no longer receive notifications"
+
+  - name: USER_LOGGED_IN
+    version: 1
+    aggregate_type: DEVICE_TOKEN
+    description: "A user authenticated via OTP and a session device token was established"
+
+  - name: USER_LOGGED_OUT
+    version: 1
+    aggregate_type: DEVICE_TOKEN
+    description: "A user revoked their active session device token (logout)"
+
+  - name: REGISTRATION_TOKEN_ISSUED
+    version: 1
+    aggregate_type: REGISTRATION_TOKEN
+    description: "A verification token or OTP was issued for a channel"
+
+  - name: REGISTRATION_TOKEN_VERIFIED
+    version: 1
+    aggregate_type: REGISTRATION_TOKEN
+    description: "A user successfully verified their token or OTP"
+
+  - name: REGISTRATION_TOKEN_CONSUMED
+    version: 1
+    aggregate_type: REGISTRATION_TOKEN
+    description: "A verified token was consumed to complete a flow (e.g. registration, password reset)"
+
+  - name: REGISTRATION_TOKEN_EXPIRED
+    version: 1
+    aggregate_type: REGISTRATION_TOKEN
+    description: "A registration token was force-expired by an admin before natural TTL"
+
+  - name: VERIFICATION_STATUS_UPDATED
+    version: 1
+    aggregate_type: VERIFICATION_STATUS
+    description: "A verification dimension (email, phone, kyc) changed status for an account"
+
+  - name: ONBOARDING_STEP_UPDATED
+    version: 1
+    aggregate_type: ONBOARDING_PROGRESS
+    description: "An onboarding step state was updated for a user"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# COMMANDS
+# ──────────────────────────────────────────────────────────────────────────────
+
+commands:
+
+  # ── AUTH ─────────────────────────────────────────────────────────────────────
+
+  Login:
+    description: >
+      Authenticate a user via OTP. Looks up the user by channel_value, finds the
+      most recent pending registration_token matching channel_value + purpose='login',
+      verifies the OTP hash, consumes the token, and upserts a device_token for the
+      caller's device. Returns user identity and device_token for JWT issuance at the
+      application layer. No auth header required — this is the unauthenticated entry point.
+    path: "/v1/identity/login"
+    method: POST
+    idempotent: false
+    permissions: []
+    input:
+      dto: LoginDto
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: read
+        description: "Look up user by channel_value (phone_number for sms, email for email)"
+        table: user
+        filter: "phone_number = dto.channel_value OR email = dto.channel_value"
+        assign: authUser
+      - kind: guard
+        description: "User must exist"
+        expression: "authUser != null"
+        error: "USER_NOT_FOUND"
+      - kind: guard
+        description: "User account must be active"
+        expression: "authUser.status == 'active'"
+        error: "USER_ACCOUNT_INACTIVE"
+      - kind: read
+        description: "Find most recent pending login registration_token for this channel"
+        table: registration_token
+        filter: "channel_value = dto.channel_value AND purpose = 'login' AND status = 'pending' ORDER BY id DESC LIMIT 1"
+        assign: regToken
+      - kind: guard
+        description: "A pending login token must exist"
+        expression: "regToken != null"
+        error: "REGISTRATION_TOKEN_NOT_FOUND"
+      - kind: guard
+        description: "Token must not be expired"
+        expression: "regToken.expires_at > now()"
+        error: "REGISTRATION_TOKEN_EXPIRED"
+      - kind: call
+        description: "Compare submitted OTP against stored bcrypt hash"
+        fn: "verifyOtp(dto.otp_plain, regToken.otp_hash)"
+        assign: otpValid
+      - kind: guard
+        description: "OTP must be valid"
+        expression: "otpValid == true"
+        error: "REGISTRATION_TOKEN_INVALID"
+      - kind: update
+        description: "Consume the registration token to prevent reuse"
+        table: registration_token
+        filter: "id = regToken.id"
+        data:
+          status: "consumed"
+      - kind: upsert
+        description: "Register or re-activate the caller's device token"
+        table: device_token
+        unique_by: ["platform", "token"]
+        data:
+          user_id: "authUser.id"
+          platform: "dto.platform"
+          token: "dto.device_token"
+          status: "active"
+          last_seen_at: "now()"
+        assign: sessionDevice
+      - kind: outbox_emit
+        event: USER_LOGGED_IN
+        aggregate_type: DEVICE_TOKEN
+        aggregate_id: "sessionDevice.id"
+        payload:
+          user_id: "authUser.id"
+          platform: "sessionDevice.platform"
+          channel_type: "regToken.channel_type"
+    response:
+      http_status: 200
+      body:
+        user: CurrentUserSummary
+        device_token: DeviceTokenSummary
+
+  Logout:
+    description: >
+      Revoke the caller's active session device token. The device_token_id must belong
+      to the authenticated user. Sets status = 'revoked' and emits USER_LOGGED_OUT.
+      Idempotent — revoking an already-revoked token is a no-op guard rejection.
+    path: "/v1/identity/logout"
+    method: POST
+    idempotent: true
+    permissions:
+      - "identity:user"
+    input:
+      path_params:
+        - deviceTokenId: number
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: read
+        description: "Load device token by ID"
+        table: device_token
+        filter: "id = deviceTokenId"
+        assign: deviceToken
+      - kind: guard
+        description: "Token must exist"
+        expression: "deviceToken != null"
+        error: "DEVICE_TOKEN_NOT_FOUND"
+      - kind: guard
+        description: "Token must belong to the authenticated user"
+        expression: "deviceToken.user_id == actor.actor_user_id"
+        error: "DEVICE_TOKEN_NOT_OWNED_BY_USER"
+      - kind: guard
+        description: "Token must not already be revoked"
+        expression: "deviceToken.status != 'revoked'"
+        error: "DEVICE_TOKEN_ALREADY_REVOKED"
+      - kind: update
+        description: "Revoke the device token"
+        table: device_token
+        filter: "id = deviceTokenId"
+        data:
+          status: "revoked"
+      - kind: outbox_emit
+        event: USER_LOGGED_OUT
+        aggregate_type: DEVICE_TOKEN
+        aggregate_id: "deviceTokenId"
+        payload:
+          user_id: "deviceToken.user_id"
+          platform: "deviceToken.platform"
+    response:
+      http_status: 200
+      body: DeviceTokenSummary
+
+  GetCurrentUser:
+    description: >
+      Return the authenticated user's identity profile from the user table.
+      Read-only query — no state changes, no events emitted. Intended as the
+      /me endpoint for clients to retrieve their own user record after login.
+    path: "/v1/identity/me"
+    method: GET
+    idempotent: true
+    permissions:
+      - "identity:user"
+    input:
+      headers: []
+    steps:
+      - kind: read
+        description: "Load authenticated user by actor.user_id"
+        table: user
+        filter: "id = actor.actor_user_id"
+        assign: authUser
+      - kind: guard
+        description: "User must exist"
+        expression: "authUser != null"
+        error: "USER_NOT_FOUND"
+    response:
+      http_status: 200
+      body: CurrentUserSummary
+
+  # ── DEVICE TOKEN ─────────────────────────────────────────────────────────────
+
+  RegisterDevice:
+    description: >
+      Register a device push token for a user. Upserts on UNIQUE(platform, token).
+      If the token already exists for this user, it is re-activated and last_seen_at updated.
+      If it exists for a different user, guard rejects.
+    path: "/v1/identity/device-tokens"
+    method: POST
+    idempotent: true
+    permissions:
+      - "identity:admin"
+    input:
+      dto: DeviceTokenRegisterDto
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: read
+        description: "Look up existing device_token by platform + token"
+        table: device_token
+        filter: "platform = dto.platform AND token = dto.token"
+        assign: existing
+      - kind: guard
+        description: "If token exists and belongs to a different user, reject"
+        expression: "existing == null OR existing.user_id == dto.user_id"
+        error: "DEVICE_TOKEN_OWNED_BY_ANOTHER_USER"
+      - kind: upsert
+        description: "Insert or re-activate device token"
+        table: device_token
+        unique_by: ["platform", "token"]
+        data:
+          user_id: "dto.user_id"
+          platform: "dto.platform"
+          token: "dto.token"
+          status: "active"
+          last_seen_at: "now()"
+        assign: result
+      - kind: outbox_emit
+        event: DEVICE_TOKEN_REGISTERED
+        aggregate_type: DEVICE_TOKEN
+        aggregate_id: "result.id"
+        payload:
+          user_id: "result.user_id"
+          platform: "result.platform"
+          status: "result.status"
+    response:
+      http_status: 201
+      body: DeviceTokenSummary
+
+  RevokeDevice:
+    description: >
+      Revoke a device push token by ID. Sets status = 'revoked'. Token will no longer
+      receive push notifications. Actor must own the token or have admin permission.
+      Use Logout for the user-initiated self-revoke flow.
+    path: "/v1/identity/device-tokens/:deviceTokenId/revoke"
+    method: POST
+    idempotent: true
+    permissions:
+      - "identity:admin"
+    input:
+      path_params:
+        - deviceTokenId: number
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: read
+        description: "Load device token by ID"
+        table: device_token
+        filter: "id = deviceTokenId"
+        assign: deviceToken
+      - kind: guard
+        description: "Token must exist"
+        expression: "deviceToken != null"
+        error: "DEVICE_TOKEN_NOT_FOUND"
+      - kind: guard
+        description: "Token must not already be revoked"
+        expression: "deviceToken.status != 'revoked'"
+        error: "DEVICE_TOKEN_ALREADY_REVOKED"
+      - kind: update
+        description: "Set status to revoked"
+        table: device_token
+        filter: "id = deviceTokenId"
+        data:
+          status: "revoked"
+      - kind: outbox_emit
+        event: DEVICE_TOKEN_REVOKED
+        aggregate_type: DEVICE_TOKEN
+        aggregate_id: "deviceTokenId"
+        payload:
+          user_id: "deviceToken.user_id"
+          platform: "deviceToken.platform"
+    response:
+      http_status: 200
+      body: DeviceTokenSummary
+
+  # ── REGISTRATION TOKEN ───────────────────────────────────────────────────────
+
+  IssueRegistrationToken:
+    description: >
+      Issue a new verification token or OTP for a channel (email/phone/sms).
+      Enforces a 60-second cooldown per channel_value to prevent OTP spam:
+      if a pending token for this channel was created within the last 60 seconds,
+      the command rejects with REGISTRATION_TOKEN_COOLDOWN_ACTIVE.
+      Creates a new registration_token row with status=pending and a TTL.
+      Multiple pending tokens per channel are intentionally allowed (resend flow);
+      expiry and consume logic decide which is valid.
+      idempotent: false — Idempotency-Key header is for tracing only, not DB deduplication.
+    path: "/v1/identity/registration-tokens"
+    method: POST
+    idempotent: false
+    permissions:
+      - "identity:admin"
+    input:
+      dto: RegistrationTokenIssueDto
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: count
+        description: "Count pending tokens for this channel created in the last 60 seconds (cooldown check)"
+        table: registration_token
+        filter: "channel_value = dto.channel_value AND status = 'pending' AND created_at > now() - INTERVAL 60 SECOND"
+        assign: recentCount
+      - kind: guard
+        description: "Reject if a token was already issued within the cooldown window"
+        expression: "recentCount == 0"
+        error: "REGISTRATION_TOKEN_COOLDOWN_ACTIVE"
+      - kind: insert
+        description: "Create registration token row"
+        table: registration_token
+        data:
+          purpose: "dto.purpose"
+          channel_type: "dto.channel_type"
+          channel_value: "dto.channel_value"
+          invite_code: "dto.invite_code"
+          token: "dto.token"
+          otp_hash: "dto.otp_hash"
+          status: "pending"
+          meta_json: "dto.meta_json"
+          expires_at: "dto.expires_at"
+        assign: result
+      - kind: outbox_emit
+        event: REGISTRATION_TOKEN_ISSUED
+        aggregate_type: REGISTRATION_TOKEN
+        aggregate_id: "result.id"
+        payload:
+          purpose: "result.purpose"
+          channel_type: "result.channel_type"
+          channel_value: "result.channel_value"
+          expires_at: "result.expires_at"
+    response:
+      http_status: 201
+      body: RegistrationTokenSummary
+
+  VerifyRegistrationToken:
+    description: >
+      Verify a registration token. Accepts either a magic-link token or a plain OTP
+      (compared against otp_hash). Sets status = 'verified'.
+    path: "/v1/identity/registration-tokens/:registrationTokenId/verify"
+    method: POST
+    idempotent: true
+    permissions:
+      - "identity:admin"
+    input:
+      dto: RegistrationTokenVerifyDto
+      path_params:
+        - registrationTokenId: number
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: read
+        description: "Load registration token by ID"
+        table: registration_token
+        filter: "id = registrationTokenId"
+        assign: regToken
+      - kind: guard
+        description: "Token must exist"
+        expression: "regToken != null"
+        error: "REGISTRATION_TOKEN_NOT_FOUND"
+      - kind: guard
+        description: "Token must be in pending status"
+        expression: "regToken.status == 'pending'"
+        error: "REGISTRATION_TOKEN_NOT_PENDING"
+      - kind: guard
+        description: "Token must not be expired"
+        expression: "regToken.expires_at > now()"
+        error: "REGISTRATION_TOKEN_EXPIRED"
+      - kind: call
+        description: "Verify token or OTP — magic-link token equality check OR bcrypt OTP hash comparison"
+        fn: "verifyTokenOrOtp(dto.token, regToken.token, dto.otp_plain, regToken.otp_hash)"
+        assign: tokenValid
+      - kind: guard
+        description: "Token or OTP must be valid"
+        expression: "tokenValid == true"
+        error: "REGISTRATION_TOKEN_INVALID"
+      - kind: update
+        description: "Mark as verified"
+        table: registration_token
+        filter: "id = registrationTokenId"
+        data:
+          status: "verified"
+      - kind: outbox_emit
+        event: REGISTRATION_TOKEN_VERIFIED
+        aggregate_type: REGISTRATION_TOKEN
+        aggregate_id: "registrationTokenId"
+        payload:
+          purpose: "regToken.purpose"
+          channel_type: "regToken.channel_type"
+          channel_value: "regToken.channel_value"
+    response:
+      http_status: 200
+      body: RegistrationTokenSummary
+
+  ConsumeRegistrationToken:
+    description: >
+      Mark a verified token as consumed. Called after a downstream action
+      (e.g. user account created, password changed) to prevent token reuse.
+    path: "/v1/identity/registration-tokens/:registrationTokenId/consume"
+    method: POST
+    idempotent: true
+    permissions:
+      - "identity:admin"
+    input:
+      path_params:
+        - registrationTokenId: number
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: read
+        description: "Load registration token by ID"
+        table: registration_token
+        filter: "id = registrationTokenId"
+        assign: regToken
+      - kind: guard
+        description: "Token must exist"
+        expression: "regToken != null"
+        error: "REGISTRATION_TOKEN_NOT_FOUND"
+      - kind: guard
+        description: "Token must be in verified status"
+        expression: "regToken.status == 'verified'"
+        error: "REGISTRATION_TOKEN_NOT_VERIFIED"
+      - kind: update
+        description: "Mark as consumed"
+        table: registration_token
+        filter: "id = registrationTokenId"
+        data:
+          status: "consumed"
+      - kind: outbox_emit
+        event: REGISTRATION_TOKEN_CONSUMED
+        aggregate_type: REGISTRATION_TOKEN
+        aggregate_id: "registrationTokenId"
+        payload:
+          purpose: "regToken.purpose"
+          channel_type: "regToken.channel_type"
+          channel_value: "regToken.channel_value"
+    response:
+      http_status: 200
+      body: RegistrationTokenSummary
+
+  ExpireRegistrationToken:
+    description: >
+      Admin command to force-expire a pending or verified registration token.
+      Used for security invalidation flows.
+    path: "/v1/identity/registration-tokens/:registrationTokenId/expire"
+    method: POST
+    idempotent: true
+    permissions:
+      - "identity:admin"
+    input:
+      path_params:
+        - registrationTokenId: number
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: read
+        description: "Load registration token by ID"
+        table: registration_token
+        filter: "id = registrationTokenId"
+        assign: regToken
+      - kind: guard
+        description: "Token must exist"
+        expression: "regToken != null"
+        error: "REGISTRATION_TOKEN_NOT_FOUND"
+      - kind: guard
+        description: "Token must not already be consumed or expired"
+        expression: "regToken.status == 'pending' OR regToken.status == 'verified'"
+        error: "REGISTRATION_TOKEN_ALREADY_TERMINAL"
+      - kind: update
+        description: "Force-expire the token"
+        table: registration_token
+        filter: "id = registrationTokenId"
+        data:
+          status: "expired"
+      - kind: outbox_emit
+        event: REGISTRATION_TOKEN_EXPIRED
+        aggregate_type: REGISTRATION_TOKEN
+        aggregate_id: "registrationTokenId"
+        payload:
+          purpose: "regToken.purpose"
+          channel_type: "regToken.channel_type"
+          channel_value: "regToken.channel_value"
+    response:
+      http_status: 200
+      body: RegistrationTokenSummary
+
+  # ── VERIFICATION STATUS ───────────────────────────────────────────────────────
+
+  UpsertVerificationStatus:
+    description: >
+      Upsert the verification status for a given account and verification type.
+      Uses UNIQUE(account_id, type) — creates the row if new, updates if existing.
+      Called by internal services and by the Foundation KYC_VERIFIED event consumer.
+    path: "/v1/identity/verification-status"
+    method: POST
+    idempotent: true
+    permissions:
+      - "identity:admin"
+    input:
+      dto: VerificationStatusUpsertDto
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: upsert
+        description: "Insert or update verification status"
+        table: verification_status
+        unique_by: ["account_id", "type"]
+        data:
+          account_id: "dto.account_id"
+          type: "dto.type"
+          status: "dto.status"
+          meta_json: "dto.meta_json"
+        assign: result
+      - kind: outbox_emit
+        event: VERIFICATION_STATUS_UPDATED
+        aggregate_type: VERIFICATION_STATUS
+        aggregate_id: "result.id"
+        payload:
+          account_id: "result.account_id"
+          type: "result.type"
+          status: "result.status"
+    response:
+      http_status: 200
+      body: VerificationStatusSummary
+
+  # ── ONBOARDING PROGRESS ───────────────────────────────────────────────────────
+
+  UpsertOnboardingProgress:
+    description: >
+      Upsert a single onboarding step state for a user.
+      Uses UNIQUE(user_id, step_code) — creates if new, updates state if existing.
+      Called directly by admin and by Foundation GUIDELINE_ACCEPTED event consumer.
+    path: "/v1/identity/onboarding-progress"
+    method: POST
+    idempotent: true
+    permissions:
+      - "identity:admin"
+    input:
+      dto: OnboardingProgressUpsertDto
+      headers:
+        - "Idempotency-Key"
+    steps:
+      - kind: upsert
+        description: "Insert or update onboarding step state"
+        table: onboarding_progress
+        unique_by: ["user_id", "step_code"]
+        data:
+          user_id: "dto.user_id"
+          step_code: "dto.step_code"
+          state: "dto.state"
+          meta_json: "dto.meta_json"
+        assign: result
+      - kind: outbox_emit
+        event: ONBOARDING_STEP_UPDATED
+        aggregate_type: ONBOARDING_PROGRESS
+        aggregate_id: "result.id"
+        payload:
+          user_id: "result.user_id"
+          step_code: "result.step_code"
+          state: "result.state"
+    response:
+      http_status: 200
+      body: OnboardingProgressSummary
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CHANGELOG
+# ──────────────────────────────────────────────────────────────────────────────
+
+changelog:
+  - version: "2.0.0"
+    date: "2026-03-23"
+    author: "system"
+    description: >
+      Initial identity pillar spec. Supersedes user-identity.pillar.v2 and core.identity.v1.
+      Consolidates device token, registration token, verification status, and onboarding progress
+      under a single identity plugin. Adds Login, Logout, and GetCurrentUser commands.
+      Adds OTP cooldown enforcement to IssueRegistrationToken.
+    changes:
+      - "Renamed pillar from user-identity to identity; all paths migrated from /api/v1/user-identity/ to /v1/identity/"
+      - "Defined schema for device_token, registration_token, verification_status, onboarding_progress (DDL-exact)"
+      - "Added Login command: OTP verification via registration_token + device_token upsert"
+      - "Added Logout command: user-self-revoke of own device token"
+      - "Added GetCurrentUser command: GET /v1/identity/me returning authenticated user record"
+      - "Added OTP cooldown guard to IssueRegistrationToken (60-second window per channel_value)"
+      - "Added USER_LOGGED_IN and USER_LOGGED_OUT events"
+      - "Added CurrentUserSummary type and LoginDto"
+      - "Retained all 8 original commands from user-identity.pillar.v2 with updated paths"
+      - "Retained Foundation integration consumers (KYC_VERIFIED, GUIDELINE_ACCEPTED)"
+    breaking_changes:
+      - "Path prefix changed: /api/v1/user-identity/* → /v1/identity/*"
+      - "Permission prefix changed: user-identity:admin → identity:admin"
+    migrations_required: false
+
+# ──────────────────────────────────────────────────────────────────────────────
+# COVERAGE
+# ──────────────────────────────────────────────────────────────────────────────
+
+coverage:
+  tables:
+    device_token:
+      touched_by:
+        - "Login"
+        - "Logout"
+        - "RegisterDevice"
+        - "RevokeDevice"
+
+    registration_token:
+      touched_by:
+        - "Login"
+        - "IssueRegistrationToken"
+        - "VerifyRegistrationToken"
+        - "ConsumeRegistrationToken"
+        - "ExpireRegistrationToken"
+
+    verification_status:
+      touched_by:
+        - "UpsertVerificationStatus"
+
+    onboarding_progress:
+      touched_by:
+        - "UpsertOnboardingProgress"
+
+  events:
+    USER_LOGGED_IN:
+      emitted_by:
+        - "Login"
+
+    USER_LOGGED_OUT:
+      emitted_by:
+        - "Logout"
+
+    DEVICE_TOKEN_REGISTERED:
+      emitted_by:
+        - "RegisterDevice"
+
+    DEVICE_TOKEN_REVOKED:
+      emitted_by:
+        - "RevokeDevice"
+
+    REGISTRATION_TOKEN_ISSUED:
+      emitted_by:
+        - "IssueRegistrationToken"
+
+    REGISTRATION_TOKEN_VERIFIED:
+      emitted_by:
+        - "VerifyRegistrationToken"
+
+    REGISTRATION_TOKEN_CONSUMED:
+      emitted_by:
+        - "ConsumeRegistrationToken"
+
+    REGISTRATION_TOKEN_EXPIRED:
+      emitted_by:
+        - "ExpireRegistrationToken"
+
+    VERIFICATION_STATUS_UPDATED:
+      emitted_by:
+        - "UpsertVerificationStatus"
+
+    ONBOARDING_STEP_UPDATED:
+      emitted_by:
+        - "UpsertOnboardingProgress"
+
+  aggregate_transitions:
+    DEVICE_TOKEN:
+      Login: "∅ → active | inactive → active"
+      Logout: "active → revoked"
+      RegisterDevice: "∅ → active | inactive → active"
+      RevokeDevice: "active → revoked"
+
+    REGISTRATION_TOKEN:
+      IssueRegistrationToken: "∅ → pending"
+      VerifyRegistrationToken: "pending → verified"
+      ConsumeRegistrationToken: "verified → consumed"
+      Login: "pending → consumed (OTP verify + consume in single transaction)"
+      ExpireRegistrationToken: "pending | verified → expired"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# INTEGRATION
+# ──────────────────────────────────────────────────────────────────────────────
+
+integration:
+  description: >
+    identity consumes events from the Foundation pillar to auto-update
+    verification_status (on KYC_VERIFIED) and onboarding_progress (on GUIDELINE_ACCEPTED).
+    identity emits USER_LOGGED_IN and REGISTRATION_TOKEN_ISSUED events that the
+    Notification pillar consumes to deliver OTP messages and welcome communications.
+
+  outbox_pattern:
+    how_it_works:
+      - "Producer pillar (Foundation) writes event to outbox_event table within same transaction"
+      - "Outbox poller picks up unprocessed events and delivers to consumer"
+      - "Consumer (identity) processes event and upserts local state"
+      - "outbox_event_consumer row tracks per-consumer processing state"
+    benefits:
+      - "Guaranteed delivery — event survives transaction commit"
+      - "At-least-once semantics with idempotent upsert handlers"
+      - "No direct cross-plugin DB coupling"
+
+  foundation:
+    description: "identity consumes Foundation events to update verification and onboarding state"
+    pattern: "event_driven_via_outbox"
+
+    consumers:
+      - event: "KYC_VERIFIED"
+        consumer_name: "KycVerifiedConsumer"
+        location: "src/plugins/identity/consumers/kyc-verified.consumer.ts"
+        responsibility: >
+          On KYC_VERIFIED from Foundation, upsert verification_status
+          for the relevant account_id with type='kyc' and status='verified'.
+
+        expected_behavior:
+          - "Read kyc record (subject_type, subject_id) from event payload"
+          - "Resolve account_id from subject (if subject_type = 'account', use subject_id directly)"
+          - "Call UpsertVerificationStatus(account_id, type='kyc', status='verified')"
+          - "Emit VERIFICATION_STATUS_UPDATED event"
+
+        event_payload_example:
+          event_type: "KYC_VERIFIED"
+          aggregate_type: "KYC"
+          aggregate_id: 42
+          payload:
+            subject_type: "account"
+            subject_id: 7
+            provider: "ekyc_provider"
+
+        idempotency_strategy:
+          - "verification_status has UNIQUE(account_id, type) — upsert is idempotent"
+          - "outbox_event_consumer tracks per-consumer event processing to prevent replay"
+
+        error_handling:
+          - "If account_id cannot be resolved, log and dead-letter the event"
+          - "Transient DB errors: retry via outbox poller backoff"
+
+      - event: "GUIDELINE_ACCEPTED"
+        consumer_name: "GuidelineAcceptedConsumer"
+        location: "src/plugins/identity/consumers/guideline-accepted.consumer.ts"
+        responsibility: >
+          On GUIDELINE_ACCEPTED from Foundation, upsert onboarding_progress
+          for the user with step_code='guideline_accepted' and state='completed'.
+
+        expected_behavior:
+          - "Read user_id from event payload"
+          - "Call UpsertOnboardingProgress(user_id, step_code='guideline_accepted', state='completed')"
+          - "Emit ONBOARDING_STEP_UPDATED event"
+
+        event_payload_example:
+          event_type: "GUIDELINE_ACCEPTED"
+          aggregate_type: "GUIDELINE_ACCEPTANCE"
+          aggregate_id: 18
+          payload:
+            user_id: 3
+            version_id: 5
+            acceptance_status: "accepted"
+
+        idempotency_strategy:
+          - "onboarding_progress has UNIQUE(user_id, step_code) — upsert is idempotent"
+          - "outbox_event_consumer prevents duplicate event processing"
+
+        error_handling:
+          - "If user_id is missing from payload, log and skip"
+          - "Transient DB errors: retry via outbox poller backoff"
+
+  notification:
+    description: "Notification pillar consumes identity events to deliver OTP messages and login alerts"
+    pattern: "event_driven_via_outbox"
+
+    consumers:
+      - event: "REGISTRATION_TOKEN_ISSUED"
+        consumer_name: "RegistrationTokenIssuedConsumer"
+        location: "src/plugins/notification/consumers/registration-token-issued.consumer.ts"
+        responsibility: >
+          On REGISTRATION_TOKEN_ISSUED from identity, deliver the OTP or magic-link
+          to the user via the specified channel (sms, email, whatsapp).
+
+        expected_behavior:
+          - "Read channel_type, channel_value, purpose, expires_at from event payload"
+          - "Resolve OTP or magic-link token from registration_token record (via read)"
+          - "Send message via appropriate channel provider"
+          - "Log delivery status"
+
+        event_payload_example:
+          event_type: "REGISTRATION_TOKEN_ISSUED"
+          aggregate_type: "REGISTRATION_TOKEN"
+          aggregate_id: 101
+          payload:
+            purpose: "login"
+            channel_type: "sms"
+            channel_value: "+60123456789"
+            expires_at: "2026-03-23T10:05:00Z"
+
+        idempotency_strategy:
+          - "outbox_event_consumer UNIQUE(consumer_name, event_id) prevents duplicate delivery"
+
+        error_handling:
+          - "If channel provider fails, retry via outbox poller backoff"
+          - "After max retries, mark outbox_event_consumer as failed"
+
+      - event: "USER_LOGGED_IN"
+        consumer_name: "UserLoggedInConsumer"
+        location: "src/plugins/notification/consumers/user-logged-in.consumer.ts"
+        responsibility: >
+          On USER_LOGGED_IN from identity, optionally send a login alert
+          notification to the user (configurable by notification policy).
+
+        expected_behavior:
+          - "Read user_id, platform, channel_type from event payload"
+          - "Check notification policy for login alerts"
+          - "If enabled, send login alert via user's preferred channel"
+
+        event_payload_example:
+          event_type: "USER_LOGGED_IN"
+          aggregate_type: "DEVICE_TOKEN"
+          aggregate_id: 55
+          payload:
+            user_id: 3
+            platform: "fcm"
+            channel_type: "sms"
+
+        idempotency_strategy:
+          - "outbox_event_consumer UNIQUE(consumer_name, event_id) prevents duplicate alerts"
+
+        error_handling:
+          - "Notification delivery failures are non-blocking — log and continue"
+
+  architecture_diagram: |
+    Foundation Pillar                       identity Pillar
+    ─────────────────────                   ──────────────────────────────────────
+    KYC.verify()                            KycVerifiedConsumer
+      → outbox: KYC_VERIFIED   ───────────▶  → UpsertVerificationStatus(kyc)
+                                              → VERIFICATION_STATUS_UPDATED
+
+    Guideline.accept()                      GuidelineAcceptedConsumer
+      → outbox: GUIDELINE_ACCEPTED ────────▶  → UpsertOnboardingProgress(guideline_accepted)
+                                               → ONBOARDING_STEP_UPDATED
+
+    identity Pillar                         Notification Pillar
+    ─────────────────────────               ──────────────────────────────────────
+    IssueRegistrationToken                  RegistrationTokenIssuedConsumer
+      → outbox: REGISTRATION_TOKEN_ISSUED ▶  → deliver OTP via sms/email/whatsapp
+
+    Login                                   UserLoggedInConsumer
+      → outbox: USER_LOGGED_IN ────────────▶  → send login alert (if policy enabled)
+
+  implementation_checklist:
+    foundation:
+      - "[✓] KYC_VERIFIED event emitted by Foundation.verifyKYC command"
+      - "[✓] GUIDELINE_ACCEPTED event emitted by Foundation.acceptGuideline command"
+
+    identity:
+      - "[ ] KycVerifiedConsumer implemented at src/plugins/identity/consumers/kyc-verified.consumer.ts"
+      - "[ ] GuidelineAcceptedConsumer implemented at src/plugins/identity/consumers/guideline-accepted.consumer.ts"
+      - "[ ] Login command implemented with OTP verify + device_token upsert"
+      - "[ ] Logout command implemented (user-self-revoke)"
+      - "[ ] GetCurrentUser query implemented at GET /v1/identity/me"
+      - "[ ] OTP cooldown guard implemented in IssueRegistrationToken"
+      - "[ ] outbox_event_consumer rows created per consumer on processing"
+      - "[ ] Integration test: KYC_VERIFIED → verification_status.status = verified"
+      - "[ ] Integration test: GUIDELINE_ACCEPTED → onboarding_progress.state = completed"
+      - "[ ] Integration test: Login flow — IssueRegistrationToken → Login → GetCurrentUser"
+      - "[ ] Integration test: OTP cooldown — second IssueRegistrationToken within 60s rejected"
+
+    notification:
+      - "[ ] RegistrationTokenIssuedConsumer implemented"
+      - "[ ] UserLoggedInConsumer implemented"
+
+  testing_strategy:
+    end_to_end_test: |
+      1. POST /v1/identity/registration-tokens (purpose=login, channel_type=sms, channel_value=+60123456789)
+      2. Assert outbox_event row: REGISTRATION_TOKEN_ISSUED
+      3. POST /v1/identity/login (channel_value=+60123456789, otp_plain=<otp>, platform=fcm, device_token=<token>)
+      4. Assert registration_token.status = consumed
+      5. Assert device_token row: status=active, user_id=<user>
+      6. Assert outbox_event row: USER_LOGGED_IN
+      7. GET /v1/identity/me (with auth header)
+      8. Assert response contains user.phone_number = +60123456789
+
+    idempotency_test: |
+      1. POST /v1/identity/registration-tokens for channel_value=+60123456789
+      2. POST /v1/identity/registration-tokens again within 60 seconds
+      3. Assert 429/DomainError: REGISTRATION_TOKEN_COOLDOWN_ACTIVE
+      4. POST /v1/identity/verification-status twice with same account_id + type
+      5. Assert only one row in verification_status
+      6. Assert status reflects the latest call
+
+    error_test: |
+      1. POST /v1/identity/login with wrong OTP → assert REGISTRATION_TOKEN_INVALID
+      2. POST /v1/identity/login for inactive user → assert USER_ACCOUNT_INACTIVE
+      3. POST /v1/identity/logout for another user's device_token → assert DEVICE_TOKEN_NOT_OWNED_BY_USER
+      4. Publish KYC_VERIFIED with missing subject_id → assert consumer logs error, no crash

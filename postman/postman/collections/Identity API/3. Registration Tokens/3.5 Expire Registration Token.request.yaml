@@ -1,0 +1,34 @@
+$kind: http-request
+description: |-
+  Admin force-expire. No body.
+
+  Token must be in 'pending' or 'verified' status.
+
+  Guards:
+  - REGISTRATION_TOKEN_NOT_FOUND
+  - REGISTRATION_TOKEN_ALREADY_TERMINAL
+url: "{{base_url}}/v1/identity/registration-tokens/{{registration_token_id}}/expire"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: ""
+scripts:
+  - type: beforeRequest
+    code: "pm.request.headers.add({ key: 'Idempotency-Key', value:
+      pm.variables.replaceIn('{{$guid}}') });"
+    language: text/javascript
+  - type: afterResponse
+    code: >-
+      pm.test('Status is 200', () => pm.response.to.have.status(200));
+
+      const json = pm.response.json();
+
+      if (json) {
+        pm.test('Token is expired', () => pm.expect(json.status).to.equal('expired'));
+      }
+    language: text/javascript
+order: 5000

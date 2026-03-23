@@ -1,0 +1,44 @@
+$kind: http-request
+description: >-
+  Fields (from OnboardingProgressUpsertDto):
+
+  - user_id: number (required)
+
+  - step_code: 'profile_complete' | 'kyc_verified' | 'guideline_accepted' |
+  'device_registered' | etc. (required, max 64)
+
+  - state: 'pending' | 'completed' | 'skipped' | 'failed' (required, max 16)
+
+  - meta_json: step-specific metadata (optional)
+
+
+  Idempotency: upsert via UNIQUE(user_id, step_code).
+url: "{{base_url}}/v1/identity/onboarding-progress"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "user_id": {{target_user_id}},
+      "step_code": "profile_complete",
+      "state": "completed",
+      "meta_json": { "completed_at": "2026-03-23T10:00:00Z" }
+    }
+scripts:
+  - type: beforeRequest
+    code: "pm.request.headers.add({ key: 'Idempotency-Key', value:
+      pm.variables.replaceIn('{{$guid}}') });"
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Status is 200', () => pm.response.to.have.status(200));
+      pm.test('Has step_code', () => {
+        const json = pm.response.json();
+        pm.expect(json).to.have.property('step_code');
+      });
+    language: text/javascript
+order: 1000

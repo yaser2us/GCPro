@@ -1,0 +1,41 @@
+$kind: http-request
+description: |-
+  Admin command. Requires identity:admin permission.
+
+  Fields (from DeviceTokenRegisterDto):
+  - user_id: number — user to register the device for
+  - platform: 'fcm' | 'apns' | 'web'
+  - token: raw device push token (max 512 chars)
+
+  Idempotency: upsert via UNIQUE(platform, token).
+  If token exists for same user → re-activates.
+  If token exists for different user → DEVICE_TOKEN_OWNED_BY_ANOTHER_USER.
+url: "{{base_url}}/v1/identity/device-tokens"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "user_id": {{target_user_id}},
+      "platform": "fcm",
+      "token": "eXaMpLeDeViCeToKeN_FcM_Admin_001"
+    }
+scripts:
+  - type: beforeRequest
+    code: "pm.request.headers.add({ key: 'Idempotency-Key', value:
+      pm.variables.replaceIn('{{$guid}}') });"
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Status is 201', () => pm.response.to.have.status(201));
+      const json = pm.response.json();
+      if (json && json.id) {
+        pm.collectionVariables.set('device_token_id', json.id);
+        console.log('device_token_id set to', json.id);
+      }
+    language: text/javascript
+order: 1000

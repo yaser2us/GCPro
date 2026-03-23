@@ -1,0 +1,45 @@
+$kind: http-request
+description: >-
+  Fields (from VerificationStatusUpsertDto):
+
+  - account_id: number (required)
+
+  - type: 'email' | 'phone' | 'kyc' | 'id_document' — verification dimension
+  (required, max 32)
+
+  - status: 'unverified' | 'pending' | 'verified' | 'failed' | 'expired'
+  (required, max 32)
+
+  - meta_json: provider response, reference IDs (optional)
+
+
+  Idempotency: upsert via UNIQUE(account_id, type).
+url: "{{base_url}}/v1/identity/verification-status"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "account_id": {{target_account_id}},
+      "type": "kyc",
+      "status": "verified",
+      "meta_json": { "provider": "ekyc_provider", "reference": "KYC-2026-001" }
+    }
+scripts:
+  - type: beforeRequest
+    code: "pm.request.headers.add({ key: 'Idempotency-Key', value:
+      pm.variables.replaceIn('{{$guid}}') });"
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('Status is 200', () => pm.response.to.have.status(200));
+      pm.test('Has account_id', () => {
+        const json = pm.response.json();
+        pm.expect(json).to.have.property('account_id');
+      });
+    language: text/javascript
+order: 1000

@@ -1,0 +1,41 @@
+$kind: http-request
+description: |-
+  Fields (from RegistrationTokenVerifyDto):
+  - token: magic-link token string (required if otp_plain not provided)
+  - otp_plain: plain OTP digits (required if token not provided)
+
+  At least one of token or otp_plain must be provided.
+
+  Guards:
+  - REGISTRATION_TOKEN_NOT_FOUND
+  - REGISTRATION_TOKEN_NOT_PENDING
+  - REGISTRATION_TOKEN_EXPIRED
+  - REGISTRATION_TOKEN_INVALID
+url: "{{base_url}}/v1/identity/registration-tokens/{{registration_token_id}}/verify"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "otp_plain": "123456"
+    }
+scripts:
+  - type: beforeRequest
+    code: "pm.request.headers.add({ key: 'Idempotency-Key', value:
+      pm.variables.replaceIn('{{$guid}}') });"
+    language: text/javascript
+  - type: afterResponse
+    code: >-
+      pm.test('Status is 200', () => pm.response.to.have.status(200));
+
+      const json = pm.response.json();
+
+      if (json) {
+        pm.test('Token is verified', () => pm.expect(json.status).to.equal('verified'));
+      }
+    language: text/javascript
+order: 3000

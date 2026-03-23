@@ -1,0 +1,33 @@
+$kind: collection
+description: >-
+  Postman collection for the Identity pillar — auth (login/logout/me), device
+  tokens, registration tokens, verification status, onboarding progress.
+
+  Based on specs/identity/identity.pillar.v2.yml
+
+  All endpoints: /v1/identity/
+variables:
+  base_url: http://localhost:3000
+  admin_user_id: "1"
+  admin_user_role: admin
+  user_user_id: "2"
+  user_user_role: user
+  target_user_id: "2"
+  target_account_id: "2"
+  target_phone: "+60123456789"
+  device_token_id: ""
+  registration_token_id: ""
+scripts:
+  - type: http:beforeRequest
+    code: |-
+      // Auto-inject Idempotency-Key for all POST requests
+      if (pm.request.method === 'POST' || pm.request.method === 'PUT') {
+        const existingKey = pm.request.headers.get('Idempotency-Key');
+        if (!existingKey) {
+          pm.request.headers.add({
+            key: 'Idempotency-Key',
+            value: pm.variables.replaceIn('{{$guid}}')
+          });
+        }
+      }
+    language: text/javascript

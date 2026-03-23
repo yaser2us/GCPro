@@ -1,0 +1,24 @@
+$kind: http-request
+url: "{{base_url}}/v1/identity/onboarding-progress"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "user_id": {{target_user_id}},
+      "step_code": "device_registered",
+      "state": "completed"
+    }
+scripts:
+  - type: beforeRequest
+    code: "pm.request.headers.add({ key: 'Idempotency-Key', value:
+      pm.variables.replaceIn('{{$guid}}') });"
+    language: text/javascript
+  - type: afterResponse
+    code: pm.test('Status is 200', () => pm.response.to.have.status(200));
+    language: text/javascript
+order: 4000
