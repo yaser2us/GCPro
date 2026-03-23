@@ -1,6 +1,6 @@
-# referral.pillar.v1.yml
-version: "1.0"
-spec_id: "referral.pillar.v1"
+# referral.pillar.v2.yml
+version: "2.0"
+spec_id: "referral.pillar.v2"
 domain: "referral"
 plugin: "referral"
 
@@ -1352,7 +1352,58 @@ coverage:
       emitted_by:
         - "ReferralReward.Request"
 
+integration:
+  events_consumed:
+    POLICY_ACTIVATED:
+      consumed_by: "PolicyActivatedHandler"
+      source_plugin: "policy"
+      handler_file: "src/plugins/referral/handlers/policy-activated.handler.ts"
+      consumer_file: "src/plugins/referral/consumers/policy-activated.consumer.ts"
+      description: >
+        Phase 6: On policy activation, resolves the holder user_id, finds their
+        referral_conversion (if they were referred), reads referral_rule reward
+        amounts, upserts referral_reward_grant rows (referrer + referee), and
+        emits REFERRAL_REWARD_REQUESTED per grant. Idempotent — skips if grants
+        already exist.
+
+  events_emitted:
+    REFERRAL_REWARD_REQUESTED:
+      emitted_by: "PolicyActivatedHandler"
+      consumed_by: "ReferralRewardConsumer (wallet plugin)"
+      payload_fields:
+        - "grant_id"
+        - "conversion_id"
+        - "program_id"
+        - "beneficiary_user_id"
+        - "beneficiary_role (referrer|referee)"
+        - "reward_type (coins)"
+        - "amount"
+        - "currency (COIN)"
+        - "policy_id"
+
+  http_endpoints:
+    - path: "POST /v1/referral/rewards/request"
+      description: "Admin-triggered reward request for a conversion"
+      permission: "referral:admin"
+      body: "{ conversion_id: number }"
+      response: "{ grants_requested: number }"
+      idempotency: "Idempotency-Key header required"
+
 changelog:
+  - version: "2.0"
+    date: "2026-03-23"
+    author: "Claude Code"
+    description: "Phase 6 - Referral Conversion & Reward Engine"
+    changes:
+      - "Phase 6: PolicyActivatedHandler — on POLICY_ACTIVATED, creates reward grants for referrer and referee"
+      - "Phase 6: PolicyActivatedConsumer — subscribes to POLICY_ACTIVATED in referral plugin"
+      - "Phase 6: ReferralRewardHandler (wallet plugin) — on REFERRAL_REWARD_REQUESTED, creates wallet_deposit_intent for COIN"
+      - "Phase 6: ReferralRewardConsumer (wallet plugin) — subscribes to REFERRAL_REWARD_REQUESTED"
+      - "Phase 6: POST /v1/referral/rewards/request — admin endpoint to trigger rewards for a conversion"
+      - "Phase 6: requestRewards method added to ReferralWorkflowService"
+    breaking_changes: []
+    migrations_required: []
+
   - version: "1.0"
     date: "2026-03-17"
     author: "Claude Code"

@@ -22,6 +22,8 @@ import { ReferralV2Controller } from './controllers/referral.v2.controller';
 import { ReferralChainConsumer } from './consumers/referral-chain.consumer';
 import { PolicyMemberAddedConsumer } from './consumers/policy-member-added.consumer';
 import { PolicyMemberAddedHandler } from './handlers/policy-member-added.handler';
+import { PolicyActivatedHandler } from './handlers/policy-activated.handler';
+import { PolicyActivatedConsumer } from './consumers/policy-activated.consumer';
 
 /**
  * Referral Module V2
@@ -94,6 +96,10 @@ import { PolicyMemberAddedHandler } from './handlers/policy-member-added.handler
     // H3: Affiliate chain inheritance on beneficiary/dependent add
     PolicyMemberAddedHandler,
     PolicyMemberAddedConsumer,
+
+    // Phase 6: POLICY_ACTIVATED → referral conversion rewards
+    PolicyActivatedHandler,
+    PolicyActivatedConsumer,
   ],
   exports: [
     // Export services in case other modules need them

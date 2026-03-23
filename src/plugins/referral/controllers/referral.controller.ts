@@ -7,6 +7,7 @@ import {
   HttpCode,
   HttpStatus,
   Headers,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { ReferralWorkflowService } from '../services/referral.workflow.service';
 import { ReferralProgramCreateRequestDto } from '../dto/referral-program-create.request.dto';
@@ -203,5 +204,30 @@ export class ReferralController {
       actor,
       idempotencyKey,
     );
+  }
+
+  /**
+   * REQUEST REFERRAL REWARDS ENDPOINT — Phase 6
+   *
+   * Spec: specs/referral/referral.pillar.yml lines 1231-1298
+   * HTTP: POST /v1/referral/rewards/request
+   *
+   * Reads reward rules for the conversion's program and upserts
+   * referral_reward_grant rows (referrer + referee). Emits REFERRAL_REWARD_REQUESTED
+   * per grant, which triggers wallet COIN credit via the wallet plugin consumer.
+   */
+  @Post('rewards/request')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('referral:admin')
+  async requestRewards(
+    @Body('conversion_id', ParseIntPipe) conversionId: number,
+    @Headers('idempotency-key') idempotencyKey: string,
+    @CurrentActor() actor: Actor,
+  ) {
+    if (!idempotencyKey) {
+      throw new Error('Idempotency-Key header is required');
+    }
+
+    return this.workflowService.requestRewards(conversionId, actor, idempotencyKey);
   }
 }

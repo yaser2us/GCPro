@@ -585,6 +585,146 @@ export class ReferralWorkflowService {
   }
 
   /**
+   * REFERRAL REWARD.REQUEST COMMAND
+   * Source: specs/referral/referral.pillar.yml lines 1231-1298
+   *
+   * HTTP: POST /v1/referral/rewards/request
+   * Event trigger: POLICY_ACTIVATED → PolicyActivatedHandler (referral plugin)
+   *
+   * Reads referral_rule for reward amounts, upserts referral_reward_grant rows,
+   * and emits REFERRAL_REWARD_REQUESTED per grant.
+   */
+  async requestRewards(
+    conversionId: number,
+    actor: Actor,
+    idempotencyKey: string,
+  ): Promise<{ grants_requested: number }> {
+    const result = await this.txService.run(async (queryRunner) => {
+      // LOAD: referral_conversion
+      const conversionRows = await queryRunner.manager.query(
+        `SELECT id, program_id, invite_id, referred_user_id, status
+         FROM referral_conversion WHERE id = ? LIMIT 1`,
+        [conversionId],
+      );
+
+      if (!conversionRows?.length) {
+        throw new NotFoundException({
+          code: 'CONVERSION_NOT_FOUND',
+          message: `Referral conversion ${conversionId} not found`,
+        });
+      }
+
+      const conversion = conversionRows[0];
+
+      if (conversion.status !== 'converted') {
+        throw new ConflictException({
+          code: 'CONVERSION_NOT_VALID',
+          message: `Conversion must be in status 'converted', got '${conversion.status}'`,
+        });
+      }
+
+      const programId = Number(conversion.program_id);
+      const inviteId = Number(conversion.invite_id);
+      const referredUserId = Number(conversion.referred_user_id);
+
+      // LOAD: invite → referrer_user_id
+      const inviteRows = await queryRunner.manager.query(
+        `SELECT referrer_user_id FROM referral_invite WHERE id = ? LIMIT 1`,
+        [inviteId],
+      );
+
+      if (!inviteRows?.length) {
+        throw new NotFoundException({
+          code: 'INVITE_NOT_FOUND',
+          message: `Referral invite ${inviteId} not found`,
+        });
+      }
+
+      const referrerUserId = Number(inviteRows[0].referrer_user_id);
+
+      // LOAD: reward rules
+      const ruleRows: Array<{ rule_code: string; value_num: string | null }> =
+        await queryRunner.manager.query(
+          `SELECT rule_code, value_num
+           FROM referral_rule
+           WHERE program_id = ?
+             AND rule_code IN ('referrer_reward_coins', 'referee_reward_coins')
+             AND status = 'active'`,
+          [programId],
+        );
+
+      let grantsRequested = 0;
+
+      for (const rule of ruleRows) {
+        const amount = rule.value_num ? Number(rule.value_num) : 0;
+        if (amount <= 0) continue;
+
+        let beneficiaryUserId: number;
+        let beneficiaryRole: string;
+
+        if (rule.rule_code === 'referrer_reward_coins') {
+          beneficiaryUserId = referrerUserId;
+          beneficiaryRole = 'referrer';
+        } else {
+          beneficiaryUserId = referredUserId;
+          beneficiaryRole = 'referee';
+        }
+
+        const grantIdempotencyKey = `ref_reward:${conversionId}:${beneficiaryRole}`;
+
+        // UPSERT: referral_reward_grant
+        await queryRunner.manager.query(
+          `INSERT INTO referral_reward_grant
+             (program_id, conversion_id, beneficiary_user_id, beneficiary_role,
+              reward_type, amount, currency, status, idempotency_key, granted_at, created_at)
+           VALUES (?, ?, ?, ?, 'coins', ?, 'COIN', 'requested', ?, NOW(), NOW())
+           ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)`,
+          [programId, conversionId, beneficiaryUserId, beneficiaryRole, amount, grantIdempotencyKey],
+        );
+
+        const [grantRow] = await queryRunner.manager.query(
+          `SELECT id FROM referral_reward_grant WHERE idempotency_key = ? LIMIT 1`,
+          [grantIdempotencyKey],
+        );
+
+        const grantId = grantRow?.id ? Number(grantRow.id) : null;
+
+        // EMIT: REFERRAL_REWARD_REQUESTED
+        await this.outboxService.enqueue(
+          {
+            event_name: 'REFERRAL_REWARD_REQUESTED',
+            event_version: 1,
+            aggregate_type: 'REFERRAL_REWARD_GRANT',
+            aggregate_id: String(grantId ?? conversionId),
+            actor_user_id: actor.actor_user_id,
+            occurred_at: new Date(),
+            correlation_id: actor.correlation_id || `${grantIdempotencyKey}-${Date.now()}`,
+            causation_id: actor.causation_id || `cmd-request-rewards-${conversionId}`,
+            payload: {
+              grant_id: grantId,
+              conversion_id: conversionId,
+              program_id: programId,
+              beneficiary_user_id: beneficiaryUserId,
+              beneficiary_role: beneficiaryRole,
+              reward_type: 'coins',
+              amount,
+              currency: 'COIN',
+            },
+            dedupe_key: `${grantIdempotencyKey}:emit:${idempotencyKey}`,
+          },
+          queryRunner,
+        );
+
+        grantsRequested++;
+      }
+
+      return { grants_requested: grantsRequested };
+    });
+
+    return result;
+  }
+
+  /**
    * Generate a unique referral code
    */
   private generateReferralCode(): string {

@@ -533,6 +533,60 @@
         }
       ],
       "description": "Referral invite creation, click tracking, and conversion recording"
+    },
+    {
+      "name": "Phase 6 - Referral Rewards",
+      "item": [
+        {
+          "name": "P6.1 — Request Rewards for Conversion (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{auth_token}}" },
+              { "key": "X-Actor-User-Id", "value": "{{actor_user_id}}" },
+              { "key": "Idempotency-Key", "value": "{{$randomUUID}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"conversion_id\": 1\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/v1/referral/rewards/request",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "referral", "rewards", "request"]
+            },
+            "description": "Admin endpoint to trigger referral reward grants for a conversion.\nReads referral_rule for the program and upserts referral_reward_grant rows (referrer + referee).\nEmits REFERRAL_REWARD_REQUESTED per grant → wallet plugin creates COIN wallet_deposit_intent.\n\nSource: specs/referral/referral.pillar.yml lines 1231-1298\nPermission: referral:admin\nIdempotency: Idempotency-Key header required"
+          },
+          "response": [
+            {
+              "name": "200 OK — Rewards requested",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [],
+              "body": "{\n  \"grants_requested\": 2\n}"
+            }
+          ]
+        },
+        {
+          "name": "P6.2 — Verify Reward Grants Created (doc)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{auth_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/v1/referral/conversions/1",
+              "host": ["{{base_url}}"],
+              "path": ["v1", "referral", "conversions", "1"]
+            },
+            "description": "Verification step: after POLICY_ACTIVATED fires or POST /rewards/request is called,\ncheck that referral_reward_grant rows exist with status='requested'.\n\nEvent flow:\n  POLICY_ACTIVATED\n    → PolicyActivatedHandler (referral plugin)\n    → upsert referral_reward_grant (referrer + referee)\n    → emit REFERRAL_REWARD_REQUESTED\n    → ReferralRewardConsumer (wallet plugin)\n    → find/create COIN wallet\n    → create wallet_deposit_intent\n    → emit REFERRAL_REWARD_CREDITED"
+          },
+          "response": []
+        }
+      ],
+      "description": "Phase 6: Referral Conversion & Reward Engine\n\nEvent flow:\n  POLICY_ACTIVATED → PolicyActivatedHandler (referral) → REFERRAL_REWARD_REQUESTED → ReferralRewardHandler (wallet) → REFERRAL_REWARD_CREDITED\n\nAutomatic: triggered by POLICY_ACTIVATED event\nManual: POST /v1/referral/rewards/request (admin)"
     }
   ],
   "event": [

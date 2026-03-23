@@ -1252,11 +1252,24 @@ coverage:
       source_plugin: "claim"
       note: "Phase 5: creates wallet_deposit_intent for claimant GC_WALLET; emits CLAIM_PAYOUT_INITIATED"
 
+    REFERRAL_REWARD_REQUESTED:
+      consumed_by:
+        - "WALLET.PROCESS_REFERRAL_REWARD"
+      source_plugin: "referral"
+      note: "Phase 6: finds/creates COIN wallet for beneficiary; creates wallet_deposit_intent; emits REFERRAL_REWARD_CREDITED"
+
 # ──────────────────────────────────────────────────────────────────────────────
 # CHANGELOG
 # ──────────────────────────────────────────────────────────────────────────────
 
 changelog:
+  - version: "2.4.0"
+    date: "2026-03-23"
+    changes:
+      - "Phase 6: ReferralRewardHandler — on REFERRAL_REWARD_REQUESTED finds/creates COIN wallet, creates wallet_deposit_intent"
+      - "Phase 6: Auto-creates COIN wallet (wallet_type=MAIN, currency=COIN) if not exists for beneficiary"
+      - "Phase 6: Emits REFERRAL_REWARD_CREDITED after deposit_intent created"
+
   - version: "2.3.0"
     date: "2026-03-23"
     changes:
