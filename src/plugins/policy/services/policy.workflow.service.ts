@@ -1077,4 +1077,84 @@ export class PolicyWorkflowService {
 
     return result;
   }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // M4: PACKAGE AUTO-SELECTION
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /**
+   * PACKAGE LOOKUP
+   * GET /api/v1/policy/package-lookup?dob=YYYY-MM-DD&smoker=true|false
+   *
+   * Calculates applicant age from DOB → finds matching age_band →
+   * joins smoker_profile + policy_package_rate + policy_package →
+   * returns best-fit package for use in the registration wizard.
+   */
+  async packageLookup(dob: string, smoker: boolean) {
+    // Calculate age (years completed as of today)
+    const today = new Date();
+    const birth = new Date(dob);
+    let age = today.getFullYear() - birth.getFullYear();
+    const monthDiff = today.getMonth() - birth.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+      age--;
+    }
+
+    const smokerCode = smoker ? 'smoker' : 'non_smoker';
+    const now = new Date();
+
+    // Raw SQL: join age_band + smoker_profile + policy_package_rate + policy_package
+    const rows = await this.txService.run(async (queryRunner) => {
+      return queryRunner.manager.query(
+        `SELECT
+           pp.id           AS package_id,
+           pp.code         AS package_code,
+           pp.name         AS package_name,
+           pp.monthly_max_cap_default,
+           pp.deposit_capacity_multiplier,
+           pp.min_deposit_pct,
+           ppr.annual_fee_amount,
+           ppr.monthly_max_cap,
+           ppr.weightage_factor,
+           ppr.rate_version
+         FROM policy_package_rate ppr
+         JOIN age_band ab       ON ab.id = ppr.age_band_id
+         JOIN smok_profile sp   ON sp.id = ppr.smoker_profile_id
+         JOIN policy_package pp ON pp.id = ppr.package_id
+         WHERE ab.min_age <= ?
+           AND ab.max_age >= ?
+           AND sp.code = ?
+           AND ppr.effective_from <= ?
+           AND (ppr.effective_to IS NULL OR ppr.effective_to > ?)
+         ORDER BY ppr.effective_from DESC
+         LIMIT 1`,
+        [age, age, smokerCode, now, now],
+      );
+    });
+
+    if (!rows || rows.length === 0) {
+      throw new NotFoundException({
+        code: 'PACKAGE_NOT_FOUND',
+        message: `No package found for age ${age} and smoker_status ${smokerCode}`,
+      });
+    }
+
+    const row = rows[0];
+    const depositCapacity =
+      parseFloat(row.monthly_max_cap ?? row.monthly_max_cap_default) *
+      parseFloat(row.deposit_capacity_multiplier);
+
+    return {
+      package_id: row.package_id,
+      package_code: row.package_code,
+      package_name: row.package_name,
+      annual_fee_amount: parseFloat(row.annual_fee_amount),
+      monthly_max_cap: parseFloat(row.monthly_max_cap ?? row.monthly_max_cap_default),
+      deposit_capacity: depositCapacity,
+      weightage_factor: parseFloat(row.weightage_factor),
+      rate_version: row.rate_version,
+      age_at_lookup: age,
+      smoker_status: smokerCode,
+    };
+  }
 }

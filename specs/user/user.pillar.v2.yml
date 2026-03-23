@@ -734,6 +734,250 @@ commands:
     permissions:
       - "user:admin"
 
+  # ── C3: 8-STATE LIFECYCLE COMMANDS ──────────────────────────────────────────
+
+  USER.FREEZE:
+    http:
+      method: "POST"
+      path: "/v1/users/{user_id}/freeze"
+
+    request:
+      fields:
+        - name: "reason"
+          type: "string"
+          required: false
+
+    idempotency:
+      strategy: "idempotent_status_change"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "user exists"
+          - "user.status IN ('pending', 'active', 'probation', 'suspended') → USER_STATUS_TRANSITION_INVALID"
+
+      - step: "WRITE"
+        operations:
+          - table: "user"
+            action: "UPDATE"
+            where: "id = :user_id"
+            fields:
+              - "status = 'frozen'"
+
+      - step: "EMIT"
+        events:
+          - "USER_FROZEN"
+
+      - step: "COMMIT"
+        returns:
+          - "user_id"
+          - "status"
+
+    permissions:
+      - "user:admin"
+
+  USER.CLOSE:
+    http:
+      method: "POST"
+      path: "/v1/users/{user_id}/close"
+
+    request:
+      fields:
+        - name: "trigger_code"
+          type: "string"
+          required: false
+
+    idempotency:
+      strategy: "idempotent_status_change"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "user exists"
+          - "user.status = 'frozen' → USER_STATUS_TRANSITION_INVALID"
+
+      - step: "WRITE"
+        operations:
+          - table: "user"
+            action: "UPDATE"
+            where: "id = :user_id"
+            fields:
+              - "status = 'closed'"
+
+      - step: "EMIT"
+        events:
+          - "USER_CLOSED"
+
+      - step: "COMMIT"
+        returns:
+          - "user_id"
+          - "status"
+
+    permissions:
+      - "user:admin"
+
+  USER.TERMINATE:
+    http:
+      method: "POST"
+      path: "/v1/users/{user_id}/terminate"
+
+    request:
+      fields:
+        - name: "reason"
+          type: "string"
+          required: false
+
+    idempotency:
+      strategy: "idempotent_status_change"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "user exists"
+          - "user.status IN ('active', 'frozen', 'probation') → USER_STATUS_TRANSITION_INVALID"
+
+      - step: "WRITE"
+        operations:
+          - table: "user"
+            action: "UPDATE"
+            where: "id = :user_id"
+            fields:
+              - "status = 'terminated'"
+
+      - step: "EMIT"
+        events:
+          - "USER_TERMINATED"
+
+      - step: "COMMIT"
+        returns:
+          - "user_id"
+          - "status"
+
+    permissions:
+      - "user:admin"
+
+  USER.REJOIN:
+    http:
+      method: "POST"
+      path: "/v1/users/{user_id}/rejoin"
+
+    idempotency:
+      strategy: "idempotent_status_change"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "user exists"
+          - "user.status IN ('closed', 'terminated') → USER_STATUS_TRANSITION_INVALID"
+          - "person.dob age < 41 → USER_REJOIN_AGE_LIMIT_EXCEEDED"
+
+      - step: "WRITE"
+        operations:
+          - table: "user"
+            action: "UPDATE"
+            where: "id = :user_id"
+            fields:
+              - "status = 'pending'"
+
+      - step: "EMIT"
+        events:
+          - "USER_REJOINED"
+
+      - step: "COMMIT"
+        returns:
+          - "user_id"
+          - "status"
+
+    permissions:
+      - "user:admin"
+
+  USER.REACTIVATE:
+    http:
+      method: "POST"
+      path: "/v1/users/{user_id}/reactivate"
+
+    request:
+      fields:
+        - name: "note"
+          type: "string"
+          required: false
+
+    idempotency:
+      strategy: "idempotent_status_change"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "user exists"
+          - "user.status IN ('frozen', 'closed') → USER_STATUS_TRANSITION_INVALID"
+          - "limited to 1 reactivation per account (tracked via audit_log)"
+
+      - step: "WRITE"
+        operations:
+          - table: "user"
+            action: "UPDATE"
+            where: "id = :user_id"
+            fields:
+              - "status = 'active'"
+
+      - step: "EMIT"
+        events:
+          - "USER_REACTIVATED"
+
+      - step: "COMMIT"
+        returns:
+          - "user_id"
+          - "status"
+
+    permissions:
+      - "user:admin"
+
+  USER.SET_PROBATION:
+    http:
+      method: "POST"
+      path: "/v1/users/{user_id}/set-probation"
+
+    request:
+      fields:
+        - name: "reason"
+          type: "string"
+          required: false
+
+    idempotency:
+      strategy: "idempotent_status_change"
+      header: "Idempotency-Key"
+
+    workflow:
+      - step: "GUARD"
+        checks:
+          - "user exists"
+          - "user.status = 'active' → USER_STATUS_TRANSITION_INVALID"
+
+      - step: "WRITE"
+        operations:
+          - table: "user"
+            action: "UPDATE"
+            where: "id = :user_id"
+            fields:
+              - "status = 'probation'"
+
+      - step: "EMIT"
+        events:
+          - "USER_PROBATION_SET"
+
+      - step: "COMMIT"
+        returns:
+          - "user_id"
+          - "status"
+
+    permissions:
+      - "user:admin"
+
   USER_CREDENTIAL.CREATE:
     http:
       method: "POST"
@@ -1036,6 +1280,12 @@ coverage:
       - "USER.VERIFY_EMAIL"
       - "USER.SUSPEND"
       - "USER.ACTIVATE"
+      - "USER.FREEZE"
+      - "USER.CLOSE"
+      - "USER.TERMINATE"
+      - "USER.REJOIN"
+      - "USER.REACTIVATE"
+      - "USER.SET_PROBATION"
 
     user_credential:
       - "USER_CREDENTIAL.CREATE"
@@ -1063,6 +1313,18 @@ coverage:
       - "USER.SUSPEND"
     USER_ACTIVATED:
       - "USER.ACTIVATE"
+    USER_FROZEN:
+      - "USER.FREEZE"
+    USER_CLOSED:
+      - "USER.CLOSE"
+    USER_TERMINATED:
+      - "USER.TERMINATE"
+    USER_REJOINED:
+      - "USER.REJOIN"
+    USER_REACTIVATED:
+      - "USER.REACTIVATE"
+    USER_PROBATION_SET:
+      - "USER.SET_PROBATION"
     USER_CREDENTIAL_CREATED:
       - "USER_CREDENTIAL.CREATE"
     USER_CREDENTIAL_VERIFIED:
@@ -1090,12 +1352,39 @@ coverage:
       - from: "inactive"
         to: "active"
         via: "USER.ACTIVATE"
+      # C3: 8-state lifecycle
+      - from: "pending|active|probation|suspended"
+        to: "frozen"
+        via: "USER.FREEZE"
+      - from: "frozen"
+        to: "closed"
+        via: "USER.CLOSE"
+      - from: "active|frozen|probation"
+        to: "terminated"
+        via: "USER.TERMINATE"
+      - from: "closed|terminated"
+        to: "pending"
+        via: "USER.REJOIN"
+      - from: "frozen|closed"
+        to: "active"
+        via: "USER.REACTIVATE"
+      - from: "active"
+        to: "probation"
+        via: "USER.SET_PROBATION"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # CHANGELOG
 # ──────────────────────────────────────────────────────────────────────────────
 
 changelog:
+  - version: "2.1.0"
+    date: "2026-03-23"
+    changes:
+      - "C3: Added 8-state user lifecycle — freeze, close, terminate, rejoin, reactivate, set-probation"
+      - "C3: user.status now supports: pending | active | probation | frozen | closed | terminated | suspended | inactive"
+      - "C3: Added 6 new events: USER_FROZEN, USER_CLOSED, USER_TERMINATED, USER_REJOINED, USER_REACTIVATED, USER_PROBATION_SET"
+      - "C3: Rejoin guard checks person age < 41 via cross-join on person.dob"
+
   - version: "2.0.0"
     date: "2026-03-15"
     changes:

@@ -1,4 +1,4 @@
-version: "2.0.0"
+version: "2.1.0"
 spec_id: "policy.pillar.v2"
 domain: "policy"
 plugin: "policy"
@@ -2078,11 +2078,70 @@ commands:
       remediation_case_id: "string"
       status: "string"
 
+  - name: "Policy.PackageLookup"
+    id: "M4"
+    description: "Auto-select the best-fit package based on applicant DOB and smoker status. Read-only; used in the registration wizard before policy creation."
+    http:
+      method: "GET"
+      path: "/api/v1/policy/package-lookup"
+      auth: "any_authenticated"
+    input:
+      dob:
+        type: "string"
+        format: "date"
+        required: true
+        description: "Applicant date of birth (YYYY-MM-DD)"
+      smoker:
+        type: "boolean"
+        required: false
+        default: false
+        description: "Whether the applicant is a smoker"
+    steps:
+      - kind: "compute"
+        description: "Calculate applicant age from DOB"
+      - kind: "read"
+        table: "age_band"
+        where: "min_age <= age AND max_age >= age"
+      - kind: "read"
+        table: "smok_profile"
+        where: "code = (smoker ? 'smoker' : 'non_smoker')"
+      - kind: "read"
+        table: "policy_package_rate"
+        where: "age_band_id = age_band.id AND smoker_profile_id = smok_profile.id AND effective_from <= NOW() AND (effective_to IS NULL OR effective_to > NOW())"
+      - kind: "read"
+        table: "policy_package"
+        where: "id = policy_package_rate.package_id"
+    response:
+      package_id: "bigint"
+      package_code: "string"
+      package_name: "string"
+      annual_fee_amount: "decimal"
+      monthly_max_cap: "decimal"
+      deposit_capacity: "decimal — monthly_max_cap × deposit_capacity_multiplier"
+      weightage_factor: "decimal"
+      rate_version: "string"
+      age_at_lookup: "integer"
+      smoker_status: "string"
+    errors:
+      - code: "PACKAGE_NOT_FOUND"
+        condition: "No matching rate row found for the given age + smoker combination"
+
 # ──────────────────────────────────────────────────────────────────────────────
 # CHANGELOG
 # ──────────────────────────────────────────────────────────────────────────────
 
 changelog:
+  - version: "2.1.0"
+    date: "2026-03-23"
+    author: "Claude Sonnet 4.6"
+    description: "M4 — Package Auto-Selection"
+    changes:
+      - "Added Policy.PackageLookup command (GET /api/v1/policy/package-lookup)"
+      - "Age calculated from DOB; joins age_band + smok_profile + policy_package_rate + policy_package"
+      - "Returns deposit_capacity = monthly_max_cap × deposit_capacity_multiplier"
+    breaking_changes: []
+    migrations_required: []
+
   - version: "2.0.0"
     date: "2026-03-19"
     author: "Claude Sonnet 4.5"

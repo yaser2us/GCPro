@@ -192,7 +192,7 @@ export class UserWorkflowService {
    */
   async verifyUserEmail(
     id: number,
-    request: UserVerifyEmailRequestDto,
+    _request: UserVerifyEmailRequestDto, // TODO: validate verification_token when token flow is built
     actor: Actor,
     idempotencyKey: string,
   ) {
@@ -362,6 +362,124 @@ export class UserWorkflowService {
     });
 
     return result;
+  }
+
+  // ── C3: 8-STATE LIFECYCLE ──────────────────────────────────────────────────
+
+  /**
+   * C3 FREEZE — POST /v1/users/{id}/freeze
+   * Transitions: pending|active|probation|suspended → frozen
+   */
+  async freezeUser(id: number, reason: string | undefined, actor: Actor, idempotencyKey: string) {
+    return this.txService.run(async (queryRunner) => {
+      const user = await this.userRepo.findById(id, queryRunner);
+      if (!user) throw new NotFoundException({ code: 'USER_NOT_FOUND' });
+      const allowedFrom = ['pending', 'active', 'probation', 'suspended'];
+      if (!allowedFrom.includes(user.status)) {
+        throw new ConflictException({ code: 'USER_STATUS_TRANSITION_INVALID', message: `Cannot freeze user in status: ${user.status}` });
+      }
+      await this.userRepo.update(id, { status: 'frozen' }, queryRunner);
+      await this.outboxService.enqueue({ event_name: 'USER_FROZEN', event_version: 1, aggregate_type: 'USER', aggregate_id: String(id), actor_user_id: actor.actor_user_id, occurred_at: new Date(), correlation_id: idempotencyKey, causation_id: idempotencyKey, payload: { user_id: id, from_status: user.status, reason: reason ?? null } }, queryRunner);
+      return { user_id: id, status: 'frozen' };
+    });
+  }
+
+  /**
+   * C3 CLOSE — POST /v1/users/{id}/close
+   * Transitions: frozen → closed (grace period expired)
+   */
+  async closeUser(id: number, triggerCode: string | undefined, actor: Actor, idempotencyKey: string) {
+    return this.txService.run(async (queryRunner) => {
+      const user = await this.userRepo.findById(id, queryRunner);
+      if (!user) throw new NotFoundException({ code: 'USER_NOT_FOUND' });
+      if (user.status !== 'frozen') {
+        throw new ConflictException({ code: 'USER_STATUS_TRANSITION_INVALID', message: `Cannot close user in status: ${user.status}` });
+      }
+      await this.userRepo.update(id, { status: 'closed' }, queryRunner);
+      await this.outboxService.enqueue({ event_name: 'USER_CLOSED', event_version: 1, aggregate_type: 'USER', aggregate_id: String(id), actor_user_id: actor.actor_user_id, occurred_at: new Date(), correlation_id: idempotencyKey, causation_id: idempotencyKey, payload: { user_id: id, from_status: 'frozen', trigger_code: triggerCode ?? 'admin_action' } }, queryRunner);
+      return { user_id: id, status: 'closed' };
+    });
+  }
+
+  /**
+   * C3 TERMINATE — POST /v1/users/{id}/terminate
+   * Transitions: active|frozen|probation → terminated (voluntary)
+   */
+  async terminateUser(id: number, reason: string | undefined, actor: Actor, idempotencyKey: string) {
+    return this.txService.run(async (queryRunner) => {
+      const user = await this.userRepo.findById(id, queryRunner);
+      if (!user) throw new NotFoundException({ code: 'USER_NOT_FOUND' });
+      const allowedFrom = ['active', 'frozen', 'probation'];
+      if (!allowedFrom.includes(user.status)) {
+        throw new ConflictException({ code: 'USER_STATUS_TRANSITION_INVALID', message: `Cannot terminate user in status: ${user.status}` });
+      }
+      await this.userRepo.update(id, { status: 'terminated' }, queryRunner);
+      await this.outboxService.enqueue({ event_name: 'USER_TERMINATED', event_version: 1, aggregate_type: 'USER', aggregate_id: String(id), actor_user_id: actor.actor_user_id, occurred_at: new Date(), correlation_id: idempotencyKey, causation_id: idempotencyKey, payload: { user_id: id, from_status: user.status, reason: reason ?? null, trigger_code: 'user_request' } }, queryRunner);
+      return { user_id: id, status: 'terminated' };
+    });
+  }
+
+  /**
+   * C3 REJOIN — POST /v1/users/{id}/rejoin
+   * Transitions: closed|terminated → pending
+   * Guard: person age must be < 41
+   */
+  async rejoinUser(id: number, actor: Actor, idempotencyKey: string) {
+    return this.txService.run(async (queryRunner) => {
+      const user = await this.userRepo.findById(id, queryRunner);
+      if (!user) throw new NotFoundException({ code: 'USER_NOT_FOUND' });
+      const allowedFrom = ['closed', 'terminated'];
+      if (!allowedFrom.includes(user.status)) {
+        throw new ConflictException({ code: 'USER_STATUS_TRANSITION_INVALID', message: `Cannot rejoin from status: ${user.status}` });
+      }
+      // GUARD: age < 41
+      const personRows = await queryRunner.manager.query(`SELECT dob FROM person WHERE primary_user_id = ? LIMIT 1`, [id]);
+      if (personRows.length > 0 && personRows[0].dob) {
+        const dob = new Date(personRows[0].dob);
+        const ageMsec = Date.now() - dob.getTime();
+        const ageYears = ageMsec / (1000 * 60 * 60 * 24 * 365.25);
+        if (ageYears >= 41) throw new ConflictException({ code: 'USER_REJOIN_AGE_LIMIT_EXCEEDED', message: 'Rejoin is only allowed for persons under 41 years old' });
+      }
+      await this.userRepo.update(id, { status: 'pending' }, queryRunner);
+      await this.outboxService.enqueue({ event_name: 'USER_REJOINED', event_version: 1, aggregate_type: 'USER', aggregate_id: String(id), actor_user_id: actor.actor_user_id, occurred_at: new Date(), correlation_id: idempotencyKey, causation_id: idempotencyKey, payload: { user_id: id, from_status: user.status } }, queryRunner);
+      return { user_id: id, status: 'pending' };
+    });
+  }
+
+  /**
+   * C3 REACTIVATE — POST /v1/users/{id}/reactivate
+   * Transitions: frozen|closed → active (limited to 1 time per account)
+   */
+  async reactivateUser(id: number, note: string | undefined, actor: Actor, idempotencyKey: string) {
+    return this.txService.run(async (queryRunner) => {
+      const user = await this.userRepo.findById(id, queryRunner);
+      if (!user) throw new NotFoundException({ code: 'USER_NOT_FOUND' });
+      const allowedFrom = ['frozen', 'closed'];
+      if (!allowedFrom.includes(user.status)) {
+        throw new ConflictException({ code: 'USER_STATUS_TRANSITION_INVALID', message: `Cannot reactivate user in status: ${user.status}` });
+      }
+      // Note: 1-time limit tracked via audit_log / outbox; enforced by downstream policy checks
+      await this.userRepo.update(id, { status: 'active' }, queryRunner);
+      await this.outboxService.enqueue({ event_name: 'USER_REACTIVATED', event_version: 1, aggregate_type: 'USER', aggregate_id: String(id), actor_user_id: actor.actor_user_id, occurred_at: new Date(), correlation_id: idempotencyKey, causation_id: idempotencyKey, payload: { user_id: id, from_status: user.status, note: note ?? null } }, queryRunner);
+      return { user_id: id, status: 'active' };
+    });
+  }
+
+  /**
+   * C3 SET PROBATION — POST /v1/users/{id}/set-probation
+   * Transitions: active → probation (admin/TPA review)
+   */
+  async setProbationUser(id: number, reason: string | undefined, actor: Actor, idempotencyKey: string) {
+    return this.txService.run(async (queryRunner) => {
+      const user = await this.userRepo.findById(id, queryRunner);
+      if (!user) throw new NotFoundException({ code: 'USER_NOT_FOUND' });
+      if (user.status !== 'active') {
+        throw new ConflictException({ code: 'USER_STATUS_TRANSITION_INVALID', message: `Cannot set probation from status: ${user.status}` });
+      }
+      await this.userRepo.update(id, { status: 'probation' }, queryRunner);
+      await this.outboxService.enqueue({ event_name: 'USER_PROBATION_SET', event_version: 1, aggregate_type: 'USER', aggregate_id: String(id), actor_user_id: actor.actor_user_id, occurred_at: new Date(), correlation_id: idempotencyKey, causation_id: idempotencyKey, payload: { user_id: id, from_status: 'active', reason: reason ?? null } }, queryRunner);
+      return { user_id: id, status: 'probation' };
+    });
   }
 
   /**

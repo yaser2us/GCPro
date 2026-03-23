@@ -814,4 +814,60 @@ export class FoundationWorkflowService {
       return this.resourceRefRepo.findById(id, queryRunner);
     });
   }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // M3: IC PRE-CHECK (KYC)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /**
+   * KYC.CheckIC
+   * POST /api/v1/foundation/kyc/check-ic
+   *
+   * Pre-check if an IC/NRIC is already registered in the system.
+   * Cross-queries person_identity + person via raw SQL (read-only, no transaction needed).
+   *
+   * Returns:
+   *   eligible: true  → IC is clear; safe to proceed with registration
+   *   eligible: false → IC already exists with a blocking status
+   */
+  async checkIC(icNo: string, idType: string = 'NRIC') {
+    const rows = await this.txService.run(async (queryRunner) => {
+      return queryRunner.manager.query(
+        `SELECT
+           pi.id         AS identity_id,
+           pi.person_id,
+           pi.id_type,
+           pi.id_no,
+           p.status      AS person_status
+         FROM person_identity pi
+         JOIN person p ON p.id = pi.person_id
+         WHERE pi.id_no = ?
+           AND pi.id_type = ?
+         LIMIT 1`,
+        [icNo, idType],
+      );
+    });
+
+    if (!rows || rows.length === 0) {
+      return {
+        eligible: true,
+        ic_status: 'clear',
+        message: 'IC not found — safe to proceed with registration',
+      };
+    }
+
+    const row = rows[0];
+    const blockingStatuses = ['active', 'probation', 'frozen', 'suspended', 'pending'];
+    const eligible = !blockingStatuses.includes(row.person_status);
+
+    return {
+      eligible,
+      ic_status: eligible ? 'closed_or_terminated' : 'duplicate',
+      person_id: row.person_id,
+      person_status: row.person_status,
+      message: eligible
+        ? 'IC exists but person is closed/terminated — may be eligible to rejoin'
+        : 'IC already registered with an active person record',
+    };
+  }
 }

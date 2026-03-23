@@ -20,6 +20,8 @@ import { ReferralChainService } from './services/referral-chain.service';
 import { ReferralController } from './controllers/referral.controller';
 import { ReferralV2Controller } from './controllers/referral.v2.controller';
 import { ReferralChainConsumer } from './consumers/referral-chain.consumer';
+import { PolicyMemberAddedConsumer } from './consumers/policy-member-added.consumer';
+import { PolicyMemberAddedHandler } from './handlers/policy-member-added.handler';
 
 /**
  * Referral Module V2
@@ -88,6 +90,10 @@ import { ReferralChainConsumer } from './consumers/referral-chain.consumer';
 
     // Event Consumers (chain building)
     ReferralChainConsumer, // V2 only
+
+    // H3: Affiliate chain inheritance on beneficiary/dependent add
+    PolicyMemberAddedHandler,
+    PolicyMemberAddedConsumer,
   ],
   exports: [
     // Export services in case other modules need them

@@ -1,4 +1,4 @@
-version: "2.0"
+version: "2.1.0"
 spec_id: "foundation.pillar.v2"
 domain: "foundation"
 plugin: "foundation"
@@ -2408,6 +2408,46 @@ commands:
     response:
       fields: [id, subject_type, subject_id, status]
 
+  - name: KYC.CheckIC
+    id: "M3"
+    description: "Pre-check if an IC/NRIC is already registered in the system. Read-only. Used in the registration wizard to prevent duplicate registrations."
+    path: "/api/v1/foundation/kyc/check-ic"
+    method: POST
+    idempotent: true
+    permissions: ["any_authenticated"]
+    input:
+      ic_no:
+        type: "string"
+        required: true
+        description: "IC / NRIC number to check"
+      id_type:
+        type: "string"
+        required: false
+        default: "NRIC"
+        description: "Identity document type (NRIC, PASSPORT, etc.)"
+    steps:
+      - kind: "raw_sql_read"
+        description: "Cross-query person_identity JOIN person WHERE id_no = ic_no AND id_type = id_type"
+        tables: ["person_identity", "person"]
+    response:
+      eligible:
+        type: boolean
+        description: "true = IC is clear; false = already registered with a blocking status"
+      ic_status:
+        type: string
+        enum: [clear, duplicate, closed_or_terminated]
+      person_id:
+        type: bigint
+        nullable: true
+      person_status:
+        type: string
+        nullable: true
+      message:
+        type: string
+    errors:
+      - code: "IC_NO_REQUIRED"
+        condition: "ic_no not provided in request body"
+
   - name: AuditLog.Record
     description: "Append an audit log entry. Typically called internally by commands or middleware, not directly by end users."
     path: "/api/v1/foundation/audit-logs"
@@ -2463,6 +2503,17 @@ commands:
 # -------------------------------------------------------
 
 changelog:
+  - version: "2.1.0"
+    date: "2026-03-23"
+    author: "Claude Sonnet 4.6"
+    description: "M3 — IC Pre-check (KYC.CheckIC)"
+    changes:
+      - "Added KYC.CheckIC command (POST /api/v1/foundation/kyc/check-ic)"
+      - "Cross-queries person_identity + person to detect duplicate IC registrations"
+      - "Returns eligible flag + ic_status: clear | duplicate | closed_or_terminated"
+    breaking_changes: []
+    migrations_required: false
+
   - version: "2.0"
     date: "2026-03-22"
     author: "system"

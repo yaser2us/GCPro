@@ -1,8 +1,10 @@
 import {
   Controller,
   Post,
+  Get,
   Param,
   Body,
+  Query,
   UseGuards,
   HttpCode,
   HttpStatus,
@@ -34,6 +36,29 @@ import type { Actor } from '../../../corekit/types/actor.type';
 @UseGuards(AuthGuard, PermissionsGuard)
 export class PolicyController {
   constructor(private readonly workflowService: PolicyWorkflowService) {}
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // M4: PACKAGE AUTO-SELECTION (public — used in registration wizard)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /**
+   * PACKAGE LOOKUP
+   * GET /api/v1/policy/package-lookup?dob=YYYY-MM-DD&smoker=true|false
+   *
+   * No specific permission required — any authenticated actor can call this.
+   * Used in the registration wizard before policy creation.
+   */
+  @Get('package-lookup')
+  @HttpCode(HttpStatus.OK)
+  async packageLookup(
+    @Query('dob') dob: string,
+    @Query('smoker') smoker: string,
+  ) {
+    if (!dob) {
+      throw new Error('dob query parameter is required');
+    }
+    return this.workflowService.packageLookup(dob, smoker === 'true');
+  }
 
   /**
    * CREATE POLICY ENDPOINT

@@ -178,6 +178,87 @@ export class UserController {
   }
 
   // ──────────────────────────────────────────────────────────────────────────
+  // C3: 8-STATE LIFECYCLE ENDPOINTS
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /** POST /v1/users/:user_id/freeze */
+  @Post('v1/users/:user_id/freeze')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('user:admin')
+  async freezeUser(
+    @Param('user_id') userId: string,
+    @Body() body: { reason?: string },
+    @Headers('idempotency-key') idempotencyKey: string,
+    @CurrentActor() actor: Actor,
+  ) {
+    return this.workflowService.freezeUser(Number(userId), body?.reason, actor, idempotencyKey);
+  }
+
+  /** POST /v1/users/:user_id/close */
+  @Post('v1/users/:user_id/close')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('user:admin')
+  async closeUser(
+    @Param('user_id') userId: string,
+    @Body() body: { trigger_code?: string },
+    @Headers('idempotency-key') idempotencyKey: string,
+    @CurrentActor() actor: Actor,
+  ) {
+    return this.workflowService.closeUser(Number(userId), body?.trigger_code, actor, idempotencyKey);
+  }
+
+  /** POST /v1/users/:user_id/terminate */
+  @Post('v1/users/:user_id/terminate')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('user:admin')
+  async terminateUser(
+    @Param('user_id') userId: string,
+    @Body() body: { reason?: string },
+    @Headers('idempotency-key') idempotencyKey: string,
+    @CurrentActor() actor: Actor,
+  ) {
+    return this.workflowService.terminateUser(Number(userId), body?.reason, actor, idempotencyKey);
+  }
+
+  /** POST /v1/users/:user_id/rejoin */
+  @Post('v1/users/:user_id/rejoin')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('user:admin')
+  async rejoinUser(
+    @Param('user_id') userId: string,
+    @Headers('idempotency-key') idempotencyKey: string,
+    @CurrentActor() actor: Actor,
+  ) {
+    return this.workflowService.rejoinUser(Number(userId), actor, idempotencyKey);
+  }
+
+  /** POST /v1/users/:user_id/reactivate */
+  @Post('v1/users/:user_id/reactivate')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('user:admin')
+  async reactivateUser(
+    @Param('user_id') userId: string,
+    @Body() body: { note?: string },
+    @Headers('idempotency-key') idempotencyKey: string,
+    @CurrentActor() actor: Actor,
+  ) {
+    return this.workflowService.reactivateUser(Number(userId), body?.note, actor, idempotencyKey);
+  }
+
+  /** POST /v1/users/:user_id/set-probation */
+  @Post('v1/users/:user_id/set-probation')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('user:admin')
+  async setProbationUser(
+    @Param('user_id') userId: string,
+    @Body() body: { reason?: string },
+    @Headers('idempotency-key') idempotencyKey: string,
+    @CurrentActor() actor: Actor,
+  ) {
+    return this.workflowService.setProbationUser(Number(userId), body?.reason, actor, idempotencyKey);
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
   // USER CREDENTIAL ENDPOINTS
   // ──────────────────────────────────────────────────────────────────────────
 

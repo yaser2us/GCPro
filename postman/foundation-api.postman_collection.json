@@ -1141,6 +1141,110 @@
             },
             "description": "Mark KYC as rejected. Use instead of verify when documents are invalid. Emits KYC_REJECTED. KYC status: pending → rejected."
           }
+        },
+        {
+          "name": "M3.1 Check IC — clear (new IC)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('eligible true for unknown IC', function () { pm.expect(pm.response.json().eligible).to.equal(true); });",
+                  "pm.test('ic_status is clear', function () { pm.expect(pm.response.json().ic_status).to.equal('clear'); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ic_no\": \"991231-14-5678\",\n  \"id_type\": \"NRIC\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/kyc/check-ic",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "kyc", "check-ic"]
+            },
+            "description": "M3 — Pre-check a new IC not in the system.\n\nExpected: { eligible: true, ic_status: 'clear' }"
+          }
+        },
+        {
+          "name": "M3.2 Check IC — duplicate (active person)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.json().ic_status === 'duplicate') {",
+                  "    pm.test('eligible false for active person', function () { pm.expect(pm.response.json().eligible).to.equal(false); });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ic_no\": \"850101-10-1234\",\n  \"id_type\": \"NRIC\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/kyc/check-ic",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "kyc", "check-ic"]
+            },
+            "description": "M3 — Pre-check an IC already linked to an active person.\n\nExpected: { eligible: false, ic_status: 'duplicate', person_status: 'active' }"
+          }
+        },
+        {
+          "name": "M3.3 Check IC — closed/terminated (eligible to rejoin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "if (pm.response.json().ic_status === 'closed_or_terminated') {",
+                  "    pm.test('eligible true for closed person', function () { pm.expect(pm.response.json().eligible).to.equal(true); });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "x-user-id", "value": "{{admin_user_id}}" },
+              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ic_no\": \"750615-07-9999\",\n  \"id_type\": \"NRIC\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/foundation/kyc/check-ic",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "foundation", "kyc", "check-ic"]
+            },
+            "description": "M3 — Pre-check an IC for a closed/terminated person.\n\nExpected: { eligible: true, ic_status: 'closed_or_terminated' } — can proceed to rejoin flow."
+          }
         }
       ]
     }

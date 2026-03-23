@@ -1,4 +1,4 @@
-import { Controller, Post, Param, Body, UseGuards, HttpCode, HttpStatus, Headers } from '@nestjs/common';
+import { Controller, Post, Param, Body, UseGuards, HttpCode, HttpStatus, Headers, BadRequestException } from '@nestjs/common';
 import { FoundationWorkflowService } from '../services/foundation.workflow.service';
 import { KYCUpsertDto } from '../dtos/kyc-upsert.dto';
 import { AuthGuard } from '../../../corekit/guards/auth.guard';
@@ -52,5 +52,24 @@ export class KYCController {
   ) {
     if (!idempotencyKey) throw new Error('Idempotency-Key header is required');
     return this.workflowService.rejectKYC(Number(kycId), actor, idempotencyKey);
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // M3: IC PRE-CHECK
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /**
+   * POST /api/v1/foundation/kyc/check-ic
+   * Pre-check if an IC/NRIC is already registered. No idempotency key needed (read-only).
+   * Permission: foundation:kyc:check (or any authenticated actor — registration wizard use case)
+   */
+  @Post('kyc/check-ic')
+  @HttpCode(HttpStatus.OK)
+  async checkIC(
+    @Body() body: { ic_no: string; id_type?: string },
+    @CurrentActor() _actor: Actor,
+  ) {
+    if (!body?.ic_no) throw new BadRequestException('ic_no is required');
+    return this.workflowService.checkIC(body.ic_no, body.id_type);
   }
 }

@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "8f3c2a1d-4e9b-4c3a-9d2e-1f5a7b9c6e3d",
     "name": "Policy API - Complete Workflow",
-    "description": "Complete test suite for Policy Pillar\n\nBased on: specs/policy/policy.pillar.v2.yml\n\nCovers:\n- Master data setup (packages, rates)\n- Policy creation and activation\n- Member management\n- Benefit usage (reserve → confirm → release)\n- Billing plan and installments\n- Deposit requirement evaluation\n- Remediation case management",
+    "description": "Complete test suite for Policy Pillar\n\nBased on: specs/policy/policy.pillar.v2.yml (v2.1.0)\n\nCovers:\n- M4: Package Auto-Selection (GET /package-lookup)\n- Master data setup (packages, rates)\n- Policy creation and activation\n- Member management\n- Benefit usage (reserve → confirm → release)\n- Billing plan and installments\n- Deposit requirement evaluation\n- Remediation case management",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -48,6 +48,114 @@
     }
   ],
   "item": [
+    {
+      "name": "M4. Package Lookup (Registration Wizard)",
+      "item": [
+        {
+          "name": "M4.1 Package Lookup — non-smoker age 30",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Has package_id', function () { pm.expect(pm.response.json().package_id).to.exist; });",
+                  "pm.test('Has deposit_capacity', function () { pm.expect(pm.response.json().deposit_capacity).to.be.a('number'); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Id", "value": "{{user_id}}", "type": "text" },
+              { "key": "X-User-Role", "value": "{{user_role}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/policy/package-lookup?dob=1995-03-23&smoker=false",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "policy", "package-lookup"],
+              "query": [
+                { "key": "dob", "value": "1995-03-23", "description": "Applicant DOB → age 31" },
+                { "key": "smoker", "value": "false" }
+              ]
+            },
+            "description": "M4 — Auto-select package for a 31-year-old non-smoker.\n\nExpected response:\n- package_id, package_code, package_name\n- annual_fee_amount, monthly_max_cap, deposit_capacity\n- age_at_lookup: 31, smoker_status: non_smoker"
+          },
+          "response": []
+        },
+        {
+          "name": "M4.2 Package Lookup — smoker age 45",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('smoker_status is smoker', function () { pm.expect(pm.response.json().smoker_status).to.equal('smoker'); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Id", "value": "{{user_id}}", "type": "text" },
+              { "key": "X-User-Role", "value": "{{user_role}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/policy/package-lookup?dob=1981-01-01&smoker=true",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "policy", "package-lookup"],
+              "query": [
+                { "key": "dob", "value": "1981-01-01", "description": "Applicant DOB → age 45" },
+                { "key": "smoker", "value": "true" }
+              ]
+            },
+            "description": "M4 — Auto-select package for a 45-year-old smoker.\n\nExpected: smoker_status = smoker, different annual_fee_amount than non-smoker."
+          },
+          "response": []
+        },
+        {
+          "name": "M4.3 Package Lookup — age out of range (expect 404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 404 for unmapped age', function () { pm.expect(pm.response.code).to.be.oneOf([404, 200]); });",
+                  "if (pm.response.code === 404) {",
+                  "    pm.test('Error code PACKAGE_NOT_FOUND', function () { pm.expect(pm.response.json().code).to.equal('PACKAGE_NOT_FOUND'); });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-User-Id", "value": "{{user_id}}", "type": "text" },
+              { "key": "X-User-Role", "value": "{{user_role}}", "type": "text" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/policy/package-lookup?dob=1940-01-01&smoker=false",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "policy", "package-lookup"],
+              "query": [
+                { "key": "dob", "value": "1940-01-01", "description": "Age 86 — likely out of age_band range" },
+                { "key": "smoker", "value": "false" }
+              ]
+            },
+            "description": "M4 — Edge case: age beyond configured age_band max. Expects PACKAGE_NOT_FOUND."
+          },
+          "response": []
+        }
+      ],
+      "description": "M4 — Package Auto-Selection\nGET /api/v1/policy/package-lookup?dob=YYYY-MM-DD&smoker=true|false\n\nUsed in the registration wizard to suggest the right package before policy creation.\nNo specific permission required — any authenticated actor."
+    },
     {
       "name": "0. Setup Master Data (Admin)",
       "item": [

@@ -26,8 +26,9 @@ export class User {
   @Column({ type: 'datetime', nullable: true })
   email_verified_at: Date | null;
 
+  // C3: 8-state lifecycle — pending | active | probation | frozen | closed | terminated | suspended | inactive
   @Column({ type: 'varchar', length: 32, default: 'active' })
-  status: 'active' | 'suspended' | 'inactive';
+  status: string;
 
   @CreateDateColumn({ type: 'datetime' })
   created_at: Date;
