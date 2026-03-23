@@ -1,4 +1,4 @@
-version: "2.0.0"
+version: "2.1.0"
 spec_id: "person.pillar.v2"
 domain: "person"
 plugin: "person"
@@ -112,6 +112,16 @@ schema:
           length: 64
           nullable: true
           description: "Nationality"
+        income_level:
+          type: "varchar"
+          length: 32
+          nullable: true
+          description: "L3 — Self-reported household income band (e.g. <3000, 3000-5000, 5000+)"
+        media_channel:
+          type: "varchar"
+          length: 64
+          nullable: true
+          description: "L3 — Acquisition/marketing channel (e.g. facebook, agent, organic, referral)"
         status:
           type: "varchar"
           length: 32
@@ -552,6 +562,8 @@ commands:
               - "dob (if provided)"
               - "gender (if provided)"
               - "nationality (if provided)"
+              - "income_level (if provided) — L3"
+              - "media_channel (if provided) — L3"
 
       - step: "EMIT"
         events:
@@ -664,9 +676,27 @@ commands:
               - "id_no"
               - "country"
 
+      - step: "AUTO-PROCESS (L9)"
+        condition: "id_type = 'NRIC'"
+        description: >
+          Parse Malaysian NRIC (YYMMDD-SS-ZZZG) to extract DOB and gender.
+          Auto-populate person.dob and person.gender only if currently null.
+          Century logic: YY <= current 2-digit year → 2000s, else → 1900s.
+          Gender: last digit odd = male, even = female.
+        operations:
+          - table: "person"
+            action: "UPDATE (conditional)"
+            where: "id = :person_id AND (dob IS NULL OR gender IS NULL)"
+            fields:
+              - "dob (from NRIC YY MM DD, if person.dob is null)"
+              - "gender (from NRIC last digit, if person.gender is null)"
+
       - step: "EMIT"
         events:
           - "PERSON_IDENTITY_ADDED"
+        payload_extras:
+          - "nric_dob_parsed (YYYY-MM-DD or null)"
+          - "nric_gender_parsed (male | female | null)"
 
       - step: "COMMIT"
         returns:
@@ -818,6 +848,20 @@ coverage:
 # ──────────────────────────────────────────────────────────────────────────────
 
 changelog:
+  - version: "2.1.0"
+    date: "2026-03-23"
+    author: "Claude Sonnet 4.6"
+    changes:
+      - "L3 — Added income_level (VARCHAR 32) and media_channel (VARCHAR 64) columns to person table"
+      - "L3 — Extended PERSON.UPDATE command to accept income_level and media_channel fields"
+      - "L3 — Migration: scripts/person-l3-migration.sql"
+      - "L9 — IC Auto-Processing: PERSON_IDENTITY.ADD now auto-populates person.dob and person.gender when id_type='NRIC'"
+      - "L9 — NRIC parser: YYMMDD-SS-ZZZG format, century-aware, gender from last digit (odd=male, even=female)"
+      - "L9 — Safe: only writes if person.dob or person.gender is currently null"
+    breaking_changes: []
+    migrations_required:
+      - "scripts/person-l3-migration.sql"
+
   - version: "2.0.0"
     date: "2026-03-15"
     changes:

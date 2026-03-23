@@ -2,7 +2,7 @@
 	"info": {
 		"_postman_id": "person-api-v1",
 		"name": "Person API",
-		"description": "Person Management - Identity and Relationship Tracking\n\nSource: specs/person/person.pillar.v2.yml",
+		"description": "Person Management - Identity and Relationship Tracking\n\nSource: specs/person/person.pillar.v2.yml (v2.1.0)\n\nv2.1.0 additions:\n- L3: Update Person now accepts income_level + media_channel\n- L9: Add NRIC auto-populates person.dob + person.gender",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"item": [
@@ -70,14 +70,14 @@
 						],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"full_name\": \"John Doe Updated\",\n  \"nationality\": \"CA\"\n}"
+							"raw": "{\n  \"full_name\": \"John Doe Updated\",\n  \"nationality\": \"MY\",\n  \"income_level\": \"3000-5000\",\n  \"media_channel\": \"facebook\"\n}"
 						},
 						"url": {
 							"raw": "{{base_url}}/v1/persons/{{person_id}}",
 							"host": ["{{base_url}}"],
 							"path": ["v1", "persons", "{{person_id}}"]
 						},
-						"description": "Update person information"
+						"description": "Update person information.\n\nL3 — New fields:\n- income_level: household income band (e.g. <3000, 3000-5000, 5000+)\n- media_channel: acquisition channel (e.g. facebook, agent, organic, referral)"
 					},
 					"response": []
 				},
@@ -171,9 +171,47 @@
 						}
 					},
 					"response": []
+				},
+				{
+					"name": "L9 — Add NRIC (auto-populates DOB + gender)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"pm.test('Status 201', function () { pm.response.to.have.status(201); });",
+									"pm.test('Has person_identity_id', function () { pm.expect(pm.response.json().person_identity_id).to.exist; });",
+									"",
+									"// After this call, GET /v1/persons/{{person_id}} should show dob and gender auto-populated",
+									"pm.test('Response returned identity id', function () {",
+									"    pm.expect(pm.response.json().person_identity_id).to.be.a('number');",
+									"});"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{ "key": "Content-Type", "value": "application/json" },
+							{ "key": "Idempotency-Key", "value": "nric-{{person_id}}-001" }
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"id_type\": \"NRIC\",\n  \"id_no\": \"951231-14-5678\",\n  \"country\": \"MY\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/v1/persons/{{person_id}}/identities",
+							"host": ["{{base_url}}"],
+							"path": ["v1", "persons", "{{person_id}}", "identities"]
+						},
+						"description": "L9 — Add Malaysian NRIC. Automatically parses DOB and gender from the IC number.\n\nNRIC format: YYMMDD-SS-ZZZG\n- YYMMDD → date of birth (century-aware)\n- Last digit G: odd = male, even = female\n\nExample: 951231-14-5678\n- DOB: 1995-12-31\n- Gender: female (last digit 8 = even)\n\nAuto-populates person.dob and person.gender if currently null.\nParsed values are included in PERSON_IDENTITY_ADDED event payload."
+					},
+					"response": []
 				}
 			],
-			"description": "Identity document management"
+			"description": "Identity document management. L9: Adding id_type=NRIC auto-populates person.dob and person.gender."
 		},
 		{
 			"name": "Person Relationships",

@@ -35,6 +35,13 @@ export class Person {
   @Column({ type: 'varchar', length: 64, nullable: true })
   nationality: string | null;
 
+  // L3: income level and acquisition channel
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  income_level: string | null;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  media_channel: string | null;
+
   @Column({ type: 'varchar', length: 32, default: 'active' })
   status: 'active' | 'inactive' | 'deceased';
 

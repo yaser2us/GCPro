@@ -26,4 +26,15 @@ export class PersonUpdateRequestDto {
   @IsString()
   @MaxLength(64)
   nationality?: string;
+
+  // L3: income level and acquisition channel
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  income_level?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  media_channel?: string;
 }

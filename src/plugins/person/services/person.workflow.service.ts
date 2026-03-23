@@ -9,6 +9,7 @@ import { OutboxService } from '../../../corekit/services/outbox.service';
 import { PersonRepository } from '../repositories/person.repo';
 import { PersonIdentityRepository } from '../repositories/person-identity.repo';
 import { PersonRelationshipRepository } from '../repositories/person-relationship.repo';
+import { Person } from '../entities/person.entity';
 import { PersonCreateRequestDto } from '../dto/person-create.request.dto';
 import { PersonUpdateRequestDto } from '../dto/person-update.request.dto';
 import { PersonIdentityAddRequestDto } from '../dto/person-identity-add.request.dto';
@@ -166,6 +167,10 @@ export class PersonWorkflowService {
       if (request.gender !== undefined) updateData.gender = request.gender;
       if (request.nationality !== undefined)
         updateData.nationality = request.nationality;
+      if (request.income_level !== undefined)
+        updateData.income_level = request.income_level;
+      if (request.media_channel !== undefined)
+        updateData.media_channel = request.media_channel;
 
       await this.personRepo.update(id, updateData, queryRunner);
 
@@ -361,6 +366,23 @@ export class PersonWorkflowService {
         queryRunner,
       );
 
+      // L9: IC AUTO-PROCESSING — parse NRIC to auto-populate dob + gender
+      let nricDob: Date | null = null;
+      let nricGender: string | null = null;
+      if (request.id_type === 'NRIC') {
+        const parsed = parseNRIC(request.id_no);
+        if (parsed) {
+          nricDob = parsed.dob;
+          nricGender = parsed.gender;
+          const autoUpdate: Partial<Person> = {};
+          if (!person.dob && nricDob) autoUpdate.dob = nricDob;
+          if (!person.gender && nricGender) autoUpdate.gender = nricGender;
+          if (Object.keys(autoUpdate).length > 0) {
+            await this.personRepo.update(personId, autoUpdate, queryRunner);
+          }
+        }
+      }
+
       // EMIT: PERSON_IDENTITY_ADDED event
       await this.outboxService.enqueue(
         {
@@ -377,6 +399,8 @@ export class PersonWorkflowService {
             person_identity_id: personIdentityId,
             id_type: request.id_type,
             id_no: request.id_no,
+            nric_dob_parsed: nricDob ? nricDob.toISOString().slice(0, 10) : null,
+            nric_gender_parsed: nricGender,
           },
         },
         queryRunner,
@@ -518,4 +542,37 @@ export class PersonWorkflowService {
 
     return { items: relationships };
   }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// L9: NRIC PARSER HELPER
+// Malaysian NRIC format: YYMMDD-SS-ZZZG (hyphens optional)
+//   YYMMDD → date of birth
+//   G (last digit): odd = male, even = female
+// ──────────────────────────────────────────────────────────────────────────
+function parseNRIC(icNo: string): { dob: Date; gender: string } | null {
+  if (!icNo) return null;
+
+  // Strip hyphens and spaces
+  const clean = icNo.replace(/[-\s]/g, '');
+  if (clean.length !== 12 || !/^\d{12}$/.test(clean)) return null;
+
+  const yy = parseInt(clean.substring(0, 2), 10);
+  const mm = parseInt(clean.substring(2, 4), 10);
+  const dd = parseInt(clean.substring(4, 6), 10);
+  const lastDigit = parseInt(clean[11], 10);
+
+  // Century: YY <= current 2-digit year → 2000s; else → 1900s
+  const currentYY = new Date().getFullYear() % 100;
+  const fullYear = yy <= currentYY ? 2000 + yy : 1900 + yy;
+
+  // Validate date components
+  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+
+  const dob = new Date(fullYear, mm - 1, dd);
+  if (isNaN(dob.getTime())) return null;
+
+  const gender = lastDigit % 2 !== 0 ? 'male' : 'female';
+
+  return { dob, gender };
 }
