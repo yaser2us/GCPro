@@ -35,6 +35,9 @@ export class WalletWithdrawalRequest {
   @Column({ type: 'decimal', precision: 18, scale: 2 })
   amount: string;
 
+  @Column({ type: 'decimal', precision: 12, scale: 2, default: '0.00' })
+  fee_amount: string;
+
   @Column({ type: 'varchar', length: 8, default: 'MYR' })
   currency: string;
 

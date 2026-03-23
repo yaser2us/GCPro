@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "8f3c2a1d-4e9b-4c3a-9d2e-1f5a7b9c6e3d",
     "name": "Policy API - Complete Workflow",
-    "description": "Complete test suite for Policy Pillar\n\nBased on: specs/policy/policy.pillar.v2.yml (v2.3.0)\n\nv2.3.0 additions:\n- C7: Split Payment 50/50 — billing_type='split' creates 2 installments at 50% each\n- C7: billing_type='full' creates 1 upfront installment\n\nv2.2.0 additions:\n- M1: Deposit Capacity Formula — GET /deposit + POST /deposit/evaluate (re-derives from rate table)\n\nCovers:\n- M4: Package Auto-Selection (GET /package-lookup)\n- M1: Deposit Capacity Formula Enforcement\n- C7: Split Payment 50/50\n- Master data setup (packages, rates)\n- Policy creation and activation\n- Member management\n- Benefit usage (reserve → confirm → release)\n- Billing plan and installments\n- Deposit requirement evaluation\n- Remediation case management",
+    "description": "Complete test suite for Policy Pillar\n\nBased on: specs/policy/policy.pillar.v2.yml (v2.3.0)\n\nv2.3.0 additions:\n- C7: Split Payment 50/50 \u2014 billing_type='split' creates 2 installments at 50% each\n- C7: billing_type='full' creates 1 upfront installment\n\nv2.2.0 additions:\n- M1: Deposit Capacity Formula \u2014 GET /deposit + POST /deposit/evaluate (re-derives from rate table)\n\nCovers:\n- M4: Package Auto-Selection (GET /package-lookup)\n- M1: Deposit Capacity Formula Enforcement\n- C7: Split Payment 50/50\n- Master data setup (packages, rates)\n- Policy creation and activation\n- Member management\n- Benefit usage (reserve \u2192 confirm \u2192 release)\n- Billing plan and installments\n- Deposit requirement evaluation\n- Remediation case management",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -52,7 +52,7 @@
       "name": "M4. Package Lookup (Registration Wizard)",
       "item": [
         {
-          "name": "M4.1 Package Lookup — non-smoker age 30",
+          "name": "M4.1 Package Lookup \u2014 non-smoker age 30",
           "event": [
             {
               "listen": "test",
@@ -69,24 +69,46 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "X-User-Id", "value": "{{user_id}}", "type": "text" },
-              { "key": "X-User-Role", "value": "{{user_role}}", "type": "text" }
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{user_role}}",
+                "type": "text"
+              }
             ],
             "url": {
               "raw": "{{base_url}}/api/v1/policy/package-lookup?dob=1995-03-23&smoker=false",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "policy", "package-lookup"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "policy",
+                "package-lookup"
+              ],
               "query": [
-                { "key": "dob", "value": "1995-03-23", "description": "Applicant DOB → age 31" },
-                { "key": "smoker", "value": "false" }
+                {
+                  "key": "dob",
+                  "value": "1995-03-23",
+                  "description": "Applicant DOB \u2192 age 31"
+                },
+                {
+                  "key": "smoker",
+                  "value": "false"
+                }
               ]
             },
-            "description": "M4 — Auto-select package for a 31-year-old non-smoker.\n\nExpected response:\n- package_id, package_code, package_name\n- annual_fee_amount, monthly_max_cap, deposit_capacity\n- age_at_lookup: 31, smoker_status: non_smoker"
+            "description": "M4 \u2014 Auto-select package for a 31-year-old non-smoker.\n\nExpected response:\n- package_id, package_code, package_name\n- annual_fee_amount, monthly_max_cap, deposit_capacity\n- age_at_lookup: 31, smoker_status: non_smoker"
           },
           "response": []
         },
         {
-          "name": "M4.2 Package Lookup — smoker age 45",
+          "name": "M4.2 Package Lookup \u2014 smoker age 45",
           "event": [
             {
               "listen": "test",
@@ -102,24 +124,46 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "X-User-Id", "value": "{{user_id}}", "type": "text" },
-              { "key": "X-User-Role", "value": "{{user_role}}", "type": "text" }
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{user_role}}",
+                "type": "text"
+              }
             ],
             "url": {
               "raw": "{{base_url}}/api/v1/policy/package-lookup?dob=1981-01-01&smoker=true",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "policy", "package-lookup"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "policy",
+                "package-lookup"
+              ],
               "query": [
-                { "key": "dob", "value": "1981-01-01", "description": "Applicant DOB → age 45" },
-                { "key": "smoker", "value": "true" }
+                {
+                  "key": "dob",
+                  "value": "1981-01-01",
+                  "description": "Applicant DOB \u2192 age 45"
+                },
+                {
+                  "key": "smoker",
+                  "value": "true"
+                }
               ]
             },
-            "description": "M4 — Auto-select package for a 45-year-old smoker.\n\nExpected: smoker_status = smoker, different annual_fee_amount than non-smoker."
+            "description": "M4 \u2014 Auto-select package for a 45-year-old smoker.\n\nExpected: smoker_status = smoker, different annual_fee_amount than non-smoker."
           },
           "response": []
         },
         {
-          "name": "M4.3 Package Lookup — age out of range (expect 404)",
+          "name": "M4.3 Package Lookup \u2014 age out of range (expect 404)",
           "event": [
             {
               "listen": "test",
@@ -137,24 +181,46 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "X-User-Id", "value": "{{user_id}}", "type": "text" },
-              { "key": "X-User-Role", "value": "{{user_role}}", "type": "text" }
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{user_role}}",
+                "type": "text"
+              }
             ],
             "url": {
               "raw": "{{base_url}}/api/v1/policy/package-lookup?dob=1940-01-01&smoker=false",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "policy", "package-lookup"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "policy",
+                "package-lookup"
+              ],
               "query": [
-                { "key": "dob", "value": "1940-01-01", "description": "Age 86 — likely out of age_band range" },
-                { "key": "smoker", "value": "false" }
+                {
+                  "key": "dob",
+                  "value": "1940-01-01",
+                  "description": "Age 86 \u2014 likely out of age_band range"
+                },
+                {
+                  "key": "smoker",
+                  "value": "false"
+                }
               ]
             },
-            "description": "M4 — Edge case: age beyond configured age_band max. Expects PACKAGE_NOT_FOUND."
+            "description": "M4 \u2014 Edge case: age beyond configured age_band max. Expects PACKAGE_NOT_FOUND."
           },
           "response": []
         }
       ],
-      "description": "M4 — Package Auto-Selection\nGET /api/v1/policy/package-lookup?dob=YYYY-MM-DD&smoker=true|false\n\nUsed in the registration wizard to suggest the right package before policy creation.\nNo specific permission required — any authenticated actor."
+      "description": "M4 \u2014 Package Auto-Selection\nGET /api/v1/policy/package-lookup?dob=YYYY-MM-DD&smoker=true|false\n\nUsed in the registration wizard to suggest the right package before policy creation.\nNo specific permission required \u2014 any authenticated actor."
     },
     {
       "name": "0. Setup Master Data (Admin)",
@@ -169,7 +235,7 @@
                   "if (pm.response.code === 201 || pm.response.code === 200) {",
                   "    const response = pm.response.json();",
                   "    if (response.package_id) {",
-                  "        console.log('✅ Package Created:', response.package_id);",
+                  "        console.log('\u2705 Package Created:', response.package_id);",
                   "    }",
                   "}",
                   "",
@@ -205,8 +271,16 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/policy/admin/packages",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "policy", "admin", "packages"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "policy",
+                "admin",
+                "packages"
+              ]
             },
             "description": "Creates a policy package via admin API"
           },
@@ -222,7 +296,7 @@
                   "if (pm.response.code === 201 || pm.response.code === 200) {",
                   "    const response = pm.response.json();",
                   "    if (response.rate_id) {",
-                  "        console.log('✅ Rate Created:', response.rate_id);",
+                  "        console.log('\u2705 Rate Created:', response.rate_id);",
                   "    }",
                   "}",
                   "",
@@ -258,8 +332,18 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/policy/admin/packages/1/rates",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "policy", "admin", "packages", "1", "rates"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "policy",
+                "admin",
+                "packages",
+                "1",
+                "rates"
+              ]
             },
             "description": "Creates a rate for policy package ID 1"
           },
@@ -282,7 +366,7 @@
                   "    const response = pm.response.json();",
                   "    if (response.policy_id) {",
                   "        pm.collectionVariables.set('policy_id', response.policy_id);",
-                  "        console.log('✅ Policy Created:', response.policy_id);",
+                  "        console.log('\u2705 Policy Created:', response.policy_id);",
                   "    }",
                   "}",
                   "",
@@ -330,8 +414,15 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/policy/create",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "policy", "create"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "policy",
+                "create"
+              ]
             },
             "description": "Creates a new policy with holder"
           },
@@ -349,7 +440,7 @@
                   "});",
                   "",
                   "if (pm.response.code === 200) {",
-                  "    console.log('✅ Policy Activated');",
+                  "    console.log('\u2705 Policy Activated');",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -392,8 +483,16 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/policy/{{policy_id}}/activate",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "policy", "{{policy_id}}", "activate"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "policy",
+                "{{policy_id}}",
+                "activate"
+              ]
             },
             "description": "Activates a pending policy"
           },
@@ -417,7 +516,7 @@
                   "});",
                   "",
                   "if (pm.response.code === 201) {",
-                  "    console.log('✅ Member Added');",
+                  "    console.log('\u2705 Member Added');",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -460,8 +559,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/policy/{{policy_id}}/members/add",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "policy", "{{policy_id}}", "members", "add"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "policy",
+                "{{policy_id}}",
+                "members",
+                "add"
+              ]
             },
             "description": "Adds a dependent member to the policy"
           },
@@ -484,7 +592,7 @@
                   "    const response = pm.response.json();",
                   "    if (response.usage_id) {",
                   "        pm.collectionVariables.set('benefit_usage_id', response.usage_id);",
-                  "        console.log('✅ Benefit Reserved:', response.usage_id);",
+                  "        console.log('\u2705 Benefit Reserved:', response.usage_id);",
                   "    }",
                   "}",
                   "",
@@ -532,8 +640,16 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/policy/benefit-usage/reserve",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "policy", "benefit-usage", "reserve"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "policy",
+                "benefit-usage",
+                "reserve"
+              ]
             },
             "description": "Reserves benefit usage (pre-authorization)"
           },
@@ -551,7 +667,7 @@
                   "});",
                   "",
                   "if (pm.response.code === 200) {",
-                  "    console.log('✅ Benefit Usage Confirmed');",
+                  "    console.log('\u2705 Benefit Usage Confirmed');",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -594,8 +710,16 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/policy/benefit-usage/confirm",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "policy", "benefit-usage", "confirm"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "policy",
+                "benefit-usage",
+                "confirm"
+              ]
             },
             "description": "Confirms reserved benefit usage"
           },
@@ -613,7 +737,7 @@
                   "});",
                   "",
                   "if (pm.response.code === 200) {",
-                  "    console.log('✅ Benefit Usage Released');",
+                  "    console.log('\u2705 Benefit Usage Released');",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -656,8 +780,16 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/policy/benefit-usage/release",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "policy", "benefit-usage", "release"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "policy",
+                "benefit-usage",
+                "release"
+              ]
             },
             "description": "Releases reserved benefit usage (cancellation)"
           },
@@ -670,7 +802,7 @@
       "name": "4. Billing & Installments (C7)",
       "item": [
         {
-          "name": "C7.1 — Create Split Billing Plan (50/50)",
+          "name": "C7.1 \u2014 Create Split Billing Plan (50/50)",
           "event": [
             {
               "listen": "test",
@@ -689,9 +821,20 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Id",   "value": "{{user_id}}", "type": "text" },
-              { "key": "X-User-Role", "value": "{{user_role}}", "type": "text" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{user_role}}",
+                "type": "text"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -699,21 +842,41 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/policy/{{policy_id}}/billing-plan/create",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "policy", "{{policy_id}}", "billing-plan", "create"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "policy",
+                "{{policy_id}}",
+                "billing-plan",
+                "create"
+              ]
             },
-            "description": "C7 — 50/50 split payment.\n\nCreates 2 installments:\n- No.1: 4800.00, due now\n- No.2: 4800.00, due in 30 days\n\nPolicy activates after installment_no=1 paid."
+            "description": "C7 \u2014 50/50 split payment.\n\nCreates 2 installments:\n- No.1: 4800.00, due now\n- No.2: 4800.00, due in 30 days\n\nPolicy activates after installment_no=1 paid."
           },
           "response": []
         },
         {
-          "name": "C7.2 — Create Full Upfront Billing Plan",
+          "name": "C7.2 \u2014 Create Full Upfront Billing Plan",
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Id",   "value": "{{user_id}}", "type": "text" },
-              { "key": "X-User-Role", "value": "{{user_role}}", "type": "text" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{user_role}}",
+                "type": "text"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -721,15 +884,24 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/policy/{{policy_id}}/billing-plan/create",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "policy", "{{policy_id}}", "billing-plan", "create"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "policy",
+                "{{policy_id}}",
+                "billing-plan",
+                "create"
+              ]
             },
-            "description": "C7 — Full upfront payment. Creates 1 installment for full amount due now."
+            "description": "C7 \u2014 Full upfront payment. Creates 1 installment for full amount due now."
           },
           "response": []
         },
         {
-          "name": "4.3 Create Billing Plan (monthly — existing)",
+          "name": "4.3 Create Billing Plan (monthly \u2014 existing)",
           "event": [
             {
               "listen": "test",
@@ -739,7 +911,7 @@
                   "    const response = pm.response.json();",
                   "    if (response.billing_plan_id) {",
                   "        pm.collectionVariables.set('billing_plan_id', response.billing_plan_id);",
-                  "        console.log('✅ Billing Plan Created:', response.billing_plan_id);",
+                  "        console.log('\u2705 Billing Plan Created:', response.billing_plan_id);",
                   "    }",
                   "}",
                   "",
@@ -787,8 +959,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/policy/{{policy_id}}/billing-plan/create",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "policy", "{{policy_id}}", "billing-plan", "create"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "policy",
+                "{{policy_id}}",
+                "billing-plan",
+                "create"
+              ]
             },
             "description": "Creates billing plan with 12 monthly installments"
           },
@@ -806,7 +987,7 @@
                   "});",
                   "",
                   "if (pm.response.code === 200) {",
-                  "    console.log('✅ Installment Paid');",
+                  "    console.log('\u2705 Installment Paid');",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -849,8 +1030,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/policy/installment/1/pay",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "policy", "installment", "1", "pay"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "policy",
+                "installment",
+                "1",
+                "pay"
+              ]
             },
             "description": "Records installment payment (change installment ID as needed)"
           },
@@ -861,27 +1051,43 @@
     },
     {
       "name": "5. Deposit Requirement (M1)",
-      "description": "M1 — Deposit Capacity Formula Enforcement\nFormula: deposit_capacity = monthly_max_cap × multiplier; thresholds from pcts\nRate re-derived from policy_package_rate on each evaluate call.",
+      "description": "M1 \u2014 Deposit Capacity Formula Enforcement\nFormula: deposit_capacity = monthly_max_cap \u00d7 multiplier; thresholds from pcts\nRate re-derived from policy_package_rate on each evaluate call.",
       "item": [
         {
-          "name": "M1.1 — Get Deposit Status",
+          "name": "M1.1 \u2014 Get Deposit Status",
           "request": {
             "method": "GET",
             "header": [
-              { "key": "X-User-Id",   "value": "{{user_id}}", "type": "text" },
-              { "key": "X-User-Role", "value": "{{user_role}}", "type": "text" }
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{user_role}}",
+                "type": "text"
+              }
             ],
             "url": {
               "raw": "{{base_url}}/api/v1/policy/{{policy_id}}/deposit",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "policy", "{{policy_id}}", "deposit"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "policy",
+                "{{policy_id}}",
+                "deposit"
+              ]
             },
-            "description": "M1 — Read current deposit requirement status.\nReturns stored thresholds + status without recalculating."
+            "description": "M1 \u2014 Read current deposit requirement status.\nReturns stored thresholds + status without recalculating."
           },
           "response": []
         },
         {
-          "name": "M1.2 — Evaluate Deposit (balance OK)",
+          "name": "M1.2 \u2014 Evaluate Deposit (balance OK)",
           "event": [
             {
               "listen": "test",
@@ -900,9 +1106,20 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Id",   "value": "{{user_id}}", "type": "text" },
-              { "key": "X-User-Role", "value": "{{user_role}}", "type": "text" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{user_role}}",
+                "type": "text"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -910,21 +1127,41 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/policy/{{policy_id}}/deposit/evaluate",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "policy", "{{policy_id}}", "deposit", "evaluate"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "policy",
+                "{{policy_id}}",
+                "deposit",
+                "evaluate"
+              ]
             },
-            "description": "M1 — Re-derives monthly_max_cap from policy_package_rate, recomputes all thresholds, evaluates balance.\n\nFormula:\n  deposit_capacity = monthly_max_cap × deposit_capacity_multiplier\n  min_required     = deposit_capacity × min_deposit_pct\n  warning_amount   = deposit_capacity × warning_pct\n\nWith monthly_max_cap=5000, multiplier=2.0: deposit_capacity=10000, min_required=5000\nBalance 8000 → status=warning"
+            "description": "M1 \u2014 Re-derives monthly_max_cap from policy_package_rate, recomputes all thresholds, evaluates balance.\n\nFormula:\n  deposit_capacity = monthly_max_cap \u00d7 deposit_capacity_multiplier\n  min_required     = deposit_capacity \u00d7 min_deposit_pct\n  warning_amount   = deposit_capacity \u00d7 warning_pct\n\nWith monthly_max_cap=5000, multiplier=2.0: deposit_capacity=10000, min_required=5000\nBalance 8000 \u2192 status=warning"
           },
           "response": []
         },
         {
-          "name": "M1.3 — Evaluate Deposit (balance critical)",
+          "name": "M1.3 \u2014 Evaluate Deposit (balance critical)",
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-User-Id",   "value": "{{user_id}}", "type": "text" },
-              { "key": "X-User-Role", "value": "{{user_role}}", "type": "text" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{user_id}}",
+                "type": "text"
+              },
+              {
+                "key": "X-User-Role",
+                "value": "{{user_role}}",
+                "type": "text"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -932,10 +1169,19 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/policy/{{policy_id}}/deposit/evaluate",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "policy", "{{policy_id}}", "deposit", "evaluate"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "policy",
+                "{{policy_id}}",
+                "deposit",
+                "evaluate"
+              ]
             },
-            "description": "M1 — Balance well below min_required → expect status=critical"
+            "description": "M1 \u2014 Balance well below min_required \u2192 expect status=critical"
           },
           "response": []
         }
@@ -955,7 +1201,7 @@
                   "    const response = pm.response.json();",
                   "    if (response.remediation_case_id) {",
                   "        pm.collectionVariables.set('remediation_case_id', response.remediation_case_id);",
-                  "        console.log('✅ Remediation Case Opened:', response.remediation_case_id);",
+                  "        console.log('\u2705 Remediation Case Opened:', response.remediation_case_id);",
                   "    }",
                   "}",
                   "",
@@ -1003,8 +1249,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/policy/{{policy_id}}/remediation/open",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "policy", "{{policy_id}}", "remediation", "open"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "policy",
+                "{{policy_id}}",
+                "remediation",
+                "open"
+              ]
             },
             "description": "Opens a remediation case for policy issues"
           },
@@ -1022,7 +1277,7 @@
                   "});",
                   "",
                   "if (pm.response.code === 200) {",
-                  "    console.log('✅ Remediation Case Cleared');",
+                  "    console.log('\u2705 Remediation Case Cleared');",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -1065,8 +1320,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/policy/remediation/1/clear",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "policy", "remediation", "1", "clear"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "policy",
+                "remediation",
+                "1",
+                "clear"
+              ]
             },
             "description": "Clears a remediation case (change case ID as needed)"
           },
@@ -1074,6 +1338,126 @@
         }
       ],
       "description": "Remediation case management"
+    },
+    {
+      "name": "Phase 4 \u2014 C8 Freeze/Unfreeze & H4 Grace",
+      "item": [
+        {
+          "name": "C8.1 \u2014 Freeze Policy",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/policy/{{policy_id}}/freeze",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "policy",
+                "{{policy_id}}",
+                "freeze"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trigger_code\": \"deposit_low\"\n}"
+            },
+            "description": "C8: Freeze a policy when deposit is critically low. Sets status=frozen, emits POLICY_FROZEN."
+          }
+        },
+        {
+          "name": "C8.2 \u2014 Unfreeze Policy",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/policy/{{policy_id}}/unfreeze",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "policy",
+                "{{policy_id}}",
+                "unfreeze"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "description": "C8: Unfreeze a policy after deposit is replenished. Sets status=active, emits POLICY_UNFROZEN."
+          }
+        },
+        {
+          "name": "H4.1 \u2014 Expire Remediation Case",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/policy/remediation/{{case_id}}/expire",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "policy",
+                "remediation",
+                "{{case_id}}",
+                "expire"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "description": "H4: Expire a remediation case after grace period ends. Marks case expired, freezes policy, emits REMEDIATION_CASE_EXPIRED + POLICY_FROZEN."
+          }
+        }
+      ]
     }
   ]
 }

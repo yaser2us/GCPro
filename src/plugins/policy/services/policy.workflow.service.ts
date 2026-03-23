@@ -1095,6 +1095,26 @@ export class PolicyWorkflowService {
         queryRunner,
       );
 
+      // H4: Schedule a grace-expiry notification_schedule so the freeze can be auto-triggered
+      if (graceEndAt) {
+        await queryRunner.manager.query(
+          `INSERT INTO notification_schedule
+             (ref_type, ref_id, schedule_type, fire_at, status, payload_json, created_at, updated_at)
+           VALUES
+             ('policy_remediation_case', ?, 'grace_expiry', ?, 'pending', ?, NOW(), NOW())`,
+          [
+            caseId,
+            graceEndAt,
+            JSON.stringify({
+              action: 'expire_remediation_case',
+              remediation_case_id: caseId,
+              policy_id: request.policy_id,
+              reason_code: request.reason_code,
+            }),
+          ],
+        );
+      }
+
       // EMIT: REMEDIATION_CASE_OPENED event
       await this.outboxService.enqueue(
         {
@@ -1110,6 +1130,7 @@ export class PolicyWorkflowService {
             remediation_case_id: caseId,
             policy_id: request.policy_id,
             reason_code: request.reason_code,
+            grace_end_at: graceEndAt?.toISOString() || null,
           },
           dedupe_key: idempotencyKey,
         },
@@ -1190,6 +1211,192 @@ export class PolicyWorkflowService {
     });
 
     return result;
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // H4: EXPIRE REMEDIATION CASE (grace period ended without clearing)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Expire a remediation case after grace period ends.
+   * Marks case as 'expired', freezes the policy, emits POLICY_FROZEN.
+   * POST /api/v1/policy/remediation/:caseId/expire  (system/cron only)
+   */
+  async expireRemediationCase(
+    caseId: number,
+    actor: Actor,
+    idempotencyKey: string,
+  ) {
+    return this.txService.run(async (queryRunner) => {
+      const remediationCase = await this.remediationRepo.findById(caseId, queryRunner);
+      if (!remediationCase) throw new NotFoundException({ code: 'CASE_NOT_FOUND' });
+      if (!['open', 'in_progress'].includes(remediationCase.status)) {
+        return { remediation_case_id: caseId, status: remediationCase.status };
+      }
+
+      await this.remediationRepo.update(
+        caseId,
+        { status: 'expired', expired_at: new Date() },
+        queryRunner,
+      );
+
+      await this.outboxService.enqueue(
+        {
+          event_name: 'REMEDIATION_CASE_EXPIRED',
+          event_version: 1,
+          aggregate_type: 'POLICY_REMEDIATION_CASE',
+          aggregate_id: String(caseId),
+          actor_user_id: actor.actor_user_id,
+          occurred_at: new Date(),
+          correlation_id: idempotencyKey,
+          causation_id: idempotencyKey,
+          payload: { remediation_case_id: caseId, policy_id: remediationCase.policy_id },
+        },
+        queryRunner,
+      );
+
+      // Freeze the policy
+      const policy = await this.policyRepo.findById(remediationCase.policy_id, queryRunner);
+      if (policy && ['active', 'pending_payment'].includes(policy.status)) {
+        await this.policyRepo.update(remediationCase.policy_id, { status: 'frozen' }, queryRunner);
+        await this.statusEventRepo.create(
+          {
+            policy_id: remediationCase.policy_id,
+            event_type: 'POLICY_FROZEN',
+            from_status: policy.status,
+            to_status: 'frozen',
+            trigger_code: `grace_expired:${remediationCase.reason_code}`,
+            actor_id: Number(actor.actor_user_id),
+            actor_type: 'system' as const,
+          },
+          queryRunner,
+        );
+        await this.outboxService.enqueue(
+          {
+            event_name: 'POLICY_FROZEN',
+            event_version: 1,
+            aggregate_type: 'POLICY',
+            aggregate_id: String(remediationCase.policy_id),
+            actor_user_id: actor.actor_user_id,
+            occurred_at: new Date(),
+            correlation_id: idempotencyKey,
+            causation_id: idempotencyKey,
+            payload: { policy_id: remediationCase.policy_id, trigger_code: 'grace_expired' },
+          },
+          queryRunner,
+        );
+      }
+
+      return { remediation_case_id: caseId, status: 'expired', policy_frozen: true };
+    });
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // C8: FREEZE / UNFREEZE POLICY (deposit low or admin override)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Freeze a policy (deposit below threshold or admin action).
+   * Sets status='frozen', writes policy_status_event, emits POLICY_FROZEN.
+   * POST /api/v1/policy/:policyId/freeze
+   */
+  async freezePolicy(
+    policyId: number,
+    triggerCode: string,
+    actor: Actor,
+    idempotencyKey: string,
+  ) {
+    return this.txService.run(async (queryRunner) => {
+      const policy = await this.policyRepo.findById(policyId, queryRunner);
+      if (!policy) throw new NotFoundException({ code: 'POLICY_NOT_FOUND' });
+      if (policy.status === 'frozen') return { policy_id: policyId, status: 'frozen' };
+      if (!['active', 'pending_payment'].includes(policy.status)) {
+        throw new ConflictException({ code: 'POLICY_NOT_FREEZABLE' });
+      }
+
+      await this.policyRepo.update(policyId, { status: 'frozen' }, queryRunner);
+
+      await this.statusEventRepo.create(
+        {
+          policy_id: policyId,
+          event_type: 'POLICY_FROZEN',
+          from_status: policy.status,
+          to_status: 'frozen',
+          trigger_code: triggerCode,
+          actor_id: Number(actor.actor_user_id),
+          actor_type: 'system' as const,
+        },
+        queryRunner,
+      );
+
+      await this.outboxService.enqueue(
+        {
+          event_name: 'POLICY_FROZEN',
+          event_version: 1,
+          aggregate_type: 'POLICY',
+          aggregate_id: String(policyId),
+          actor_user_id: actor.actor_user_id,
+          occurred_at: new Date(),
+          correlation_id: idempotencyKey,
+          causation_id: idempotencyKey,
+          payload: { policy_id: policyId, trigger_code: triggerCode },
+        },
+        queryRunner,
+      );
+
+      return { policy_id: policyId, status: 'frozen' };
+    });
+  }
+
+  /**
+   * Unfreeze a policy (dues cleared or admin action).
+   * Sets status='active', writes policy_status_event, emits POLICY_UNFROZEN.
+   * POST /api/v1/policy/:policyId/unfreeze
+   */
+  async unfreezePolicy(
+    policyId: number,
+    actor: Actor,
+    idempotencyKey: string,
+  ) {
+    return this.txService.run(async (queryRunner) => {
+      const policy = await this.policyRepo.findById(policyId, queryRunner);
+      if (!policy) throw new NotFoundException({ code: 'POLICY_NOT_FOUND' });
+      if (policy.status !== 'frozen') {
+        throw new ConflictException({ code: 'POLICY_NOT_FROZEN' });
+      }
+
+      await this.policyRepo.update(policyId, { status: 'active' }, queryRunner);
+
+      await this.statusEventRepo.create(
+        {
+          policy_id: policyId,
+          event_type: 'POLICY_UNFROZEN',
+          from_status: 'frozen',
+          to_status: 'active',
+          trigger_code: 'dues_cleared',
+          actor_id: Number(actor.actor_user_id),
+          actor_type: 'system' as const,
+        },
+        queryRunner,
+      );
+
+      await this.outboxService.enqueue(
+        {
+          event_name: 'POLICY_UNFROZEN',
+          event_version: 1,
+          aggregate_type: 'POLICY',
+          aggregate_id: String(policyId),
+          actor_user_id: actor.actor_user_id,
+          occurred_at: new Date(),
+          correlation_id: idempotencyKey,
+          causation_id: idempotencyKey,
+          payload: { policy_id: policyId },
+        },
+        queryRunner,
+      );
+
+      return { policy_id: policyId, status: 'active' };
+    });
   }
 
   // ──────────────────────────────────────────────────────────────────────────

@@ -341,4 +341,48 @@ export class PolicyController {
       idempotencyKey,
     );
   }
+
+  // ── H4: EXPIRE REMEDIATION CASE ──────────────────────────────────────────
+
+  /** POST /api/v1/policy/remediation/:caseId/expire — H4 (system/cron) */
+  @Post('remediation/:caseId/expire')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('policy:remediation:manage')
+  async expireRemediationCase(
+    @Param('caseId') caseId: string,
+    @Headers('idempotency-key') idempotencyKey: string,
+    @CurrentActor() actor: Actor,
+  ) {
+    if (!idempotencyKey) throw new Error('Idempotency-Key header is required');
+    return this.workflowService.expireRemediationCase(Number(caseId), actor, idempotencyKey);
+  }
+
+  // ── C8: FREEZE / UNFREEZE ─────────────────────────────────────────────────
+
+  /** POST /api/v1/policy/:policyId/freeze — C8 */
+  @Post(':policyId/freeze')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('policy:status:manage')
+  async freezePolicy(
+    @Param('policyId') policyId: string,
+    @Body('trigger_code') triggerCode: string = 'deposit_low',
+    @Headers('idempotency-key') idempotencyKey: string,
+    @CurrentActor() actor: Actor,
+  ) {
+    if (!idempotencyKey) throw new Error('Idempotency-Key header is required');
+    return this.workflowService.freezePolicy(Number(policyId), triggerCode, actor, idempotencyKey);
+  }
+
+  /** POST /api/v1/policy/:policyId/unfreeze — C8 */
+  @Post(':policyId/unfreeze')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('policy:status:manage')
+  async unfreezePolicy(
+    @Param('policyId') policyId: string,
+    @Headers('idempotency-key') idempotencyKey: string,
+    @CurrentActor() actor: Actor,
+  ) {
+    if (!idempotencyKey) throw new Error('Idempotency-Key header is required');
+    return this.workflowService.unfreezePolicy(Number(policyId), actor, idempotencyKey);
+  }
 }

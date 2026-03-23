@@ -42,4 +42,15 @@ export class WalletRuleSetRepository {
     const manager = queryRunner ? queryRunner.manager : this.repo.manager;
     await manager.update(WalletRuleSet, { id }, data);
   }
+
+  async findActiveByWalletId(
+    walletId: number,
+    queryRunner?: QueryRunner,
+  ): Promise<WalletRuleSet | null> {
+    const manager = queryRunner ? queryRunner.manager : this.repo.manager;
+    return manager.findOne(WalletRuleSet, {
+      where: { wallet_id: walletId, status: 'active' },
+      order: { created_at: 'DESC' },
+    });
+  }
 }

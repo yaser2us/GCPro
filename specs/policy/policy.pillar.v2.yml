@@ -1,4 +1,4 @@
-version: "2.4.0"
+version: "2.5.0"
 spec_id: "policy.pillar.v2"
 domain: "policy"
 plugin: "policy"
@@ -2169,6 +2169,21 @@ commands:
 # ──────────────────────────────────────────────────────────────────────────────
 
 changelog:
+  - version: "2.5.0"
+    date: "2026-03-23"
+    author: "system"
+    description: "Phase 4 — C8 Threshold-Freeze, H4 Grace Periods"
+    changes:
+      - "C8: WalletThresholdBreachedHandler — on WALLET_THRESHOLD_BREACHED (deposit_urgent) opens policy_remediation_case"
+      - "C8: freezePolicy / unfreezePolicy — status transitions, policy_status_event, POLICY_FROZEN/POLICY_UNFROZEN events"
+      - "H4: openRemediationCase now inserts into notification_schedule when graceEndAt is set"
+      - "H4: expireRemediationCase — marks case expired, freezes policy, emits REMEDIATION_CASE_EXPIRED + POLICY_FROZEN"
+      - "H4: POST /api/v1/policy/remediation/:caseId/expire — system/cron endpoint"
+      - "C8: POST /api/v1/policy/:policyId/freeze and /unfreeze endpoints"
+      - "policy status: added 'frozen' as valid status value"
+    breaking_changes: []
+    migrations_required: []
+
   - version: "2.4.0"
     date: "2026-03-23"
     author: "system"
@@ -2398,3 +2413,42 @@ integration:
       condition: "purpose_code == 'premium' AND ref_type == 'policy'"
       action: "Activate policy (pending → active), emit POLICY_ACTIVATED"
       idempotency: "Skip if policy.status already == 'active'"
+
+    - event: "WALLET_THRESHOLD_BREACHED"
+      source_plugin: "wallet"
+      aggregate_type: "WALLET"
+      consumer: "src/plugins/policy/consumers/wallet-threshold-breached.consumer.ts"
+      handler: "src/plugins/policy/handlers/wallet-threshold-breached.handler.ts"
+      condition: "threshold_code == 'deposit_urgent'"
+      action: "Open policy_remediation_case with reason_code=deposit_low; schedule notification; C8"
+      idempotency: "Skip if open remediation case already exists for the policy"
+
+    - event: "CLAIM_SETTLED"
+      source_plugin: "claims"
+      aggregate_type: "CLAIM"
+      consumer: "src/plugins/policy/consumers/claim-settled.consumer.ts"
+      handler: "src/plugins/policy/handlers/claim-settled.handler.ts"
+      action: "Adjust deposit_capacity, emit DEPOSIT_REQUIREMENT_UPDATED"
+
+  emits:
+    - event: "POLICY_FROZEN"
+      triggers:
+        - "Policy.Freeze (C8)"
+        - "RemediationCase.Expire (H4)"
+      payload: "{ policy_id, trigger_code, actor_type }"
+
+    - event: "POLICY_UNFROZEN"
+      triggers:
+        - "Policy.Unfreeze (C8)"
+      payload: "{ policy_id, actor_type }"
+
+    - event: "REMEDIATION_CASE_OPENED"
+      triggers:
+        - "RemediationCase.Open"
+        - "WalletThresholdBreachedHandler (C8)"
+      payload: "{ case_id, policy_id, reason_code, grace_end_at }"
+
+    - event: "REMEDIATION_CASE_EXPIRED"
+      triggers:
+        - "RemediationCase.Expire (H4)"
+      payload: "{ case_id, policy_id }"

@@ -33,6 +33,8 @@ import { PolicyActivatedHandler } from './handlers/policy-activated.handler';
 import { PolicyActivatedConsumer } from './consumers/policy-activated.consumer';
 import { ClaimSettledHandler } from './handlers/claim-settled.handler';
 import { ClaimSettledConsumer } from './consumers/claim-settled.consumer';
+import { WalletThresholdBreachedHandler } from './handlers/wallet-threshold-breached.handler';
+import { WalletThresholdBreachedConsumer } from './consumers/wallet-threshold-breached.consumer';
 import { PolicyController } from './controllers/policy.controller';
 import { PolicyAdminController } from './controllers/policy-admin.controller';
 
@@ -80,6 +82,9 @@ import { PolicyAdminController } from './controllers/policy-admin.controller';
     PolicyActivatedConsumer,
     ClaimSettledHandler,
     ClaimSettledConsumer,
+    // C8: Deposit threshold → remediation case
+    WalletThresholdBreachedHandler,
+    WalletThresholdBreachedConsumer,
   ],
   controllers: [PolicyController, PolicyAdminController],
   exports: [PolicyWorkflowService],

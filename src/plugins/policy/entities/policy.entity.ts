@@ -26,7 +26,7 @@ export class Policy {
   holder_person_id: number;
 
   @Column({ type: 'varchar', length: 20, default: 'pending' })
-  status: 'pending' | 'active' | 'suspended' | 'expired' | 'cancelled';
+  status: 'pending' | 'active' | 'suspended' | 'expired' | 'cancelled' | 'frozen';
 
   @Column({ type: 'datetime', nullable: true })
   start_at: Date | null;

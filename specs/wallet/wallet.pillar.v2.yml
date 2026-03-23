@@ -1,4 +1,4 @@
-version: "2.1.0"
+version: "2.2.0"
 spec_id: "wallet.pillar.v2"
 domain: "wallet"
 plugin: "wallet"
@@ -1187,17 +1187,83 @@ coverage:
       - "WALLET.WITHDRAW"
       - "WALLET.PROCESS_MISSION_REWARD"
 
+    WALLET_THRESHOLD_BREACHED:
+      - "WALLET.CHECK_THRESHOLD"
+      note: "Emitted when balance snapshot drops below a wallet_threshold_rule boundary"
+
+    AUTO_TOPUP_INITIATED:
+      - "WALLET.AUTO_TOPUP"
+      note: "C4: payment_intent created for deposit wallet top-up"
+
+    AUTO_TOPUP_NO_PAYMENT_METHOD:
+      - "WALLET.AUTO_TOPUP"
+      note: "C4: no stored payment method found; notification layer handles outreach"
+
+    DEPOSIT_TOPUP_CREDITED:
+      - "WALLET.PROCESS_DEPOSIT_TOPUP"
+      note: "C4: wallet_deposit_intent created after PAYMENT_SUCCEEDED for deposit_topup"
+
+    CROWD_CHARGE_SPEND_CREATED:
+      - "WALLET.PROCESS_CROWD_CHARGE"
+      note: "C6: wallet_spend_intent created for crowd member's deposit wallet"
+
   events_consumed:
     MISSION_REWARD_GRANTED:
       consumed_by:
         - "WALLET.PROCESS_MISSION_REWARD"
       source_plugin: "missions"
 
+    COMMISSION_ACCRUED:
+      consumed_by:
+        - "WALLET.PROCESS_COMMISSION"
+      source_plugin: "commission"
+
+    POLICY_ACTIVATED:
+      consumed_by:
+        - "WALLET.HANDLE_POLICY_ACTIVATED"
+      source_plugin: "policy"
+
+    PERSON_CREATED:
+      consumed_by:
+        - "WALLET.HANDLE_PERSON_CREATED"
+      source_plugin: "user"
+
+    CROWD_PERIOD_CALCULATED:
+      consumed_by:
+        - "WALLET.PROCESS_CROWD_CHARGE"
+      source_plugin: "crowd"
+      note: "C6: triggers bulk deposit deductions for all members in the period"
+
+    WALLET_THRESHOLD_BREACHED:
+      consumed_by:
+        - "WALLET.AUTO_TOPUP"
+      source_plugin: "wallet"
+      note: "C4: self-consumed — auto top-up attempts when deposit_urgent threshold hit"
+
+    PAYMENT_SUCCEEDED:
+      consumed_by:
+        - "WALLET.PROCESS_DEPOSIT_TOPUP"
+      source_plugin: "payment"
+      note: "C4: only handles purpose_code=deposit_topup; credits deposit wallet"
+
 # ──────────────────────────────────────────────────────────────────────────────
 # CHANGELOG
 # ──────────────────────────────────────────────────────────────────────────────
 
 changelog:
+  - version: "2.2.0"
+    date: "2026-03-23"
+    changes:
+      - "H7: Withdrawal limits — wallet_rule_set + wallet_rule validation (min, daily, monthly)"
+      - "H7: fee_amount column added to wallet_withdrawal_request; fee calculation on withdrawal"
+      - "M2: KYC gate + active carer gate enforced on requestWithdrawal"
+      - "C8: completeSpendIntent now calls checkAndEmitThreshold; emits WALLET_THRESHOLD_BREACHED"
+      - "C6: CrowdChargeHandler — on CROWD_PERIOD_CALCULATED creates wallet_spend_intent per member"
+      - "L10: PaymentPriorityService — resolves GC Wallet first, then external payment intent"
+      - "C4: AutoTopupHandler — on WALLET_THRESHOLD_BREACHED creates payment_intent for deposit top-up"
+      - "C4: DepositTopupPaymentHandler — on PAYMENT_SUCCEEDED (deposit_topup) creates wallet_deposit_intent"
+      - "C4: POST /api/v1/wallet/:walletId/auto-topup — manual trigger endpoint"
+
   - version: "2.1.0"
     date: "2026-03-23"
     changes:

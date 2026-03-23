@@ -55,4 +55,14 @@ export class WalletRuleRepository {
     const manager = queryRunner ? queryRunner.manager : this.repo.manager;
     await manager.update(WalletRule, { id }, data);
   }
+
+  async findActiveByRuleSetId(
+    ruleSetId: number,
+    queryRunner?: QueryRunner,
+  ): Promise<WalletRule[]> {
+    const manager = queryRunner ? queryRunner.manager : this.repo.manager;
+    return manager.find(WalletRule, {
+      where: { rule_set_id: ruleSetId, status: 'active' },
+    });
+  }
 }

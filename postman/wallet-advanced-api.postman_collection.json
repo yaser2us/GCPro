@@ -1,30 +1,90 @@
 {
   "info": {
     "name": "Wallet Advanced API",
-    "description": "Postman collection for the Wallet Advanced pillar — deposit intents, spend intents, withdrawal requests, wallet holds, wallet batches, rule sets, threshold rules, and policy gates.\nBased on the wallet plugin using prefix /api/v1/wallet-advanced",
+    "description": "Postman collection for the Wallet Advanced pillar \u2014 deposit intents, spend intents, withdrawal requests, wallet holds, wallet batches, rule sets, threshold rules, and policy gates.\nBased on the wallet plugin using prefix /api/v1/wallet-advanced",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "base_url", "value": "http://localhost:3000" },
-    { "key": "admin_user_id", "value": "1" },
-    { "key": "admin_user_role", "value": "admin" },
-    { "key": "target_wallet_id", "value": "1" },
-    { "key": "target_account_id", "value": "1" },
-    { "key": "target_bank_profile_id", "value": "1" },
-    { "key": "deposit_intent_id", "value": "" },
-    { "key": "deposit_intent_fail_id", "value": "" },
-    { "key": "deposit_intent_cancel_id", "value": "" },
-    { "key": "spend_intent_id", "value": "" },
-    { "key": "spend_intent_fail_id", "value": "" },
-    { "key": "spend_intent_cancel_id", "value": "" },
-    { "key": "withdrawal_request_id", "value": "" },
-    { "key": "withdrawal_reject_id", "value": "" },
-    { "key": "hold_id", "value": "" },
-    { "key": "hold_capture_id", "value": "" },
-    { "key": "hold_expire_id", "value": "" },
-    { "key": "batch_id", "value": "" },
-    { "key": "batch_item_id", "value": "" },
-    { "key": "rule_set_id", "value": "" }
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "admin_user_id",
+      "value": "1"
+    },
+    {
+      "key": "admin_user_role",
+      "value": "admin"
+    },
+    {
+      "key": "target_wallet_id",
+      "value": "1"
+    },
+    {
+      "key": "target_account_id",
+      "value": "1"
+    },
+    {
+      "key": "target_bank_profile_id",
+      "value": "1"
+    },
+    {
+      "key": "deposit_intent_id",
+      "value": ""
+    },
+    {
+      "key": "deposit_intent_fail_id",
+      "value": ""
+    },
+    {
+      "key": "deposit_intent_cancel_id",
+      "value": ""
+    },
+    {
+      "key": "spend_intent_id",
+      "value": ""
+    },
+    {
+      "key": "spend_intent_fail_id",
+      "value": ""
+    },
+    {
+      "key": "spend_intent_cancel_id",
+      "value": ""
+    },
+    {
+      "key": "withdrawal_request_id",
+      "value": ""
+    },
+    {
+      "key": "withdrawal_reject_id",
+      "value": ""
+    },
+    {
+      "key": "hold_id",
+      "value": ""
+    },
+    {
+      "key": "hold_capture_id",
+      "value": ""
+    },
+    {
+      "key": "hold_expire_id",
+      "value": ""
+    },
+    {
+      "key": "batch_id",
+      "value": ""
+    },
+    {
+      "key": "batch_item_id",
+      "value": ""
+    },
+    {
+      "key": "rule_set_id",
+      "value": ""
+    }
   ],
   "item": [
     {
@@ -35,9 +95,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -45,8 +114,15 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/deposit-intents",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "deposit-intents"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "deposit-intents"
+              ]
             }
           },
           "event": [
@@ -78,9 +154,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -88,8 +173,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/deposit-intents/{{deposit_intent_id}}/complete",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "deposit-intents", "{{deposit_intent_id}}", "complete"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "deposit-intents",
+                "{{deposit_intent_id}}",
+                "complete"
+              ]
             }
           },
           "event": [
@@ -118,9 +212,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -128,8 +231,15 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/deposit-intents",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "deposit-intents"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "deposit-intents"
+              ]
             }
           },
           "event": [
@@ -162,9 +272,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -172,8 +291,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/deposit-intents/{{deposit_intent_fail_id}}/fail",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "deposit-intents", "{{deposit_intent_fail_id}}", "fail"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "deposit-intents",
+                "{{deposit_intent_fail_id}}",
+                "fail"
+              ]
             }
           },
           "event": [
@@ -202,9 +330,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -212,8 +349,15 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/deposit-intents",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "deposit-intents"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "deposit-intents"
+              ]
             }
           },
           "event": [
@@ -245,9 +389,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -255,8 +408,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/deposit-intents/{{deposit_intent_cancel_id}}/cancel",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "deposit-intents", "{{deposit_intent_cancel_id}}", "cancel"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "deposit-intents",
+                "{{deposit_intent_cancel_id}}",
+                "cancel"
+              ]
             }
           },
           "event": [
@@ -290,9 +452,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -300,8 +471,15 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/spend-intents",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "spend-intents"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "spend-intents"
+              ]
             }
           },
           "event": [
@@ -333,9 +511,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -343,8 +530,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/spend-intents/{{spend_intent_id}}/complete",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "spend-intents", "{{spend_intent_id}}", "complete"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "spend-intents",
+                "{{spend_intent_id}}",
+                "complete"
+              ]
             }
           },
           "event": [
@@ -373,9 +569,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -383,8 +588,15 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/spend-intents",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "spend-intents"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "spend-intents"
+              ]
             }
           },
           "event": [
@@ -416,9 +628,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -426,8 +647,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/spend-intents/{{spend_intent_fail_id}}/fail",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "spend-intents", "{{spend_intent_fail_id}}", "fail"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "spend-intents",
+                "{{spend_intent_fail_id}}",
+                "fail"
+              ]
             }
           },
           "event": [
@@ -456,9 +686,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -466,8 +705,15 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/spend-intents",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "spend-intents"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "spend-intents"
+              ]
             }
           },
           "event": [
@@ -499,9 +745,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -509,8 +764,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/spend-intents/{{spend_intent_cancel_id}}/cancel",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "spend-intents", "{{spend_intent_cancel_id}}", "cancel"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "spend-intents",
+                "{{spend_intent_cancel_id}}",
+                "cancel"
+              ]
             }
           },
           "event": [
@@ -544,9 +808,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -554,8 +827,15 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/withdrawal-requests",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "withdrawal-requests"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "withdrawal-requests"
+              ]
             }
           },
           "event": [
@@ -587,9 +867,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -597,8 +886,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/withdrawal-requests/{{withdrawal_request_id}}/approve",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "withdrawal-requests", "{{withdrawal_request_id}}", "approve"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "withdrawal-requests",
+                "{{withdrawal_request_id}}",
+                "approve"
+              ]
             }
           },
           "event": [
@@ -627,9 +925,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -637,8 +944,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/withdrawal-requests/{{withdrawal_request_id}}/payout-attempts",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "withdrawal-requests", "{{withdrawal_request_id}}", "payout-attempts"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "withdrawal-requests",
+                "{{withdrawal_request_id}}",
+                "payout-attempts"
+              ]
             }
           },
           "event": [
@@ -667,9 +983,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -677,8 +1002,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/withdrawal-requests/{{withdrawal_request_id}}/complete",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "withdrawal-requests", "{{withdrawal_request_id}}", "complete"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "withdrawal-requests",
+                "{{withdrawal_request_id}}",
+                "complete"
+              ]
             }
           },
           "event": [
@@ -707,9 +1041,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -717,8 +1060,15 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/withdrawal-requests",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "withdrawal-requests"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "withdrawal-requests"
+              ]
             }
           },
           "event": [
@@ -750,9 +1100,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -760,8 +1119,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/withdrawal-requests/{{withdrawal_reject_id}}/reject",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "withdrawal-requests", "{{withdrawal_reject_id}}", "reject"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "withdrawal-requests",
+                "{{withdrawal_reject_id}}",
+                "reject"
+              ]
             }
           },
           "event": [
@@ -795,9 +1163,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -805,8 +1182,15 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/holds",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "holds"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "holds"
+              ]
             }
           },
           "event": [
@@ -838,9 +1222,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -848,8 +1241,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/holds/{{hold_id}}/release",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "holds", "{{hold_id}}", "release"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "holds",
+                "{{hold_id}}",
+                "release"
+              ]
             }
           },
           "event": [
@@ -878,9 +1280,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -888,8 +1299,15 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/holds",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "holds"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "holds"
+              ]
             }
           },
           "event": [
@@ -921,9 +1339,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -931,8 +1358,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/holds/{{hold_capture_id}}/capture",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "holds", "{{hold_capture_id}}", "capture"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "holds",
+                "{{hold_capture_id}}",
+                "capture"
+              ]
             }
           },
           "event": [
@@ -961,9 +1397,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -971,8 +1416,15 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/holds",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "holds"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "holds"
+              ]
             }
           },
           "event": [
@@ -1004,9 +1456,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -1014,8 +1475,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/holds/{{hold_expire_id}}/expire",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "holds", "{{hold_expire_id}}", "expire"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "holds",
+                "{{hold_expire_id}}",
+                "expire"
+              ]
             }
           },
           "event": [
@@ -1049,9 +1519,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -1059,8 +1538,15 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/batches",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "batches"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "batches"
+              ]
             }
           },
           "event": [
@@ -1092,9 +1578,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -1102,8 +1597,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/batches/{{batch_id}}/items",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "batches", "{{batch_id}}", "items"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "batches",
+                "{{batch_id}}",
+                "items"
+              ]
             }
           },
           "event": [
@@ -1135,9 +1639,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -1145,8 +1658,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/batches/{{batch_id}}/items",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "batches", "{{batch_id}}", "items"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "batches",
+                "{{batch_id}}",
+                "items"
+              ]
             }
           },
           "event": [
@@ -1173,9 +1695,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -1183,8 +1714,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/batches/{{batch_id}}/process",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "batches", "{{batch_id}}", "process"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "batches",
+                "{{batch_id}}",
+                "process"
+              ]
             }
           },
           "event": [
@@ -1213,9 +1753,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -1223,8 +1772,19 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/batches/{{batch_id}}/items/{{batch_item_id}}/complete",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "batches", "{{batch_id}}", "items", "{{batch_item_id}}", "complete"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "batches",
+                "{{batch_id}}",
+                "items",
+                "{{batch_item_id}}",
+                "complete"
+              ]
             }
           },
           "event": [
@@ -1253,9 +1813,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -1263,8 +1832,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/batches/{{batch_id}}/finalize",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "batches", "{{batch_id}}", "finalize"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "batches",
+                "{{batch_id}}",
+                "finalize"
+              ]
             }
           },
           "event": [
@@ -1298,9 +1876,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -1308,8 +1895,15 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/rule-sets",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "rule-sets"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "rule-sets"
+              ]
             }
           },
           "event": [
@@ -1341,9 +1935,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -1351,8 +1954,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/rule-sets/{{rule_set_id}}/rules",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "rule-sets", "{{rule_set_id}}", "rules"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "rule-sets",
+                "{{rule_set_id}}",
+                "rules"
+              ]
             }
           },
           "event": [
@@ -1379,9 +1991,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -1389,8 +2010,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/rule-sets/{{rule_set_id}}/rules",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "rule-sets", "{{rule_set_id}}", "rules"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "rule-sets",
+                "{{rule_set_id}}",
+                "rules"
+              ]
             }
           },
           "event": [
@@ -1417,9 +2047,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -1427,8 +2066,17 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/rule-sets/{{rule_set_id}}/deactivate",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "rule-sets", "{{rule_set_id}}", "deactivate"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "rule-sets",
+                "{{rule_set_id}}",
+                "deactivate"
+              ]
             }
           },
           "event": [
@@ -1462,9 +2110,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -1472,8 +2129,15 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/threshold-rules",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "threshold-rules"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "threshold-rules"
+              ]
             }
           },
           "event": [
@@ -1500,9 +2164,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -1510,8 +2183,15 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/threshold-rules",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "threshold-rules"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "threshold-rules"
+              ]
             }
           },
           "event": [
@@ -1538,9 +2218,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -1548,8 +2237,15 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/threshold-events",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "threshold-events"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "threshold-events"
+              ]
             }
           },
           "event": [
@@ -1583,9 +2279,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -1593,8 +2298,15 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/policy-gates",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "policy-gates"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "policy-gates"
+              ]
             }
           },
           "event": [
@@ -1623,9 +2335,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -1633,8 +2354,15 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/policy-gates",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "policy-gates"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "policy-gates"
+              ]
             }
           },
           "event": [
@@ -1663,9 +2391,18 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" },
-              { "key": "x-user-id", "value": "{{admin_user_id}}" },
-              { "key": "x-user-role", "value": "{{admin_user_role}}" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-user-id",
+                "value": "{{admin_user_id}}"
+              },
+              {
+                "key": "x-user-role",
+                "value": "{{admin_user_role}}"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -1673,8 +2410,15 @@
             },
             "url": {
               "raw": "{{base_url}}/api/v1/wallet-advanced/policy-gates",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet-advanced", "policy-gates"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet-advanced",
+                "policy-gates"
+              ]
             }
           },
           "event": [
@@ -1697,6 +2441,127 @@
               }
             }
           ]
+        }
+      ]
+    },
+    {
+      "name": "Phase 4 \u2014 C4 Auto Top-up & L10 Payment Source",
+      "item": [
+        {
+          "name": "L10.1 \u2014 Get Payment Source (GC Wallet priority)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/wallet/payment-source?account_id={{account_id}}&amount=500&currency=MYR",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "payment-source"
+              ],
+              "query": [
+                {
+                  "key": "account_id",
+                  "value": "{{account_id}}"
+                },
+                {
+                  "key": "amount",
+                  "value": "500"
+                },
+                {
+                  "key": "currency",
+                  "value": "MYR"
+                }
+              ]
+            },
+            "description": "L10: Resolve how much to pay from GC Wallet vs external payment. Returns wallet_amount, payment_intent_amount, wallet_id, is_split."
+          }
+        },
+        {
+          "name": "L10.2 \u2014 Get Payment Source (amount exceeds wallet)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/wallet/payment-source?account_id={{account_id}}&amount=9999&currency=MYR",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "payment-source"
+              ],
+              "query": [
+                {
+                  "key": "account_id",
+                  "value": "{{account_id}}"
+                },
+                {
+                  "key": "amount",
+                  "value": "9999"
+                },
+                {
+                  "key": "currency",
+                  "value": "MYR"
+                }
+              ]
+            },
+            "description": "L10: Split payment scenario \u2014 wallet covers partial amount, remainder via external payment intent."
+          }
+        },
+        {
+          "name": "C4.1 \u2014 Trigger Auto Top-up (manual override)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/wallet/{{wallet_id}}/auto-topup",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "{{wallet_id}}",
+                "auto-topup"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "description": "C4: Manually trigger auto top-up for a deposit wallet. Creates payment_intent using the account's stored payment method. Emits AUTO_TOPUP_INITIATED or AUTO_TOPUP_NO_PAYMENT_METHOD."
+          }
         }
       ]
     }

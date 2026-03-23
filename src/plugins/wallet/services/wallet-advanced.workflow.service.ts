@@ -308,7 +308,7 @@ export class WalletAdvancedWorkflowService {
     });
   }
 
-  /** CompleteSpendIntent: created | pending → completed */
+  /** CompleteSpendIntent: created | pending → completed (C8: checks thresholds after completion) */
   async completeSpendIntent(
     spendIntentId: number,
     actor: Actor,
@@ -342,8 +342,58 @@ export class WalletAdvancedWorkflowService {
         queryRunner,
       );
 
+      // C8: check threshold rules after spend — emit WALLET_THRESHOLD_BREACHED if needed
+      await this.checkAndEmitThreshold(intent.wallet_id, actor, idempotencyKey, queryRunner);
+
       return this.spendIntentRepo.findById(spendIntentId, queryRunner);
     });
+  }
+
+  /** C8: Internal — check threshold rules for a wallet and emit WALLET_THRESHOLD_BREACHED if any breached. */
+  private async checkAndEmitThreshold(
+    walletId: number,
+    actor: Actor,
+    correlationId: string,
+    queryRunner: any,
+  ): Promise<void> {
+    const [snapshot] = await queryRunner.manager.query(
+      `SELECT available_amount FROM wallet_balance_snapshot WHERE wallet_id = ? LIMIT 1`,
+      [walletId],
+    );
+    if (!snapshot) return;
+
+    const available = parseFloat(snapshot.available_amount);
+
+    const rules = await queryRunner.manager.query(
+      `SELECT threshold_code, threshold_amount FROM wallet_threshold_rule
+       WHERE wallet_id = ? AND status = 'active'`,
+      [walletId],
+    );
+
+    for (const rule of rules) {
+      const threshold = parseFloat(rule.threshold_amount);
+      if (available <= threshold) {
+        await this.outboxService.enqueue(
+          {
+            event_name: 'WALLET_THRESHOLD_BREACHED',
+            event_version: 1,
+            aggregate_type: 'WALLET',
+            aggregate_id: String(walletId),
+            actor_user_id: actor.actor_user_id,
+            occurred_at: new Date(),
+            correlation_id: correlationId,
+            causation_id: correlationId,
+            payload: {
+              wallet_id: walletId,
+              threshold_code: rule.threshold_code,
+              available_amount: String(available),
+              threshold_amount: String(threshold),
+            },
+          },
+          queryRunner,
+        );
+      }
+    }
   }
 
   /** FailSpendIntent: not terminal → failed */
@@ -426,19 +476,108 @@ export class WalletAdvancedWorkflowService {
 
   // ── WITHDRAWAL REQUEST ─────────────────────────────────────────────────────
 
-  /** RequestWithdrawal: insert a new withdrawal request */
+  /** RequestWithdrawal: insert a new withdrawal request (H7: rules+fee, M2: KYC+carer gate) */
   async requestWithdrawal(
     dto: WithdrawalRequestCreateDto,
     actor: Actor,
     idempotencyKey: string,
   ) {
     return this.txService.run(async (queryRunner) => {
+      const reqAmount = parseFloat(dto.amount);
+
+      // M2: KYC gate — user must have verified KYC
+      const [kycRow] = await queryRunner.manager.query(
+        `SELECT id FROM verification_status
+         WHERE account_id = (SELECT account_id FROM wallet WHERE id = ?)
+           AND verification_type = 'kyc' AND status = 'verified'
+         LIMIT 1`,
+        [dto.wallet_id],
+      );
+      if (!kycRow) {
+        throw new ForbiddenException('KYC_REQUIRED');
+      }
+
+      // M2: Active carer gate — must have at least one active policy member
+      const [carerRow] = await queryRunner.manager.query(
+        `SELECT pm.id FROM policy_member pm
+         JOIN policy p ON p.id = pm.policy_id
+         JOIN account a ON a.id = p.account_id
+         JOIN wallet w ON w.account_id = a.id
+         WHERE w.id = ? AND pm.status = 'active'
+         LIMIT 1`,
+        [dto.wallet_id],
+      );
+      if (!carerRow) {
+        throw new ForbiddenException('NO_ACTIVE_CARER');
+      }
+
+      // H7: Load active rule set for this wallet
+      const ruleSet = await this.ruleSetRepo.findActiveByWalletId(dto.wallet_id, queryRunner);
+      let feeAmount = 0;
+
+      if (ruleSet) {
+        const rules = await this.ruleRepo.findActiveByRuleSetId(ruleSet.id, queryRunner);
+        const ruleMap = new Map(rules.map((r) => [r.rule_code, r]));
+
+        // Minimum withdrawal check
+        const minRule = ruleMap.get('min_withdrawal');
+        if (minRule && reqAmount < parseFloat(minRule.value_num ?? '0')) {
+          throw new BadRequestException(
+            `WITHDRAWAL_BELOW_MINIMUM: minimum is ${minRule.value_num}`,
+          );
+        }
+
+        // Daily withdrawal limit check
+        const dailyRule = ruleMap.get('daily_withdrawal_limit');
+        if (dailyRule) {
+          const [dailyRow] = await queryRunner.manager.query(
+            `SELECT COALESCE(SUM(amount), 0) AS total
+             FROM wallet_withdrawal_request
+             WHERE wallet_id = ? AND DATE(requested_at) = CURDATE()
+               AND status NOT IN ('rejected', 'cancelled')`,
+            [dto.wallet_id],
+          );
+          const dailyUsed = parseFloat(dailyRow?.total ?? '0');
+          if (dailyUsed + reqAmount > parseFloat(dailyRule.value_num ?? '0')) {
+            throw new BadRequestException('WITHDRAWAL_DAILY_LIMIT_EXCEEDED');
+          }
+        }
+
+        // Monthly withdrawal limit check
+        const monthlyRule = ruleMap.get('monthly_withdrawal_limit');
+        if (monthlyRule) {
+          const [monthlyRow] = await queryRunner.manager.query(
+            `SELECT COALESCE(SUM(amount), 0) AS total
+             FROM wallet_withdrawal_request
+             WHERE wallet_id = ? AND YEAR(requested_at) = YEAR(NOW())
+               AND MONTH(requested_at) = MONTH(NOW())
+               AND status NOT IN ('rejected', 'cancelled')`,
+            [dto.wallet_id],
+          );
+          const monthlyUsed = parseFloat(monthlyRow?.total ?? '0');
+          if (monthlyUsed + reqAmount > parseFloat(monthlyRule.value_num ?? '0')) {
+            throw new BadRequestException('WITHDRAWAL_MONTHLY_LIMIT_EXCEEDED');
+          }
+        }
+
+        // Fee calculation (percentage or flat)
+        const feePctRule = ruleMap.get('withdrawal_fee_pct');
+        if (feePctRule) {
+          feeAmount = reqAmount * (parseFloat(feePctRule.value_num ?? '0') / 100);
+        }
+        const feeFlatRule = ruleMap.get('withdrawal_fee_flat');
+        if (feeFlatRule) {
+          feeAmount += parseFloat(feeFlatRule.value_num ?? '0');
+        }
+      }
+
       const insertedId = await this.withdrawalRequestRepo.insert(
         {
           wallet_id: dto.wallet_id,
           account_id: dto.account_id,
           bank_profile_id: dto.bank_profile_id,
           amount: dto.amount,
+          fee_amount: feeAmount.toFixed(2),
           currency: dto.currency ?? 'MYR',
           status: 'requested',
           requested_at: new Date(),
@@ -462,6 +601,7 @@ export class WalletAdvancedWorkflowService {
           payload: {
             wallet_id: result!.wallet_id,
             amount: result!.amount,
+            fee_amount: result!.fee_amount,
             bank_profile_id: result!.bank_profile_id,
           },
         },

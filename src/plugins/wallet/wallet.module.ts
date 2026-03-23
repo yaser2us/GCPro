@@ -43,18 +43,25 @@ import { LedgerService } from './services/ledger.service';
 import { BalanceService } from './services/balance.service';
 import { WalletWorkflowService } from './services/wallet.workflow.service';
 import { WalletAdvancedWorkflowService } from './services/wallet-advanced.workflow.service';
+import { PaymentPriorityService } from './services/payment-priority.service';
 
 // Event Handlers (one per event type)
 import { MissionRewardHandler } from './handlers/mission-reward.handler';
 import { CommissionAccrualHandler } from './handlers/commission-accrual.handler';
 import { PolicyActivatedHandler } from './handlers/policy-activated.handler';
 import { PersonCreatedHandler } from './handlers/person-created.handler';
+import { CrowdChargeHandler } from './handlers/crowd-charge.handler';
+import { AutoTopupHandler } from './handlers/auto-topup.handler';                       // C4
+import { DepositTopupPaymentHandler } from './handlers/deposit-topup-payment.handler'; // C4
 
 // Event Consumers (one per event source)
 import { MissionRewardConsumer } from './consumers/mission-reward.consumer';
 import { CommissionAccrualConsumer } from './consumers/commission-accrual.consumer';
 import { PolicyActivatedConsumer } from './consumers/policy-activated.consumer';
 import { PersonCreatedConsumer } from './consumers/person-created.consumer';
+import { CrowdPeriodCalculatedConsumer } from './consumers/crowd-period-calculated.consumer';
+import { AutoTopupConsumer } from './consumers/auto-topup.consumer';                             // C4
+import { DepositTopupPaymentConsumer } from './consumers/deposit-topup-payment.consumer';       // C4
 
 // Controllers
 import { WalletController } from './controllers/wallet.controller';
@@ -67,6 +74,8 @@ import { WalletRuleSetController } from './controllers/wallet-rule-set.controlle
 import { ThresholdRuleController } from './controllers/threshold-rule.controller';
 import { ThresholdEventController } from './controllers/threshold-event.controller';
 import { PolicyGateController } from './controllers/policy-gate.controller';
+import { AutoTopupController } from './controllers/auto-topup.controller';             // C4
+import { PaymentSourceController } from './controllers/payment-source.controller';     // L10
 
 /**
  * Wallet Module
@@ -123,6 +132,8 @@ import { PolicyGateController } from './controllers/policy-gate.controller';
     ThresholdRuleController,
     ThresholdEventController,
     PolicyGateController,
+    AutoTopupController,    // C4
+    PaymentSourceController, // L10
   ],
   providers: [
     // Repositories (data access layer)
@@ -157,17 +168,26 @@ import { PolicyGateController } from './controllers/policy-gate.controller';
     // Advanced workflow service
     WalletAdvancedWorkflowService,
 
+    // L10: Payment priority resolver
+    PaymentPriorityService,
+
     // Event Handlers (one per event type)
     MissionRewardHandler,
     CommissionAccrualHandler,
     PolicyActivatedHandler,
     PersonCreatedHandler,
+    CrowdChargeHandler,             // C6
+    AutoTopupHandler,               // C4
+    DepositTopupPaymentHandler,     // C4
 
     // Event Consumers (one per event source)
     MissionRewardConsumer,
     CommissionAccrualConsumer,
     PolicyActivatedConsumer,
     PersonCreatedConsumer,
+    CrowdPeriodCalculatedConsumer,  // C6
+    AutoTopupConsumer,              // C4
+    DepositTopupPaymentConsumer,    // C4
   ],
   exports: [
     // Export shared services for other modules
@@ -180,6 +200,9 @@ import { PolicyGateController } from './controllers/policy-gate.controller';
 
     // Advanced workflow service
     WalletAdvancedWorkflowService,
+
+    // L10
+    PaymentPriorityService,
   ],
 })
 export class WalletModule {}
