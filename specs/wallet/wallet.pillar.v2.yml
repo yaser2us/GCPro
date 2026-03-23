@@ -1,4 +1,4 @@
-version: "2.3.0"
+version: "2.5.0"
 spec_id: "wallet.pillar.v2"
 domain: "wallet"
 plugin: "wallet"
@@ -1258,11 +1258,31 @@ coverage:
       source_plugin: "referral"
       note: "Phase 6: finds/creates COIN wallet for beneficiary; creates wallet_deposit_intent; emits REFERRAL_REWARD_CREDITED"
 
+    PAYOUT_BATCH_COMPLETED:
+      consumed_by:
+        - "WALLET.PROCESS_COMMISSION_PAYOUT"
+      source_plugin: "commission"
+      note: "Phase 7B: debits wallet for each commission_payout_item with payout_method=wallet; emits COMMISSION_PAYOUT_DEBITED"
+
+    CROWD_CLAIM_PAYOUT_PAID:
+      consumed_by:
+        - "WALLET.PROCESS_CROWD_CLAIM_PAYOUT"
+      source_plugin: "crowd"
+      note: "Phase 7C: creates wallet_deposit_intent for claimant GC_WALLET (MYR); emits CROWD_PAYOUT_WALLET_CREDITED"
+
 # ──────────────────────────────────────────────────────────────────────────────
 # CHANGELOG
 # ──────────────────────────────────────────────────────────────────────────────
 
 changelog:
+  - version: "2.5.0"
+    date: "2026-03-23"
+    changes:
+      - "Phase 7B: CommissionPayoutHandler — on PAYOUT_BATCH_COMPLETED debits wallet for commission_payout_item (payout_method=wallet)"
+      - "Phase 7B: Emits COMMISSION_PAYOUT_DEBITED per item processed"
+      - "Phase 7C: CrowdClaimPayoutHandler — on CROWD_CLAIM_PAYOUT_PAID creates wallet_deposit_intent for claimant GC_WALLET (MYR)"
+      - "Phase 7C: Emits CROWD_PAYOUT_WALLET_CREDITED after deposit_intent created"
+
   - version: "2.4.0"
     date: "2026-03-23"
     changes:

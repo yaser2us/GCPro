@@ -872,6 +872,109 @@
           }
         }
       ]
+    },
+    {
+      "name": "Phase 7D \u2014 Crowd Charge Notification",
+      "description": "Phase 7D: CROWD_MEMBER_CHARGED \u2192 push notification to insured member via template 'crowd_member_charged'",
+      "item": [
+        {
+          "name": "7D.1 Setup: Create 'crowd_member_charged' Template",
+          "id": "997fac64-72ff-4c9e-b04d-9b9fdd3cb0bc",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"code\": \"crowd_member_charged\", \"channel\": \"push\", \"title\": \"Contribution Charged\", \"body\": \"Your contribution of {{paid_amount}} has been deducted for period {{crowd_period_id}}. Remaining: {{remaining_amount}}\", \"locale\": \"en\", \"version\": \"v1\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/notifications/templates",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "notifications",
+                "templates"
+              ]
+            },
+            "description": "Create the notification template required by CrowdChargeNotificationHandler. The handler looks up template by code='crowd_member_charged' and gracefully skips if not found."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "pm.test('Template ID returned', () => pm.expect(json.template_id || json.id).to.be.ok);",
+                  "pm.collectionVariables.set('charge_template_id', json.template_id || json.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "7D.2 Verify: Notification Queued After CROWD_MEMBER_CHARGED",
+          "id": "1b90475a-ea55-4fe4-911b-da2e45c0c015",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/notifications/messages?ref_type=crowd_member_charge&ref_id={{charge_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "notifications",
+                "messages"
+              ],
+              "query": [
+                {
+                  "key": "ref_type",
+                  "value": "crowd_member_charge"
+                },
+                {
+                  "key": "ref_id",
+                  "value": "{{charge_id}}"
+                }
+              ]
+            },
+            "description": "After CROWD_MEMBER_CHARGED fires, verify a notification_message was created for the member. CrowdChargeNotificationHandler resolves account_id from crowd_member_charge.insurant_id and calls NotificationWorkflowService.sendNotificationMessage."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Notification queued', () => pm.expect(Array.isArray(json) ? json.length > 0 : json.id).to.be.ok);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "event": [
@@ -938,6 +1041,16 @@
     {
       "key": "preference_id",
       "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "charge_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "charge_template_id",
+      "value": "",
       "type": "string"
     }
   ]

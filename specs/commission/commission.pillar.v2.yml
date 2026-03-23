@@ -1,4 +1,4 @@
-version: "2.0.0"
+version: "2.1.0"
 spec_id: "commission.pillar.v2"
 domain: "commission"
 plugin: "commission"
@@ -1360,9 +1360,9 @@ integration:
       - "[✓] ACCRUAL_RECORDED event emitted on RecordAccrual"
       - "[✓] ACCRUAL_VOIDED event emitted on VoidAccrual"
       - "[✓] PAYOUT_BATCH_COMPLETED event emitted on ProcessPayoutBatch"
-      - "[ ] Create ReferralConversionCommissionConsumer"
-      - "[ ] Subscribe to REFERRAL_CONVERSION_CREATED"
-      - "[ ] Implement multi-level accrual calculation"
+      - "[✓] Phase 7A: ReferralConversionHandler — subscribes to REFERRAL_CONVERSION_CREATED"
+      - "[✓] Phase 7A: Multi-level accrual recording via referral_chain walk"
+      - "[✓] Phase 7A: Emits ACCRUAL_RECORDED per ancestor per depth level"
       - "[ ] Write integration tests (referral → commission)"
 
   testing_strategy:
@@ -1947,6 +1947,14 @@ commands:
 # ──────────────────────────────────────────────────────────────────────────────
 
 changelog:
+  - version: "2.1.0"
+    date: "2026-03-23"
+    changes:
+      - "Phase 7A: ReferralConversionHandler — on REFERRAL_CONVERSION_CREATED traverses referral_chain, creates commission_accrual per ancestor level"
+      - "Phase 7A: Idempotency key pattern: referral_conv_{conversion_id}_depth_{depth}"
+      - "Phase 7A: Supports commission_rule.code='level_1', 'level_2', 'level_3' depth-based rules"
+      - "Phase 7A: Emits ACCRUAL_RECORDED per accrual created"
+
   - version: "2.0.0"
     date: "2026-03-09"
     author: "Claude Sonnet 4.5"

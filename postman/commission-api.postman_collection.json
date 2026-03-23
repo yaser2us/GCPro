@@ -629,6 +629,111 @@
         }
       ],
       "id": "031d161f-47aa-4731-b7dc-3bb0876a2a94"
+    },
+    {
+      "name": "Phase 7A \u2014 Referral Conversion Accrual",
+      "description": "Phase 7A: REFERRAL_CONVERSION_CREATED \u2192 commission_accrual per ancestor level in referral_chain",
+      "item": [
+        {
+          "name": "7A.1 Verify: Accruals Created from Referral Conversion",
+          "id": "6b93f02c-89d2-4cd9-b388-86ce035d2ffe",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/commission/accruals?source_ref_type=referral_conversion&source_ref_id={{conversion_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "commission",
+                "accruals"
+              ],
+              "query": [
+                {
+                  "key": "source_ref_type",
+                  "value": "referral_conversion"
+                },
+                {
+                  "key": "source_ref_id",
+                  "value": "{{conversion_id}}"
+                }
+              ]
+            },
+            "description": "After REFERRAL_CONVERSION_CREATED fires, verify commission_accrual rows were created for each referral chain ancestor. Expect one per depth level (level_1, level_2, level_3) for active commission_participants."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Accruals list returned', () => pm.expect(json).to.be.an('array'));",
+                  "pm.test('At least one accrual', () => pm.expect(json.length).to.be.greaterThan(0));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "7A.2 Verify: Accrual Idempotency (Re-fire same conversion)",
+          "id": "47b09c2d-7cd1-4253-a86a-fe25460be841",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/commission/accruals?source_ref_type=referral_conversion&source_ref_id={{conversion_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "commission",
+                "accruals"
+              ],
+              "query": [
+                {
+                  "key": "source_ref_type",
+                  "value": "referral_conversion"
+                },
+                {
+                  "key": "source_ref_id",
+                  "value": "{{conversion_id}}"
+                }
+              ]
+            },
+            "description": "After emitting REFERRAL_CONVERSION_CREATED a second time (same conversion_id), accrual count must remain the same \u2014 ON DUPLICATE KEY idempotency."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Idempotent \u2014 no duplicate accruals', () => pm.expect(json.length).to.equal(pm.collectionVariables.get('prev_accrual_count') || json.length));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "variable": [

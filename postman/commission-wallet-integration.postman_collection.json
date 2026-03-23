@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "8093e01d-6be5-4591-9938-a772bbb600fb",
     "name": "Commission-Wallet Integration Test",
-    "description": "End-to-end test for Referral → Commission → Wallet flow with multi-level chains",
+    "description": "End-to-end test for Referral \u2192 Commission \u2192 Wallet flow with multi-level chains",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -292,7 +292,7 @@
       "id": "857715fa-0568-43c8-b98d-8d88ba3e9463"
     },
     {
-      "name": "SETUP: Referral Chain (A → B → C)",
+      "name": "SETUP: Referral Chain (A \u2192 B \u2192 C)",
       "item": [
         {
           "name": "2.1 Create User B Referral Code",
@@ -349,7 +349,7 @@
           "response": []
         },
         {
-          "name": "2.2 Create Invite B → C",
+          "name": "2.2 Create Invite B \u2192 C",
           "event": [
             {
               "listen": "test",
@@ -411,7 +411,7 @@
                 "exec": [
                   "pm.test('Status is 201', () => pm.response.to.have.status(201));",
                   "pm.test('Referral chain should be built automatically', () => {",
-                  "  // Chain should exist: A → B → C",
+                  "  // Chain should exist: A \u2192 B \u2192 C",
                   "  // Will be verified in next step",
                   "});"
                 ],
@@ -829,6 +829,105 @@
         }
       ],
       "id": "60490f05-6f19-436d-a164-2ca6d1bbb222"
+    },
+    {
+      "name": "Phase 7B \u2014 Commission Payout \u2192 Wallet Debit",
+      "description": "Phase 7B: PAYOUT_BATCH_COMPLETED \u2192 wallet debit for each commission_payout_item with payout_method=wallet",
+      "item": [
+        {
+          "name": "7B.1 Process Payout Batch (triggers PAYOUT_BATCH_COMPLETED)",
+          "id": "75dd0d97-b71d-4584-9edd-b14d433cd8e6",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "payout-batch-{{batch_id}}-process"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"batch_id\": \"{{batch_id}}\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/commission/payout-batches/{{batch_id}}/process",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "commission",
+                "payout-batches",
+                "{{batch_id}}",
+                "process"
+              ]
+            },
+            "description": "Process a payout batch. On completion emits PAYOUT_BATCH_COMPLETED which triggers CommissionPayoutHandler in wallet plugin to debit commission participant wallets."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Batch completed', () => pm.expect(json.status).to.equal('completed'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "7B.2 Verify: Wallet Debited for Commission Payout",
+          "id": "c7e176a9-2f74-4a24-977b-c4321297c763",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/wallet/{{commission_wallet_id}}/balance",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "{{commission_wallet_id}}",
+                "balance"
+              ]
+            },
+            "description": "Verify wallet balance decreased after PAYOUT_BATCH_COMPLETED. The CommissionPayoutHandler calls ledgerService.createDebitTransaction + balanceService.debitBalance and emits COMMISSION_PAYOUT_DEBITED."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Balance returned', () => pm.expect(json.available_balance).to.be.a('number'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "variable": [
@@ -931,6 +1030,11 @@
     {
       "id": "436b8f4d-f596-42d9-8260-e881a47486bb",
       "key": "invite_b_to_c_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "commission_wallet_id",
       "value": "",
       "type": "string"
     }

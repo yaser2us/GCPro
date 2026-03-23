@@ -84,6 +84,16 @@
     {
       "key": "rule_set_id",
       "value": ""
+    },
+    {
+      "key": "claimant_wallet_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "payout_id",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
@@ -2612,14 +2622,22 @@
       "name": "Phase 6 - Referral COIN Rewards",
       "item": [
         {
-          "name": "P6 — REFERRAL_REWARD_REQUESTED \u2192 COIN wallet credit (doc)",
+          "name": "P6 \u2014 REFERRAL_REWARD_REQUESTED \u2192 COIN wallet credit (doc)",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
               "raw": "{{base_url}}/api/v1/wallet/referral-reward/test",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "wallet", "referral-reward", "test"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "referral-reward",
+                "test"
+              ]
             },
             "body": {
               "mode": "raw",
@@ -2627,6 +2645,101 @@
             },
             "description": "Phase 6: REFERRAL_REWARD_REQUESTED automatically triggers COIN wallet deposit intent creation for the beneficiary. Auto-creates COIN wallet (wallet_type=MAIN, currency=COIN) if not exists. Emits REFERRAL_REWARD_CREDITED.\n\nEvent chain:\n  POLICY_ACTIVATED\n  \u2192 PolicyActivatedHandler (referral plugin)\n  \u2192 referral_reward_grant (referrer + referee)\n  \u2192 REFERRAL_REWARD_REQUESTED\n  \u2192 ReferralRewardHandler (wallet plugin)\n  \u2192 wallet_deposit_intent (COIN)\n  \u2192 REFERRAL_REWARD_CREDITED"
           }
+        }
+      ]
+    },
+    {
+      "name": "Phase 7C \u2014 Crowd Claim Payout \u2192 Wallet Credit",
+      "description": "Phase 7C: CROWD_CLAIM_PAYOUT_PAID \u2192 wallet_deposit_intent for claimant GC_WALLET (MYR)",
+      "item": [
+        {
+          "name": "7C.1 Verify: Deposit Intent Created for Crowd Claim Payout",
+          "id": "6c6afc9e-7d35-4ff7-9391-c55f2ca27ad0",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/wallet/deposit-intents?ref_type=crowd_claim_payout&ref_id={{payout_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "deposit-intents"
+              ],
+              "query": [
+                {
+                  "key": "ref_type",
+                  "value": "crowd_claim_payout"
+                },
+                {
+                  "key": "ref_id",
+                  "value": "{{payout_id}}"
+                }
+              ]
+            },
+            "description": "After CROWD_CLAIM_PAYOUT_PAID fires, verify wallet_deposit_intent was created for the claimant's GC_WALLET (MYR). CrowdClaimPayoutHandler resolves claim_case.account_id via crowd_claim_payout \u2192 crowd_period_claim \u2192 claim_case."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Deposit intent exists', () => pm.expect(Array.isArray(json) ? json.length > 0 : json.id).to.be.ok);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "7C.2 Verify: CROWD_PAYOUT_WALLET_CREDITED event emitted",
+          "id": "3fedb50b-cc17-4bd0-9072-8fd6cc93133a",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/wallet/{{claimant_wallet_id}}/balance",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "wallet",
+                "{{claimant_wallet_id}}",
+                "balance"
+              ]
+            },
+            "description": "Verify claimant wallet balance reflects the crowd claim payout. Handler emits CROWD_PAYOUT_WALLET_CREDITED after creating deposit_intent."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "pm.test('Balance returned', () => pm.expect(json.available_balance).to.be.a('number'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
         }
       ]
     }

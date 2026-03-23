@@ -16,6 +16,8 @@ import { NotificationWorkflowService } from './services/notification.workflow.se
 import { NotificationScheduleDispatcherService } from './services/notification-schedule-dispatcher.service';
 import { ClaimEventNotificationHandler } from './handlers/claim-event-notification.handler';
 import { ClaimEventNotificationConsumer } from './consumers/claim-event-notification.consumer';
+import { CrowdChargeNotificationHandler } from './handlers/crowd-charge-notification.handler';
+import { CrowdChargeNotificationConsumer } from './consumers/crowd-charge-notification.consumer';
 import { NotificationController } from './controllers/notification.controller';
 
 /**
@@ -50,6 +52,8 @@ import { NotificationController } from './controllers/notification.controller';
     NotificationScheduleDispatcherService,  // Phase 5: schedule dispatcher
     ClaimEventNotificationHandler,           // Phase 5: claim event → notification
     ClaimEventNotificationConsumer,          // Phase 5
+    CrowdChargeNotificationHandler,          // Phase 7D: crowd charge → notification
+    CrowdChargeNotificationConsumer,         // Phase 7D
   ],
   controllers: [NotificationController],
   exports: [NotificationWorkflowService, NotificationScheduleDispatcherService],

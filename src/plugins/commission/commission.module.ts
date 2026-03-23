@@ -16,6 +16,8 @@ import { CommissionPayoutItemRepository } from './repositories/commission-payout
 import { CommissionPayoutItemAccrualRepository } from './repositories/commission-payout-item-accrual.repo';
 import { CommissionWorkflowService } from './services/commission.workflow.service';
 import { CommissionController } from './controllers/commission.controller';
+import { ReferralConversionHandler } from './handlers/referral-conversion.handler';
+import { ReferralConversionConsumer } from './consumers/referral-conversion.consumer';
 
 /**
  * CommissionModule
@@ -43,6 +45,9 @@ import { CommissionController } from './controllers/commission.controller';
     CommissionPayoutItemRepository,
     CommissionPayoutItemAccrualRepository,
     CommissionWorkflowService,
+    // Phase 7A: REFERRAL_CONVERSION_CREATED → commission accruals
+    ReferralConversionHandler,
+    ReferralConversionConsumer,
   ],
   controllers: [CommissionController],
   exports: [CommissionWorkflowService],

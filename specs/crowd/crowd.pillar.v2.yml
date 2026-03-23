@@ -22,7 +22,7 @@
 #     - crowd_period_run_lock.status values (locked/released/expired) inferred from distributed lock pattern
 # ============================================================================
 
-version: "2.0.0"
+version: "2.1.0"
 spec_id: "crowd.pillar.v2"
 domain: "crowd"
 plugin: "crowd"
@@ -1654,6 +1654,15 @@ commands:
 # ──────────────────────────────────────────────────────────────────────────────
 
 changelog:
+  - version: "2.1.0"
+    date: "2026-03-23"
+    changes:
+      - "Phase 7C: CrowdClaimPayoutHandler (wallet plugin) implemented — on CROWD_CLAIM_PAYOUT_PAID creates wallet_deposit_intent for claimant GC_WALLET"
+      - "Phase 7C: Emits CROWD_PAYOUT_WALLET_CREDITED"
+      - "Phase 7D: CrowdChargeNotificationHandler (notification plugin) implemented — on CROWD_MEMBER_CHARGED sends push via template 'crowd_member_charged'"
+      - "Phase 7D: Fire-and-forget, does not block charge flow"
+      - "Updated implementation_checklist: wallet + notification items marked done"
+
   - version: "2.0.0"
     date: "2026-03-22"
     author: "Claude Sonnet 4.6"
@@ -1855,16 +1864,16 @@ integration:
 
   implementation_checklist:
     wallet:
-      - "[ ] Create WalletCrowdClaimPayoutConsumer"
-      - "[ ] Subscribe to CROWD_CLAIM_PAYOUT_PAID event"
-      - "[ ] Implement ledger credit for claim payout"
-      - "[ ] Add idempotency guard on ledger_txn_id"
+      - "[x] Create WalletCrowdClaimPayoutConsumer"
+      - "[x] Subscribe to CROWD_CLAIM_PAYOUT_PAID event"
+      - "[x] Implement ledger credit for claim payout (wallet_deposit_intent)"
+      - "[x] Add idempotency guard on ledger_txn_id"
       - "[ ] Test end-to-end payout disbursement flow"
 
     notification:
-      - "[ ] Create NotificationCrowdChargeConsumer"
-      - "[ ] Subscribe to CROWD_MEMBER_CHARGED event"
-      - "[ ] Implement charge confirmation notification template"
+      - "[x] Create NotificationCrowdChargeConsumer"
+      - "[x] Subscribe to CROWD_MEMBER_CHARGED event"
+      - "[x] Implement charge confirmation notification template (crowd_member_charged)"
 
     crowd:
       - "[x] Spec generated (this document)"
