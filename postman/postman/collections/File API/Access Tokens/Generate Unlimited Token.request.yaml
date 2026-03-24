@@ -1,0 +1,15 @@
+$kind: http-request
+description: Generate token valid for 24 hours, unlimited uses
+url: "{{base_url}}/v1/files/{{file_id}}/tokens"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "token_type": "download",
+      "expires_in_seconds": 86400,
+      "max_uses": 0
+    }
+order: 2000

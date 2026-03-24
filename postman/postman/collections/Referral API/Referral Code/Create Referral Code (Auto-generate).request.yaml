@@ -1,0 +1,19 @@
+$kind: http-request
+description: |-
+  Create a referral code with auto-generated code
+
+  The system will generate a unique random code
+url: "{{base_url}}/v1/referral/codes"
+method: POST
+headers:
+  Content-Type: application/json
+  Idempotency-Key: "{{$randomUUID}}"
+  X-User-Id: "{{actor_user_id}}"
+  X-User-Role: USER
+body:
+  type: text
+  content: |-
+    {
+      "program_id": {{program_id}}
+    }
+order: 2000

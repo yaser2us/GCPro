@@ -1,0 +1,10 @@
+$kind: collection
+description: |-
+  Withdraw operations to deduct funds from wallets.
+
+  Withdraw Types:
+  - manual_withdrawal: Admin-initiated withdrawals
+  - redemption: User spending coins on features
+  - transfer_out: Transfer to another account
+  - refund_reversal: Reversing a previous refund
+order: 4000

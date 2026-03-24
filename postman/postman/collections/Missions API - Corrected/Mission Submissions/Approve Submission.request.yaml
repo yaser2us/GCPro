@@ -1,0 +1,17 @@
+$kind: http-request
+description: Approve a submission and grant rewards. Requires missions:admin or
+  missions:review permission.
+url: "{{baseUrl}}/v1/missions/submissions/{{submission_id}}/approve"
+method: POST
+headers:
+  Content-Type: application/json
+  Idempotency-Key: "{{$guid}}"
+  X-User-Id: "{{actor_user_id}}"
+  X-User-Role: ADMIN
+body:
+  type: text
+  content: |-
+    {
+      "feedback": "Great work! All 5 policy applications verified."
+    }
+order: 3000

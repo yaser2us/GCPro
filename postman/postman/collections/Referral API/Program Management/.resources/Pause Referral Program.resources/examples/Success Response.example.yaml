@@ -1,0 +1,21 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/v1/referral/programs/1/pause"
+  method: POST
+  body:
+    type: text
+    content: |-
+      {
+        "reason": "Program needs maintenance"
+      }
+response:
+  statusCode: 200
+  statusText: OK
+  body:
+    type: json
+    content: |-
+      {
+        "program_id": 1,
+        "status": "paused"
+      }
+order: 1000

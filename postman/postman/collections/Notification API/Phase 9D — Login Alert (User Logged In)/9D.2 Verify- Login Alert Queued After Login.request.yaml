@@ -1,0 +1,17 @@
+$kind: http-request
+name: "9D.2 Verify: Login Alert Queued After Login"
+description: After USER_LOGGED_IN fires, verify a push notification was queued
+  via template 'login_alert'. Graceful skip if template not seeded.
+url: "{{base_url}}/api/v1/notifications/messages?trigger_event_id={{user_id}}&t\
+  rigger_event_type=USER_LOGGED_IN"
+method: GET
+headers:
+  Authorization: Bearer {{token}}
+queryParams:
+  trigger_event_id: "{{user_id}}"
+  trigger_event_type: USER_LOGGED_IN
+scripts:
+  - type: afterResponse
+    code: pm.test('Status 200', () => pm.response.to.have.status(200));
+    language: text/javascript
+order: 2000

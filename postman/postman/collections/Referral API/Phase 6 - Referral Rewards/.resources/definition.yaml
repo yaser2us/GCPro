@@ -1,0 +1,12 @@
+$kind: collection
+description: >-
+  Phase 6: Referral Conversion & Reward Engine
+
+
+  Event flow:
+    POLICY_ACTIVATED → PolicyActivatedHandler (referral) → REFERRAL_REWARD_REQUESTED → ReferralRewardHandler (wallet) → REFERRAL_REWARD_CREDITED
+
+  Automatic: triggered by POLICY_ACTIVATED event
+
+  Manual: POST /v1/referral/rewards/request (admin)
+order: 4000

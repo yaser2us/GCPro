@@ -1,0 +1,23 @@
+$kind: http-request
+name: "9C.3 Verify: OTP Notification Queued"
+description: After REGISTRATION_TOKEN_ISSUED fires, verify notification_message
+  was queued with template 'otp_delivery' for the channel_value (phone/email).
+url: "{{base_url}}/api/v1/notifications/messages?trigger_event_id={{registratio\
+  n_token_id}}&trigger_event_type=REGISTRATION_TOKEN_ISSUED"
+method: GET
+headers:
+  Authorization: Bearer {{token}}
+queryParams:
+  trigger_event_id: "{{registration_token_id}}"
+  trigger_event_type: REGISTRATION_TOKEN_ISSUED
+scripts:
+  - type: afterResponse
+    code: >-
+      pm.test('Status 200', () => pm.response.to.have.status(200));
+
+      const json = pm.response.json();
+
+      pm.test('OTP notification queued', () => pm.expect(Array.isArray(json) ?
+      json.length > 0 : json.id).to.be.ok);
+    language: text/javascript
+order: 3000

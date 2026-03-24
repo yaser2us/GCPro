@@ -1,0 +1,5 @@
+$kind: http-request
+description: Revoke role from user
+url: "{{base_url}}/v1/users/{{user_id}}/roles/{{role_id}}"
+method: DELETE
+order: 2000

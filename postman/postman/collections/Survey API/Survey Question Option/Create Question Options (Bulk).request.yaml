@@ -1,0 +1,30 @@
+$kind: http-request
+url: "{{base_url}}/v1/survey-questions/{{question_id}}/options/bulk"
+method: POST
+headers:
+  Idempotency-Key: create-options-{{$randomUUID}}
+  X-User-Id: "{{user_id}}"
+  X-User-Role: ADMIN
+body:
+  type: json
+  content: |-
+    {
+      "options": [
+        {
+          "value": "yes",
+          "label": "Yes, definitely",
+          "sort_order": 1
+        },
+        {
+          "value": "maybe",
+          "label": "Maybe",
+          "sort_order": 2
+        },
+        {
+          "value": "no",
+          "label": "No, not likely",
+          "sort_order": 3
+        }
+      ]
+    }
+order: 1000

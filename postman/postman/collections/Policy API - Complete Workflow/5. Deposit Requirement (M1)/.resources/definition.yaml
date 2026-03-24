@@ -1,0 +1,6 @@
+$kind: collection
+description: |-
+  M1 — Deposit Capacity Formula Enforcement
+  Formula: deposit_capacity = monthly_max_cap × multiplier; thresholds from pcts
+  Rate re-derived from policy_package_rate on each evaluate call.
+order: 7000

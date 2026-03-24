@@ -1,0 +1,25 @@
+$kind: http-request
+name: "7D.2 Verify: Notification Queued After CROWD_MEMBER_CHARGED"
+description: After CROWD_MEMBER_CHARGED fires, verify a notification_message was
+  created for the member. CrowdChargeNotificationHandler resolves account_id
+  from crowd_member_charge.insurant_id and calls
+  NotificationWorkflowService.sendNotificationMessage.
+url: "{{base_url}}/api/v1/notifications/messages?ref_type=crowd_member_charge&r\
+  ef_id={{charge_id}}"
+method: GET
+headers:
+  Authorization: Bearer {{token}}
+queryParams:
+  ref_type: crowd_member_charge
+  ref_id: "{{charge_id}}"
+scripts:
+  - type: afterResponse
+    code: >-
+      pm.test('Status 200', () => pm.response.to.have.status(200));
+
+      const json = pm.response.json();
+
+      pm.test('Notification queued', () => pm.expect(Array.isArray(json) ?
+      json.length > 0 : json.id).to.be.ok);
+    language: text/javascript
+order: 2000

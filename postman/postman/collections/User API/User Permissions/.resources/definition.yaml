@@ -1,0 +1,3 @@
+$kind: collection
+description: User permission overrides (allow/deny)
+order: 4000

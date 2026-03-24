@@ -1,0 +1,21 @@
+$kind: http-request
+description: >-
+  Creates the system account (ID=1) for double-entry accounting.
+
+
+  The system account is debited when users receive coins and credited when users
+  spend coins.
+url: "{{base_url}}/v1/accounts"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{admin_user_id}}"
+  X-User-Role: ADMIN
+  Idempotency-Key: create-account-system-{{$timestamp}}
+body:
+  type: text
+  content: |-
+    {
+      "type": "system"
+    }
+order: 3000

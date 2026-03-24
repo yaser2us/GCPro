@@ -1,0 +1,17 @@
+$kind: http-request
+description: Record infected scan result
+url: "{{base_url}}/v1/files/{{file_id}}/scan-results"
+method: POST
+headers:
+  Content-Type: application/json
+  Idempotency-Key: "{{$guid}}"
+body:
+  type: text
+  content: |-
+    {
+      "scan_type": "antivirus",
+      "status": "infected",
+      "provider": "ClamAV",
+      "summary": "Threat detected: Win32.Trojan.Generic"
+    }
+order: 3000

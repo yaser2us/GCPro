@@ -1,0 +1,23 @@
+$kind: http-request
+description: Update preferences with quiet hours configuration
+url: "{{base_url}}/v1/notification-preferences/{{preference_id}}"
+method: PUT
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "status": "active",
+      "quiet_hours": {
+        "enabled": true,
+        "timezone": "America/Los_Angeles",
+        "start": "22:00",
+        "end": "08:00"
+      },
+      "meta": {
+        "last_updated_by": "user",
+        "reason": "User preference update"
+      }
+    }
+order: 2000

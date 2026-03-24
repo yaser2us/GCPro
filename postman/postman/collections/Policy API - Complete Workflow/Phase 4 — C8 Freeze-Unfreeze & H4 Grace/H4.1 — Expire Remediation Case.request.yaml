@@ -1,0 +1,13 @@
+$kind: http-request
+description: "H4: Expire a remediation case after grace period ends. Marks case
+  expired, freezes policy, emits REMEDIATION_CASE_EXPIRED + POLICY_FROZEN."
+url: "{{base_url}}/api/v1/policy/remediation/{{case_id}}/expire"
+method: POST
+headers:
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+  Idempotency-Key: "{{$guid}}"
+body:
+  type: text
+  content: "{}"
+order: 3000

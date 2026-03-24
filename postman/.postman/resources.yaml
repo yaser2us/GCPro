@@ -24,11 +24,21 @@ localResources:
 # Each entry here maps a local resource to one or more corresponding objects in Postman Cloud
 cloudResources:
   collections:
-    ../postman/collections/Policy API - Complete Workflow: e57f9a4c-efde-46b8-8bf0-09246fac0463
-    ../postman/collections/Claim API - Complete Workflow: 47b3a5d1-4bed-4e57-bf34-ed6bc5aef751
-    ../postman/collections/Payment API - Complete Workflow: 3879e01b-599c-434a-bf8b-f911fec9e4ff
-    ../postman/collections/Foundation API - Complete Workflow: a8648034-9740-44da-aeaf-04c0ee7fbe0e
-    ../postman/collections/Crowd API - Takaful Workflow: d1839bfb-9972-4761-8f5d-92ad5d925635
-    ../postman/collections/User Identity API: 0d56bf25-567a-4a95-a87c-b2d353d5b0c8
-    ../postman/collections/Wallet Advanced API: f0321f29-0099-426f-8833-7b5bca35ee9b
-    ../postman/collections/Identity API: af348554-dd20-478e-9e0d-1ff83a8a0872
+    ../postman/collections/Policy API - Complete Workflow: 11e59a82-d99d-4ec6-8db1-a88b673f4648
+    ../postman/collections/Payment API - Complete Workflow: d020411b-097a-4da9-a8e3-b5eb167a9a57
+    ../postman/collections/Foundation API - Complete Workflow: fdea5e62-6a8e-4a1d-ae4c-294deff788bd
+    ../postman/collections/Crowd API - Takaful Workflow: f9823aa3-8005-42ed-b985-4e4912bdd06f
+    ../postman/collections/User Identity API: 42a70b7f-4cc4-4cce-993f-419631771479
+    ../postman/collections/Wallet Advanced API: a61ba28b-32a9-4ada-bf6e-61c662c2f835
+    ../postman/collections/Identity API: 1389a3af-ba58-406f-baa2-5cddd2fb05a8
+    ../postman/collections/Referral API: f5a18f5d-7bd5-4043-8011-7d72604ab884
+    ../postman/collections/Person API: 0904f94d-70d1-4501-9e3b-8e7941d73f38
+    ../postman/collections/Commission API: 37ea2eab-24a4-49bd-933b-9eab34384fa2
+    ../postman/collections/Missions API - Corrected: e9de8684-d837-482a-8123-05d65e83412e
+    ../postman/collections/Permission & Role API: baf33bb5-9019-4d97-8dfa-35ce42e3ff0b
+    ../postman/collections/Notification API: f8c1d2fb-73f9-4638-a699-819e1f7b5a71
+    ../postman/collections/File API: fa31c86c-a13f-476b-ac10-bc9ebb8ece19
+    ../postman/collections/User API: 727d6527-0606-4d4f-9727-c49e2523ccbc
+    ../postman/collections/Wallet API: 7ee1c249-406d-49c0-b9bf-26705b3276e1
+    ../postman/collections/Survey API: f59b764c-96d3-4faf-8d22-9ecd431cd3f0
+    ../postman/collections/Claim API - Complete Workflow: 520114fb-8659-470b-aa29-84395f9418e8

@@ -1,0 +1,20 @@
+$kind: http-request
+description: Create immutable version snapshot of file
+url: "{{base_url}}/v1/files/{{file_id}}/versions"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "created_by_user_id": 42
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var jsonData = pm.response.json();
+      pm.environment.set("version_id", jsonData.version_id);
+      pm.environment.set("version_number", jsonData.version_number);
+    language: text/javascript
+order: 1000

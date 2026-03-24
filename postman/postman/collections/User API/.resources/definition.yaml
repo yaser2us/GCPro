@@ -1,0 +1,31 @@
+$kind: collection
+description: |-
+  User Management - Authentication, RBAC, and Credentials
+
+  Source: specs/user/user.pillar.v2.yml
+variables:
+  base_url: http://localhost:3000
+  user_id: "1"
+  credential_id: "1"
+  role_id: "1"
+  permission_id: "1"
+scripts:
+  - type: http:beforeRequest
+    code: |-
+      // Add X-User-Id header
+      pm.request.headers.add({
+        key: 'X-User-Id',
+        value: pm.collectionVariables.get('user_id') || '1'
+      });
+
+      // Add Idempotency-Key for POST/PUT requests
+      if (pm.request.method === 'POST' || pm.request.method === 'PUT') {
+        const existingKey = pm.request.headers.get('Idempotency-Key');
+        if (!existingKey) {
+          pm.request.headers.add({
+            key: 'Idempotency-Key',
+            value: pm.variables.replaceIn('{{$guid}}')
+          });
+        }
+      }
+    language: text/javascript

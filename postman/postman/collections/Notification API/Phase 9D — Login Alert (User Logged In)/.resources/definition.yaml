@@ -1,0 +1,4 @@
+$kind: collection
+description: "Phase 9D: USER_LOGGED_IN → login alert notification via template
+  'login_alert'"
+order: 11000

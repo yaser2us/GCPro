@@ -1,0 +1,3 @@
+$kind: collection
+description: Query endpoints for balance and transaction history.
+order: 5000

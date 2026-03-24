@@ -1,0 +1,22 @@
+$kind: http-request
+url: "{{base_url}}/v1/persons"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "type": "individual",
+      "full_name": "Alice Johnson",
+      "dob": "1985-08-22",
+      "gender": "female",
+      "nationality": "US"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var jsonData = pm.response.json();
+      pm.environment.set("person_id", jsonData.person_id);
+    language: text/javascript
+order: 1000

@@ -3,9 +3,16 @@ description: >-
   Postman collection for the Identity pillar — auth (login/logout/me), device
   tokens, registration tokens, verification status, onboarding progress.
 
-  Based on specs/identity/identity.pillar.v2.yml
+  Based on specs/identity/identity.pillar.v2.yml (v2.1.0)
 
-  All endpoints: /v1/identity/
+
+  v2.1.0 additions:
+
+  - C1: POST /v1/auth/login — password-based login, returns JWT
+
+  - C1: GET  /v1/auth/me   — current user from JWT
+
+  All endpoints: /v1/identity/ and /v1/auth/
 variables:
   base_url: http://localhost:3000
   admin_user_id: "1"
@@ -17,6 +24,7 @@ variables:
   target_phone: "+60123456789"
   device_token_id: ""
   registration_token_id: ""
+  jwt_token: ""
 scripts:
   - type: http:beforeRequest
     code: |-

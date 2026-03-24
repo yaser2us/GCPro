@@ -1,0 +1,23 @@
+$kind: http-request
+description: |-
+  Create a referral code for a user
+
+  Spec: specs/referral/referral.pillar.yml lines 1026-1066
+
+  Note: If 'code' is not provided, a random code will be generated
+url: "{{base_url}}/v1/referral/codes"
+method: POST
+headers:
+  Content-Type: application/json
+  Idempotency-Key: "{{$randomUUID}}"
+  X-User-Id: "{{actor_user_id}}"
+  X-User-Role: USER
+body:
+  type: text
+  content: |-
+    {
+      "program_id": {{program_id}},
+      "code": "JOHNDOE2024"
+    }
+examples: ./.resources/Create Referral Code.resources/examples
+order: 1000

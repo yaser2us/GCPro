@@ -1,0 +1,13 @@
+$kind: http-request
+description: Soft delete file (sets deleted_at timestamp)
+url: "{{base_url}}/v1/files/{{file_id}}"
+method: DELETE
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "deleted_by_user_id": 42
+    }
+order: 4000

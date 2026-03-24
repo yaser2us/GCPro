@@ -1,0 +1,5 @@
+$kind: http-request
+description: Revoke permission from role
+url: "{{base_url}}/v1/roles/{{role_id}}/permissions/{{permission_id}}"
+method: DELETE
+order: 2000

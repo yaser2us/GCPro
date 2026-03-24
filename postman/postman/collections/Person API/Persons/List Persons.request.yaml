@@ -1,0 +1,5 @@
+$kind: http-request
+description: List all persons (paginated)
+url: "{{base_url}}/v1/persons"
+method: GET
+order: 4000

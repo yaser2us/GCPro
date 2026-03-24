@@ -1,0 +1,31 @@
+$kind: http-request
+description: |-
+  M4 — Auto-select package for a 31-year-old non-smoker.
+
+  Expected response:
+  - package_id, package_code, package_name
+  - annual_fee_amount, monthly_max_cap, deposit_capacity
+  - age_at_lookup: 31, smoker_status: non_smoker
+url: "{{base_url}}/api/v1/policy/package-lookup?dob=1995-03-23&smoker=false"
+method: GET
+headers:
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+queryParams:
+  - key: dob
+    value: 1995-03-23
+    description: Applicant DOB → age 31
+  - key: smoker
+    value: "false"
+scripts:
+  - type: afterResponse
+    code: >-
+      pm.test('Status 200', function () { pm.response.to.have.status(200); });
+
+      pm.test('Has package_id', function () {
+      pm.expect(pm.response.json().package_id).to.exist; });
+
+      pm.test('Has deposit_capacity', function () {
+      pm.expect(pm.response.json().deposit_capacity).to.be.a('number'); });
+    language: text/javascript
+order: 1000

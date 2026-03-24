@@ -1,0 +1,15 @@
+$kind: http-request
+description: "Tests guard: wallet must exist to query balance."
+url: "{{base_url}}/v1/wallets/999999/balance"
+method: GET
+headers:
+  X-User-Id: "{{test_user_id}}"
+  X-User-Role: USER
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("Status code is 404 (Not Found)", function () {
+          pm.response.to.have.status(404);
+      });
+    language: text/javascript
+order: 5000

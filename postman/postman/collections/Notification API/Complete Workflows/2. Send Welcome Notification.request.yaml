@@ -1,0 +1,28 @@
+$kind: http-request
+url: "{{base_url}}/v1/notifications/send"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "message_key": "welcome-user-{{$timestamp}}",
+      "template_code": "welcome_email",
+      "account_id": "1",
+      "person_id": "100",
+      "channel": "email",
+      "destination": "newuser@example.com",
+      "payload_vars": {
+        "first_name": "Alice",
+        "dashboard_url": "https://app.gcpro.com/dashboard"
+      },
+      "trigger_event_type": "User.Created"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var jsonData = pm.response.json();
+      pm.environment.set("message_id", jsonData.message_id);
+    language: text/javascript
+order: 2000

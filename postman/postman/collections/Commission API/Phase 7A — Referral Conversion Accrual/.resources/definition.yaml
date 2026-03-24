@@ -1,0 +1,4 @@
+$kind: collection
+description: "Phase 7A: REFERRAL_CONVERSION_CREATED → commission_accrual per
+  ancestor level in referral_chain"
+order: 6000

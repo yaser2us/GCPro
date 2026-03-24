@@ -1,0 +1,15 @@
+$kind: http-request
+description: Link file to person as identity document
+url: "{{base_url}}/v1/files/{{file_id}}/links"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "target_type": "person",
+      "target_id": "456",
+      "role_code": "identity_document"
+    }
+order: 2000

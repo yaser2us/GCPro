@@ -1,0 +1,5 @@
+$kind: http-request
+description: Deactivate template - prevents new messages from using it
+url: "{{base_url}}/v1/notification-templates/{{template_id}}/deactivate"
+method: POST
+order: 4000

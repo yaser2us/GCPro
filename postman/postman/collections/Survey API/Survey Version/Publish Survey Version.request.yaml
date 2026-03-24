@@ -1,0 +1,11 @@
+$kind: http-request
+url: "{{base_url}}/v1/survey-versions/{{survey_version_id}}/publish"
+method: POST
+headers:
+  Idempotency-Key: publish-version-{{$randomUUID}}
+  X-User-Id: "{{user_id}}"
+  X-User-Role: ADMIN
+body:
+  type: json
+  content: ""
+order: 4000

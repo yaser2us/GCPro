@@ -1,0 +1,23 @@
+$kind: http-request
+description: POST without otp_hash → server generates 6-digit OTP, hashes it,
+  emits REGISTRATION_TOKEN_ISSUED with otp_plain in payload.
+  RegistrationTokenIssuedConsumer picks it up and queues OTP notification.
+url: "{{base_url}}/api/v1/identity/registration-tokens"
+method: POST
+headers:
+  Authorization: Bearer {{token}}
+  Content-Type: application/json
+  Idempotency-Key: issue-reg-token-{{$timestamp}}
+body:
+  type: text
+  content: '{"purpose": "login", "channel_type": "sms", "channel_value":
+    "{{phone_number}}", "expires_at": "2026-12-31T23:59:59Z"}'
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Status 201', () => pm.response.to.have.status(201));
+      const json = pm.response.json();
+      pm.test('Token ID returned', () => pm.expect(json.id).to.be.ok);
+      pm.collectionVariables.set('registration_token_id', json.id);
+    language: text/javascript
+order: 2000

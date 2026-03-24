@@ -1,0 +1,26 @@
+$kind: http-request
+url: "{{base_url}}/v1/surveys/{{survey_id}}/versions"
+method: POST
+headers:
+  Idempotency-Key: workflow-create-version-{{$timestamp}}
+  X-User-Id: "{{user_id}}"
+  X-User-Role: ADMIN
+body:
+  type: json
+  content: |-
+    {
+      "version": "1.0",
+      "schema_json": {
+        "type": "satisfaction"
+      }
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      if (pm.response.code === 201) {
+          const response = pm.response.json();
+          pm.environment.set('survey_version_id', response.survey_version_id);
+          console.log('✓ Version created: ' + response.survey_version_id);
+      }
+    language: text/javascript
+order: 2000

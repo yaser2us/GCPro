@@ -1,0 +1,57 @@
+$kind: http-request
+description: >-
+  Retrieves the current wallet balance.
+
+
+  **Spec:** specs/wallet/wallet.pillar.v2.yml lines 923-950
+
+
+  **Permissions:** wallet:read
+
+
+  **Response:**
+
+  - available_amount: Can be spent immediately
+
+  - held_amount: Locked/pending transactions
+
+  - total_amount: available + held
+
+  - as_of: Timestamp of balance snapshot
+
+
+  **Performance:**
+
+  Balance is retrieved from wallet_balance_snapshot (single row), not calculated
+  from ledger entries. This ensures fast reads.
+url: "{{base_url}}/v1/wallets/{{wallet_id}}/balance"
+method: GET
+headers:
+  X-User-Id: "{{test_user_id}}"
+  X-User-Role: USER
+scripts:
+  - type: afterResponse
+    code: >-
+      pm.test("Status code is 200", function () {
+          pm.response.to.have.status(200);
+      });
+
+
+      pm.test("Response has balance fields", function () {
+          var jsonData = pm.response.json();
+          pm.expect(jsonData).to.have.property('wallet_id');
+          pm.expect(jsonData).to.have.property('available_amount');
+          pm.expect(jsonData).to.have.property('held_amount');
+          pm.expect(jsonData).to.have.property('total_amount');
+          pm.expect(jsonData).to.have.property('currency');
+          pm.expect(jsonData).to.have.property('as_of');
+          
+          console.log("============ WALLET BALANCE ============");
+          console.log("Available: " + jsonData.available_amount + " " + jsonData.currency);
+          console.log("Held:      " + jsonData.held_amount + " " + jsonData.currency);
+          console.log("Total:     " + jsonData.total_amount + " " + jsonData.currency);
+          console.log("As of:     " + jsonData.as_of);
+          console.log("=======================================");
+      });
+    language: text/javascript
+order: 1000

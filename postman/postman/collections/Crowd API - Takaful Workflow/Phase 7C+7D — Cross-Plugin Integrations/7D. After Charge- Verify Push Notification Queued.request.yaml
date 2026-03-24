@@ -1,0 +1,19 @@
+$kind: http-request
+name: "7D. After Charge: Verify Push Notification Queued"
+description: "Phase 7D: CrowdChargeNotificationHandler in notification plugin
+  fires on CROWD_MEMBER_CHARGED. Resolves account_id from
+  crowd_member_charge.insurant_id and queues a push via template
+  'crowd_member_charged'. Fire-and-forget."
+url: "{{base_url}}/api/v1/notifications/messages?ref_type=crowd_member_charge&r\
+  ef_id={{charge_id}}"
+method: GET
+headers:
+  Authorization: Bearer {{token}}
+queryParams:
+  ref_type: crowd_member_charge
+  ref_id: "{{charge_id}}"
+scripts:
+  - type: afterResponse
+    code: pm.test('Status 200', () => pm.response.to.have.status(200));
+    language: text/javascript
+order: 2000

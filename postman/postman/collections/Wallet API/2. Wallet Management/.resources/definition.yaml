@@ -1,0 +1,6 @@
+$kind: collection
+description: |-
+  Wallet creation and management.
+
+  Each account can have multiple wallets (one per currency and wallet type).
+order: 2000

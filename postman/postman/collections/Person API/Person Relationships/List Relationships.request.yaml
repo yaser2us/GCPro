@@ -1,0 +1,5 @@
+$kind: http-request
+description: List all relationships for a person
+url: "{{base_url}}/v1/persons/{{person_id}}/relationships"
+method: GET
+order: 3000

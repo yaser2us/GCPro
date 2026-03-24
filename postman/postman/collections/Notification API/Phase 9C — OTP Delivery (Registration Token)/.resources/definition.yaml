@@ -1,0 +1,5 @@
+$kind: collection
+description: "Phase 9C: REGISTRATION_TOKEN_ISSUED → OTP/magic-link delivery via
+  template 'otp_delivery'. Server auto-generates 6-digit OTP when no otp_hash
+  provided."
+order: 10000

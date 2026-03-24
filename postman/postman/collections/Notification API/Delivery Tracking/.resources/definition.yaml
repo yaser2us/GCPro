@@ -1,0 +1,3 @@
+$kind: collection
+description: Track delivery attempts and provider responses
+order: 2000

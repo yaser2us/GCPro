@@ -1,0 +1,5 @@
+$kind: http-request
+description: List all permissions assigned to role
+url: "{{base_url}}/v1/roles/{{role_id}}/permissions"
+method: GET
+order: 3000

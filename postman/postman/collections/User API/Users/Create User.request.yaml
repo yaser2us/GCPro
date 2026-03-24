@@ -1,0 +1,24 @@
+$kind: http-request
+description: |-
+  Create a new user account
+
+  Idempotency: Via UNIQUE(phone_number) or UNIQUE(email)
+url: "{{base_url}}/v1/users"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "phone_number": "+1234567890",
+      "email": "user@example.com",
+      "status": "active"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var jsonData = pm.response.json();
+      pm.environment.set("user_id", jsonData.user_id);
+    language: text/javascript
+order: 1000

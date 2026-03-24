@@ -1,0 +1,14 @@
+$kind: http-request
+description: Update user profile information
+url: "{{base_url}}/v1/users/{{user_id}}"
+method: PUT
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "email": "updated.user@example.com",
+      "phone_number": "+1987654321"
+    }
+order: 4000

@@ -1,0 +1,3 @@
+$kind: collection
+description: Manage user notification preferences and channel settings
+order: 5000

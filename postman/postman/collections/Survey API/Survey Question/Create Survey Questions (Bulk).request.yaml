@@ -1,0 +1,55 @@
+$kind: http-request
+url: "{{base_url}}/v1/survey-versions/{{survey_version_id}}/questions/bulk"
+method: POST
+headers:
+  Idempotency-Key: create-questions-{{$randomUUID}}
+  X-User-Id: "{{user_id}}"
+  X-User-Role: ADMIN
+body:
+  type: json
+  content: |-
+    {
+      "questions": [
+        {
+          "code": "q1_satisfaction",
+          "label": "How satisfied are you with our service?",
+          "help_text": "Rate from 1 (Very Dissatisfied) to 5 (Very Satisfied)",
+          "answer_type": "scale",
+          "required": true,
+          "sort_order": 1,
+          "rules_json": {
+            "min": 1,
+            "max": 5
+          }
+        },
+        {
+          "code": "q2_feedback",
+          "label": "Please provide any additional feedback",
+          "help_text": "Optional comments",
+          "answer_type": "text",
+          "required": false,
+          "sort_order": 2,
+          "rules_json": {
+            "max_length": 500
+          }
+        },
+        {
+          "code": "q3_recommend",
+          "label": "Would you recommend us to a friend?",
+          "answer_type": "choice",
+          "required": true,
+          "sort_order": 3
+        }
+      ]
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      if (pm.response.code === 201) {
+          const response = pm.response.json();
+          pm.test('Questions created successfully', function() {
+              pm.expect(response.created_count).to.be.above(0);
+          });
+      }
+    language: text/javascript
+order: 1000

@@ -1,0 +1,22 @@
+$kind: http-request
+url: "{{base_url}}/api/commission/accruals/{{accrual_id}}/void"
+method: PUT
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "reason": "Transaction refunded by customer"
+    }
+scripts:
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+order: 2000

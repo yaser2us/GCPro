@@ -1,0 +1,19 @@
+$kind: http-request
+url: "{{base_url}}/v1/file-tags"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "code": "legal",
+      "name": "Legal Document"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var jsonData = pm.response.json();
+      pm.environment.set("workflow_tag_id", jsonData.tag_id);
+    language: text/javascript
+order: 6000

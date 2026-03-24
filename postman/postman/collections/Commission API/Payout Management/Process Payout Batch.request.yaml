@@ -1,0 +1,16 @@
+$kind: http-request
+url: "{{base_url}}/api/commission/payout-batches/{{payout_batch_id}}/process"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+scripts:
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+order: 2000

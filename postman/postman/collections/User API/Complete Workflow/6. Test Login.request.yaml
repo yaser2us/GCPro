@@ -1,0 +1,13 @@
+$kind: http-request
+url: "{{base_url}}/v1/users/{{new_user_id}}/credentials/verify"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "type": "password",
+      "secret": "Welcome123!"
+    }
+order: 6000

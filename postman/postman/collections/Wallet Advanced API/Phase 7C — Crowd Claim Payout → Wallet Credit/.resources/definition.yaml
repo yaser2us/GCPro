@@ -1,0 +1,4 @@
+$kind: collection
+description: "Phase 7C: CROWD_CLAIM_PAYOUT_PAID → wallet_deposit_intent for
+  claimant GC_WALLET (MYR)"
+order: 12000

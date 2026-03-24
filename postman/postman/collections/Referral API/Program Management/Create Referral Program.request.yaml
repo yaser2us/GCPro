@@ -1,0 +1,32 @@
+$kind: http-request
+description: |-
+  Create a new referral program
+
+  Spec: specs/referral/referral.pillar.yml lines 913-953
+  Permissions: referral:admin
+url: "{{base_url}}/v1/referral/programs"
+method: POST
+headers:
+  Content-Type: application/json
+  Idempotency-Key: "{{$randomUUID}}"
+  X-User-Id: "{{actor_user_id}}"
+  X-User-Role: ADMIN
+body:
+  type: text
+  content: |-
+    {
+      "code": "WELCOME2024",
+      "name": "Welcome Referral Program",
+      "start_at": "2024-01-01T00:00:00Z",
+      "end_at": "2024-12-31T23:59:59Z",
+      "eligibility_json": {
+        "min_age": 18,
+        "countries": ["MY", "SG"]
+      },
+      "meta_json": {
+        "reward_referrer": 100,
+        "reward_referee": 50
+      }
+    }
+examples: ./.resources/Create Referral Program.resources/examples
+order: 1000

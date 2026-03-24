@@ -1,0 +1,10 @@
+$kind: collection
+description: |-
+  Deposit operations to add funds to wallets.
+
+  Deposit Types:
+  - manual_deposit: Admin-initiated deposits
+  - mission_reward: Automatic mission completion rewards
+  - promotional_bonus: Marketing campaigns
+  - referral_bonus: User referral rewards
+order: 3000

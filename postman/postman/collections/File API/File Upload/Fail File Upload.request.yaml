@@ -1,0 +1,13 @@
+$kind: http-request
+description: Mark file upload as failed
+url: "{{base_url}}/v1/files/{{file_id}}/fail"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "reason": "Network timeout during upload"
+    }
+order: 3000

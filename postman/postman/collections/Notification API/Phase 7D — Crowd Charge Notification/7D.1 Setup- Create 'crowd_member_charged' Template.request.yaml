@@ -1,0 +1,30 @@
+$kind: http-request
+name: "7D.1 Setup: Create 'crowd_member_charged' Template"
+description: Create the notification template required by
+  CrowdChargeNotificationHandler. The handler looks up template by
+  code='crowd_member_charged' and gracefully skips if not found.
+url: "{{base_url}}/api/v1/notifications/templates"
+method: POST
+headers:
+  Authorization: Bearer {{token}}
+  Content-Type: application/json
+body:
+  type: text
+  content: '{"code": "crowd_member_charged", "channel": "push", "title":
+    "Contribution Charged", "body": "Your contribution of {{paid_amount}} has
+    been deducted for period {{crowd_period_id}}. Remaining:
+    {{remaining_amount}}", "locale": "en", "version": "v1"}'
+scripts:
+  - type: afterResponse
+    code: >-
+      pm.test('Status 201', () => pm.response.to.have.status(201));
+
+      const json = pm.response.json();
+
+      pm.test('Template ID returned', () => pm.expect(json.template_id ||
+      json.id).to.be.ok);
+
+      pm.collectionVariables.set('charge_template_id', json.template_id ||
+      json.id);
+    language: text/javascript
+order: 1000

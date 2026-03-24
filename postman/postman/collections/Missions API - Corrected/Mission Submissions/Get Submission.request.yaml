@@ -1,0 +1,9 @@
+$kind: http-request
+description: Get submission details. Requires missions:read, missions:admin, or
+  missions:review permission.
+url: "{{baseUrl}}/v1/missions/submissions/{{submission_id}}"
+method: GET
+headers:
+  X-User-Id: "{{actor_user_id}}"
+  X-User-Role: ADMIN
+order: 2000

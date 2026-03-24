@@ -1,0 +1,23 @@
+$kind: http-request
+description: |-
+  Create relationship between persons
+
+  Idempotency: Via UNIQUE(person_id, related_person_id, relationship_type)
+url: "{{base_url}}/v1/persons/{{person_id}}/relationships"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "to_person_id": "2",
+      "relation_type": "spouse"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var jsonData = pm.response.json();
+      pm.environment.set("relationship_id", jsonData.relationship_id);
+    language: text/javascript
+order: 1000

@@ -1,0 +1,19 @@
+$kind: http-request
+description: Mark file upload as complete with metadata
+url: "{{base_url}}/v1/files/{{file_id}}/complete"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "storage_path": "uploads/2026/03/document.pdf",
+      "original_filename": "contract.pdf",
+      "content_type": "application/pdf",
+      "size_bytes": 1024000,
+      "checksum_sha256": "abc123def456",
+      "extension": "pdf",
+      "storage_etag": "etag-12345"
+    }
+order: 2000

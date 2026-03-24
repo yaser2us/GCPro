@@ -1,0 +1,3 @@
+$kind: collection
+description: Message lifecycle management - send, process, track delivery
+order: 1000

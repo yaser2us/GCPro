@@ -1,0 +1,20 @@
+$kind: http-request
+url: "{{base_url}}/v1/users"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "email": "newuser@example.com",
+      "phone_number": "+1555999888",
+      "status": "active"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var jsonData = pm.response.json();
+      pm.environment.set("new_user_id", jsonData.user_id);
+    language: text/javascript
+order: 1000

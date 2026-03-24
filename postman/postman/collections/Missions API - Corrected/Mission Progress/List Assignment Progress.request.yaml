@@ -1,0 +1,9 @@
+$kind: http-request
+description: Get all progress records for an assignment. Requires missions:read,
+  missions:admin, or missions:enroll permission.
+url: "{{baseUrl}}/v1/missions/assignments/{{assignment_id}}/progress"
+method: GET
+headers:
+  X-User-Id: "{{user_id}}"
+  X-User-Role: USER
+order: 2000

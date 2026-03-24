@@ -1,0 +1,31 @@
+$kind: http-request
+name: M3.3 Check IC — closed/terminated (eligible to rejoin)
+description: >-
+  M3 — Pre-check an IC for a closed/terminated person.
+
+
+  Expected: { eligible: true, ic_status: 'closed_or_terminated' } — can proceed
+  to rejoin flow.
+url: "{{base_url}}/api/v1/foundation/kyc/check-ic"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "ic_no": "750615-07-9999",
+      "id_type": "NRIC"
+    }
+scripts:
+  - type: afterResponse
+    code: >-
+      pm.test('Status 200', function () { pm.response.to.have.status(200); });
+
+      if (pm.response.json().ic_status === 'closed_or_terminated') {
+          pm.test('eligible true for closed person', function () { pm.expect(pm.response.json().eligible).to.equal(true); });
+      }
+    language: text/javascript
+order: 6000

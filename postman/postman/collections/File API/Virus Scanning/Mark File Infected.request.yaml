@@ -1,0 +1,13 @@
+$kind: http-request
+description: Mark file as infected (status='infected')
+url: "{{base_url}}/v1/files/{{file_id}}/scan/infected"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "reason": "Malware detected by multiple scanners"
+    }
+order: 5000

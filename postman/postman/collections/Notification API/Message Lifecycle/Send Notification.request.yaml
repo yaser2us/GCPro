@@ -1,0 +1,28 @@
+$kind: http-request
+description: |-
+  Queue a notification message for delivery.
+
+  Idempotency: Via UNIQUE(message_key)
+url: "{{base_url}}/v1/notifications/send"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "message_key": "order-12345-shipped",
+      "template_code": "order_shipped",
+      "account_id": "1",
+      "person_id": "100",
+      "channel": "email",
+      "destination": "customer@example.com",
+      "payload_vars": {
+        "first_name": "John",
+        "order_id": "12345",
+        "tracking_url": "https://track.example.com/12345"
+      },
+      "trigger_event_id": "order-123",
+      "trigger_event_type": "Order.Shipped"
+    }
+order: 1000

@@ -1,0 +1,27 @@
+$kind: http-request
+url: "{{base_url}}/v1/survey-responses/{{response_id}}/submit"
+method: POST
+headers:
+  Idempotency-Key: submit-response-{{$randomUUID}}
+  X-User-Id: "{{user_id}}"
+  X-User-Role: USER
+body:
+  type: json
+  content: |-
+    {
+      "answers": [
+        {
+          "question_id": 1,
+          "value_num": 5
+        },
+        {
+          "question_id": 2,
+          "value_text": "Excellent service! Very happy with the experience."
+        },
+        {
+          "question_id": 3,
+          "value_text": "yes"
+        }
+      ]
+    }
+order: 4000

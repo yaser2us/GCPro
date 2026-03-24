@@ -1,0 +1,37 @@
+$kind: http-request
+url: "{{base_url}}/api/commission/programs/{{program_id}}/participants"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "user_id": 12345,
+      "start_date": "2024-01-01",
+      "meta_json": {
+        "employee_id": "EMP001",
+        "department": "Sales"
+      }
+    }
+scripts:
+  - type: afterResponse
+    code: >-
+      if (pm.response.code === 201) {
+          const response = pm.response.json();
+          if (response.participant_id) {
+              pm.collectionVariables.set('participant_id', response.participant_id);
+              console.log('Saved participant_id:', response.participant_id);
+          }
+      }
+    language: text/javascript
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+order: 1000

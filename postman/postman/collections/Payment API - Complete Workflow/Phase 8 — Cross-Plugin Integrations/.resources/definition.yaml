@@ -1,0 +1,5 @@
+$kind: collection
+description: "Phase 8A: PAYMENT_SUCCEEDED (premium) → policy activated. Phase
+  8B: PAYMENT_SUCCEEDED (deposit_topup) → wallet credit. Phase 8C:
+  PAYMENT_SUCCEEDED/FAILED → push notification."
+order: 5000

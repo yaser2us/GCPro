@@ -1,0 +1,21 @@
+$kind: http-request
+url: "{{base_url}}/v1/permissions"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "code": "user.read.all",
+      "name": "Read All Users",
+      "description": "View all user information",
+      "scope": "api"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var jsonData = pm.response.json();
+      pm.environment.set("perm_user_read", jsonData.permission_id);
+    language: text/javascript
+order: 2000

@@ -1,0 +1,41 @@
+$kind: collection
+description: >-
+  Complete Notification System API - Multi-channel notifications with templates,
+  scheduling, and preferences
+
+
+  Source: specs/notification/notification.pillar.v2.yml
+variables:
+  base_url: http://localhost:3000
+  user_id: "1"
+  template_id: "1"
+  message_id: "1"
+  schedule_id: "1"
+  preference_id: "1"
+  charge_id: ""
+  charge_template_id: ""
+  intent_id: ""
+  payment_succeeded_template_id: ""
+  registration_token_id: ""
+  otp_template_id: ""
+  phone_number: ""
+scripts:
+  - type: http:beforeRequest
+    code: |-
+      // Add X-User-Id header
+      pm.request.headers.add({
+        key: 'X-User-Id',
+        value: pm.collectionVariables.get('user_id') || '1'
+      });
+
+      // Add Idempotency-Key for POST/PUT requests
+      if (pm.request.method === 'POST' || pm.request.method === 'PUT') {
+        const existingKey = pm.request.headers.get('Idempotency-Key');
+        if (!existingKey) {
+          pm.request.headers.add({
+            key: 'Idempotency-Key',
+            value: pm.variables.replaceIn('{{$guid}}')
+          });
+        }
+      }
+    language: text/javascript

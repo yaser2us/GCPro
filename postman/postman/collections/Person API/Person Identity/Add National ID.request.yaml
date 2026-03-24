@@ -1,0 +1,14 @@
+$kind: http-request
+url: "{{base_url}}/v1/persons/{{person_id}}/identities"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "id_type": "national_id",
+      "id_no": "123-45-6789",
+      "country": "US"
+    }
+order: 2000

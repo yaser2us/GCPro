@@ -1,0 +1,5 @@
+$kind: http-request
+description: Activate inactive template
+url: "{{base_url}}/v1/notification-templates/{{template_id}}/activate"
+method: POST
+order: 5000

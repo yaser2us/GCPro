@@ -1,0 +1,14 @@
+$kind: http-request
+description: Deny permission to user (override role permissions)
+url: "{{base_url}}/v1/users/{{user_id}}/permissions"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "permission_id": "{{permission_id}}",
+      "effect": "deny"
+    }
+order: 2000

@@ -1,0 +1,31 @@
+$kind: http-request
+description: >-
+  Admin endpoint to trigger referral reward grants for a conversion.
+
+  Reads referral_rule for the program and upserts referral_reward_grant rows
+  (referrer + referee).
+
+  Emits REFERRAL_REWARD_REQUESTED per grant → wallet plugin creates COIN
+  wallet_deposit_intent.
+
+
+  Source: specs/referral/referral.pillar.yml lines 1231-1298
+
+  Permission: referral:admin
+
+  Idempotency: Idempotency-Key header required
+url: "{{base_url}}/v1/referral/rewards/request"
+method: POST
+headers:
+  Content-Type: application/json
+  Authorization: Bearer {{auth_token}}
+  X-Actor-User-Id: "{{actor_user_id}}"
+  Idempotency-Key: "{{$randomUUID}}"
+body:
+  type: text
+  content: |-
+    {
+      "conversion_id": 1
+    }
+examples: ./.resources/P6.1 — Request Rewards for Conversion (Admin).resources/examples
+order: 1000

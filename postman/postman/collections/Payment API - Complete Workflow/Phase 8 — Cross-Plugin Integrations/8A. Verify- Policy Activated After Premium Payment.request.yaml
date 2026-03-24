@@ -1,0 +1,17 @@
+$kind: http-request
+name: "8A. Verify: Policy Activated After Premium Payment"
+description: "Phase 8A: After PAYMENT_SUCCEEDED fires with purpose_code=premium
+  and ref_type=policy, PolicyPaymentSucceededConsumer activates the policy
+  (status: pending → active). Verify policy.status = 'active'."
+url: "{{base_url}}/api/v1/policies/{{policy_id}}"
+method: GET
+headers:
+  Authorization: Bearer {{token}}
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Status 200', () => pm.response.to.have.status(200));
+      const json = pm.response.json();
+      pm.test('Policy active', () => pm.expect(json.status).to.equal('active'));
+    language: text/javascript
+order: 1000

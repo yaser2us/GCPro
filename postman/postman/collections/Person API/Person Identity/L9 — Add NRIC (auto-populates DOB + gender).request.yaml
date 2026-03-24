@@ -1,0 +1,53 @@
+$kind: http-request
+description: >-
+  L9 — Add Malaysian NRIC. Automatically parses DOB and gender from the IC
+  number.
+
+
+  NRIC format: YYMMDD-SS-ZZZG
+
+  - YYMMDD → date of birth (century-aware)
+
+  - Last digit G: odd = male, even = female
+
+
+  Example: 951231-14-5678
+
+  - DOB: 1995-12-31
+
+  - Gender: female (last digit 8 = even)
+
+
+  Auto-populates person.dob and person.gender if currently null.
+
+  Parsed values are included in PERSON_IDENTITY_ADDED event payload.
+url: "{{base_url}}/v1/persons/{{person_id}}/identities"
+method: POST
+headers:
+  Content-Type: application/json
+  Idempotency-Key: nric-{{person_id}}-001
+body:
+  type: text
+  content: |-
+    {
+      "id_type": "NRIC",
+      "id_no": "951231-14-5678",
+      "country": "MY"
+    }
+scripts:
+  - type: afterResponse
+    code: >-
+      pm.test('Status 201', function () { pm.response.to.have.status(201); });
+
+      pm.test('Has person_identity_id', function () {
+      pm.expect(pm.response.json().person_identity_id).to.exist; });
+
+
+      // After this call, GET /v1/persons/{{person_id}} should show dob and
+      gender auto-populated
+
+      pm.test('Response returned identity id', function () {
+          pm.expect(pm.response.json().person_identity_id).to.be.a('number');
+      });
+    language: text/javascript
+order: 3000

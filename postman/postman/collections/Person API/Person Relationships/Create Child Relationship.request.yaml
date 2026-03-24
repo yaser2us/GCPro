@@ -1,0 +1,13 @@
+$kind: http-request
+url: "{{base_url}}/v1/persons/{{person_id}}/relationships"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "to_person_id": "3",
+      "relation_type": "child"
+    }
+order: 2000

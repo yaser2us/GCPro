@@ -1,0 +1,32 @@
+$kind: collection
+description: Complete API collection for Missions Plugin (missions.pillar.v2) -
+  Updated to match actual controller implementation
+variables:
+  user_id: "1"
+scripts:
+  - type: http:beforeRequest
+    code: |-
+      // Add X-User-Id header
+      pm.request.headers.add({
+        key: 'X-User-Id',
+        value: pm.collectionVariables.get('user_id') || '1'
+      });
+
+      // Add Idempotency-Key for POST/PUT requests
+      if (pm.request.method === 'POST' || pm.request.method === 'PUT') {
+        const existingKey = pm.request.headers.get('Idempotency-Key');
+        if (!existingKey) {
+          pm.request.headers.add({
+            key: 'Idempotency-Key',
+            value: pm.variables.replaceIn('{{$guid}}')
+          });
+        }
+      }
+    language: text/javascript
+auth:
+  - id: 757dbb31-905b-43c2-9d28-99de9cc89767
+    type: apikey
+    name: apikey auth
+    credentials:
+      value: "{{actor_user_id}}"
+      key: X-User-Id

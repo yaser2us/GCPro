@@ -1,0 +1,28 @@
+$kind: http-request
+description: |-
+  Create file upload record with status='created'
+
+  Idempotency: Via UNIQUE(file_key)
+url: "{{base_url}}/v1/files"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "file_key": "upload-{{$timestamp}}",
+      "owner_account_id": "1",
+      "owner_person_id": "100",
+      "owner_type": "account",
+      "purpose_code": "document",
+      "visibility": "private"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var jsonData = pm.response.json();
+      pm.environment.set("file_id", jsonData.file_id);
+      pm.environment.set("file_key", jsonData.file_key);
+    language: text/javascript
+order: 1000

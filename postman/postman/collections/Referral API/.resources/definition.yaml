@@ -1,0 +1,19 @@
+$kind: collection
+description: GCPro Referral Plugin API - Based on specs/referral/referral.pillar.yml
+variables:
+  base_url: http://localhost:3000
+  actor_user_id: "1"
+  program_id: "1"
+  code_id: "1"
+  invite_token: ""
+scripts:
+  - type: http:beforeRequest
+    code: |-
+      // Generate random Idempotency-Key if not set
+      if (!pm.request.headers.has('Idempotency-Key')) {
+          pm.request.headers.add({
+              key: 'Idempotency-Key',
+              value: pm.variables.replaceIn('{{$randomUUID}}')
+          });
+      }
+    language: text/javascript

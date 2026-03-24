@@ -1,0 +1,10 @@
+$kind: collection
+description: Commission management endpoints based on commission.pillar.v2.yml
+variables:
+  base_url: http://localhost:3000
+  user_id: admin-123
+  user_role: ADMIN
+  program_id: ""
+  participant_id: ""
+  accrual_id: ""
+  payout_batch_id: ""

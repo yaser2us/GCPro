@@ -1,0 +1,13 @@
+$kind: http-request
+description: "Phase 5: Processes all pending notification_schedule rows whose
+  fire_at <= NOW(). Called by cron every minute. For grace_expiry schedules,
+  emits GRACE_EXPIRY_DUE which triggers policy freeze."
+url: "{{base_url}}/v1/notifications/schedule/dispatch"
+method: POST
+headers:
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+body:
+  type: text
+  content: "{}"
+order: 1000

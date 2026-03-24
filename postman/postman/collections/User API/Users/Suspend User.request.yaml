@@ -1,0 +1,5 @@
+$kind: http-request
+description: Suspend user account
+url: "{{base_url}}/v1/users/{{user_id}}/suspend"
+method: POST
+order: 5000

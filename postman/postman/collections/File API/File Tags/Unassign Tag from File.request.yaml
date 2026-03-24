@@ -1,0 +1,5 @@
+$kind: http-request
+description: Remove tag from file
+url: "{{base_url}}/v1/files/{{file_id}}/tags/{{tag_id}}"
+method: DELETE
+order: 4000

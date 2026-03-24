@@ -1,0 +1,18 @@
+$kind: http-request
+name: "7C. After Payout Paid: Verify Wallet Deposit Intent"
+description: "Phase 7C: CrowdClaimPayoutHandler in wallet plugin creates a
+  wallet_deposit_intent on CROWD_CLAIM_PAYOUT_PAID. Resolves claimant account
+  via crowd_claim_payout → crowd_period_claim → claim_case.account_id."
+url: "{{base_url}}/api/v1/wallet/deposit-intents?ref_type=crowd_claim_payout&re\
+  f_id={{payout_id}}"
+method: GET
+headers:
+  Authorization: Bearer {{token}}
+queryParams:
+  ref_type: crowd_claim_payout
+  ref_id: "{{payout_id}}"
+scripts:
+  - type: afterResponse
+    code: pm.test('Status 200', () => pm.response.to.have.status(200));
+    language: text/javascript
+order: 1000

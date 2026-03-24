@@ -1,0 +1,23 @@
+$kind: http-request
+description: Withdraws 50 COIN for feature redemption.
+url: "{{base_url}}/v1/wallets/{{wallet_id}}/withdraw"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{admin_user_id}}"
+  X-User-Role: ADMIN
+  Idempotency-Key: withdraw-50-{{$timestamp}}
+body:
+  type: text
+  content: |-
+    {
+      "wallet_id": "{{wallet_id}}",
+      "amount": 50,
+      "currency": "COIN",
+      "type": "redemption",
+      "meta_json": {
+        "item": "Premium Feature Access",
+        "item_id": "PREM-001"
+      }
+    }
+order: 3000

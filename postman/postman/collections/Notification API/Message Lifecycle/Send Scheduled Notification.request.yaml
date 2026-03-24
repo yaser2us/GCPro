@@ -1,0 +1,24 @@
+$kind: http-request
+description: Send notification scheduled for future delivery
+url: "{{base_url}}/v1/notifications/send"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "message_key": "reminder-meeting-2026-03-16",
+      "template_code": "meeting_reminder",
+      "account_id": "1",
+      "person_id": "100",
+      "channel": "email",
+      "destination": "user@example.com",
+      "scheduled_for": "2026-03-16T09:00:00Z",
+      "payload_vars": {
+        "meeting_title": "Q1 Review",
+        "meeting_time": "10:00 AM",
+        "meeting_link": "https://meet.example.com/q1-review"
+      }
+    }
+order: 2000

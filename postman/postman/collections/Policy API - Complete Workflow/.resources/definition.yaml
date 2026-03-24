@@ -1,16 +1,45 @@
 $kind: collection
-description: |-
+description: >-
   Complete test suite for Policy Pillar
 
-  Based on: specs/policy/policy.pillar.v2.yml
+
+  Based on: specs/policy/policy.pillar.v2.yml (v2.3.0)
+
+
+  v2.3.0 additions:
+
+  - C7: Split Payment 50/50 — billing_type='split' creates 2 installments at 50%
+  each
+
+  - C7: billing_type='full' creates 1 upfront installment
+
+
+  v2.2.0 additions:
+
+  - M1: Deposit Capacity Formula — GET /deposit + POST /deposit/evaluate
+  (re-derives from rate table)
+
 
   Covers:
+
+  - M4: Package Auto-Selection (GET /package-lookup)
+
+  - M1: Deposit Capacity Formula Enforcement
+
+  - C7: Split Payment 50/50
+
   - Master data setup (packages, rates)
+
   - Policy creation and activation
+
   - Member management
+
   - Benefit usage (reserve → confirm → release)
+
   - Billing plan and installments
+
   - Deposit requirement evaluation
+
   - Remediation case management
 variables:
   base_url: http://localhost:3000

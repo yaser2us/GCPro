@@ -1,0 +1,17 @@
+$kind: http-request
+description: |-
+  Grant permission override to user
+
+  Idempotency: Via UNIQUE(user_id, permission_id)
+url: "{{base_url}}/v1/users/{{user_id}}/permissions"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "permission_id": "{{permission_id}}",
+      "effect": "allow"
+    }
+order: 1000

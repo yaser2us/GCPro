@@ -1,0 +1,22 @@
+$kind: http-request
+url: "{{base_url}}/v1/files"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "file_key": "workflow-{{$timestamp}}",
+      "owner_account_id": "1",
+      "owner_person_id": "100",
+      "purpose_code": "contract",
+      "visibility": "private"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var jsonData = pm.response.json();
+      pm.environment.set("workflow_file_id", jsonData.file_id);
+    language: text/javascript
+order: 1000

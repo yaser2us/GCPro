@@ -1,0 +1,35 @@
+$kind: http-request
+description: Records installment payment (change installment ID as needed)
+url: "{{base_url}}/api/v1/policy/installment/1/pay"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "payment_method": "wallet",
+      "payment_ref": "TXN-{{$timestamp}}",
+      "idempotency_key": "pay-{{$guid}}"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Status code is 200', function () {
+          pm.response.to.have.status(200);
+      });
+
+      if (pm.response.code === 200) {
+          console.log('✅ Installment Paid');
+      }
+    language: text/javascript
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+order: 4000

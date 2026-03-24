@@ -1,0 +1,4 @@
+$kind: collection
+description: "Complete end-to-end workflow: Create mission → Publish → Assign →
+  Track progress → Submit → Approve"
+order: 5000

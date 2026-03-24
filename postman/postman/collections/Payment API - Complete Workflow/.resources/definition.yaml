@@ -29,3 +29,5 @@ variables:
   intent_id: ""
   intent_key: ""
   receipt_id: ""
+  policy_id: ""
+  wallet_id: ""

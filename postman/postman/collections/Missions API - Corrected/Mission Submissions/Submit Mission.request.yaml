@@ -1,0 +1,30 @@
+$kind: http-request
+description: Submit a mission for review. Requires missions:enroll permission.
+url: "{{baseUrl}}/v1/missions/assignments/{{assignment_id}}/submissions"
+method: POST
+headers:
+  Content-Type: application/json
+  Idempotency-Key: "{{$guid}}"
+  X-User-Id: "{{user_id}}"
+  X-User-Role: USER
+body:
+  type: text
+  content: |-
+    {
+      "text_content": "I completed 5 policy applications successfully!",
+      "meta_json": {
+        "evidence": "screenshots attached",
+        "submission_date": "2026-03-10"
+      }
+    }
+scripts:
+  - type: afterResponse
+    code: >-
+      if (pm.response.code === 200 || pm.response.code === 201) {
+          var jsonData = pm.response.json();
+          if (jsonData.submission_id) {
+              pm.collectionVariables.set('submission_id', jsonData.submission_id);
+          }
+      }
+    language: text/javascript
+order: 1000

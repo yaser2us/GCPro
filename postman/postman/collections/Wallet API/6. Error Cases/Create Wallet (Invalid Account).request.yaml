@@ -1,0 +1,30 @@
+$kind: http-request
+description: "Tests guard: account must exist before creating wallet."
+url: "{{base_url}}/v1/wallets"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{admin_user_id}}"
+  X-User-Role: ADMIN
+  Idempotency-Key: error-wallet-{{$timestamp}}
+body:
+  type: text
+  content: |-
+    {
+      "account_id": "999999",
+      "wallet_type": "MAIN",
+      "currency": "COIN"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("Status code is 404 (Not Found)", function () {
+          pm.response.to.have.status(404);
+      });
+
+      pm.test("Error code is ACCOUNT_NOT_FOUND", function () {
+          var jsonData = pm.response.json();
+          pm.expect(jsonData.error.code).to.eql('ACCOUNT_NOT_FOUND');
+      });
+    language: text/javascript
+order: 2000

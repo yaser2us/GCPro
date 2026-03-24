@@ -1,0 +1,36 @@
+$kind: http-request
+description: |-
+  Creates a new user account.
+
+  **Spec:** specs/wallet/wallet.pillar.v2.yml lines 668-703
+
+  **Permissions:** wallet:admin
+
+  **Idempotency:** Via Idempotency-Key header
+url: "{{base_url}}/v1/accounts"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{admin_user_id}}"
+  X-User-Role: ADMIN
+  Idempotency-Key: create-account-user-{{$timestamp}}
+body:
+  type: text
+  content: |-
+    {
+      "type": "user"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("Status code is 201", function () {
+          pm.response.to.have.status(201);
+      });
+
+      pm.test("Response has account_id", function () {
+          var jsonData = pm.response.json();
+          pm.expect(jsonData).to.have.property('account_id');
+          pm.collectionVariables.set("account_id", jsonData.account_id);
+      });
+    language: text/javascript
+order: 1000

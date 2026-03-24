@@ -1,0 +1,26 @@
+$kind: http-request
+name: "8C.1 Setup: Create 'payment_succeeded' Template"
+description: Seed the 'payment_succeeded' template. PaymentNotificationHandler
+  looks this up on PAYMENT_SUCCEEDED; skips gracefully if not found.
+url: "{{base_url}}/api/v1/notifications/templates"
+method: POST
+headers:
+  Authorization: Bearer {{token}}
+  Content-Type: application/json
+body:
+  type: text
+  content: '{"code": "payment_succeeded", "channel": "push", "title": "Payment
+    Successful", "body": "Your payment of {{amount}} {{currency}} for
+    {{purpose_code}} has been processed successfully.", "locale": "en",
+    "version": "v1"}'
+scripts:
+  - type: afterResponse
+    code: >-
+      pm.test('Status 201', () => pm.response.to.have.status(201));
+
+      const json = pm.response.json();
+
+      pm.collectionVariables.set('payment_succeeded_template_id',
+      json.template_id || json.id);
+    language: text/javascript
+order: 1000

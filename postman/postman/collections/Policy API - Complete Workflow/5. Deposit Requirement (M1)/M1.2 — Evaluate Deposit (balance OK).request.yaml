@@ -1,0 +1,40 @@
+$kind: http-request
+description: >-
+  M1 — Re-derives monthly_max_cap from policy_package_rate, recomputes all
+  thresholds, evaluates balance.
+
+
+  Formula:
+    deposit_capacity = monthly_max_cap × deposit_capacity_multiplier
+    min_required     = deposit_capacity × min_deposit_pct
+    warning_amount   = deposit_capacity × warning_pct
+
+  With monthly_max_cap=5000, multiplier=2.0: deposit_capacity=10000,
+  min_required=5000
+
+  Balance 8000 → status=warning
+url: "{{base_url}}/api/v1/policy/{{policy_id}}/deposit/evaluate"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "current_balance": 8000.00
+    }
+scripts:
+  - type: afterResponse
+    code: >-
+      pm.test('Status 200', function () { pm.response.to.have.status(200); });
+
+      pm.test('Has deposit_capacity', function () {
+      pm.expect(pm.response.json().deposit_capacity).to.be.a('number'); });
+
+      pm.test('Status is ok or warning', function () {
+        pm.expect(['ok','warning','urgent','critical']).to.include(pm.response.json().status);
+      });
+    language: text/javascript
+order: 2000

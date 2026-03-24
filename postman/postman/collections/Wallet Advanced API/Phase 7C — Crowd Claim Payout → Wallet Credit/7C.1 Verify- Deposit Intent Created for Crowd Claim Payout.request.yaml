@@ -1,0 +1,25 @@
+$kind: http-request
+name: "7C.1 Verify: Deposit Intent Created for Crowd Claim Payout"
+description: After CROWD_CLAIM_PAYOUT_PAID fires, verify wallet_deposit_intent
+  was created for the claimant's GC_WALLET (MYR). CrowdClaimPayoutHandler
+  resolves claim_case.account_id via crowd_claim_payout → crowd_period_claim →
+  claim_case.
+url: "{{base_url}}/api/v1/wallet/deposit-intents?ref_type=crowd_claim_payout&re\
+  f_id={{payout_id}}"
+method: GET
+headers:
+  Authorization: Bearer {{token}}
+queryParams:
+  ref_type: crowd_claim_payout
+  ref_id: "{{payout_id}}"
+scripts:
+  - type: afterResponse
+    code: >-
+      pm.test('Status 200', () => pm.response.to.have.status(200));
+
+      const json = pm.response.json();
+
+      pm.test('Deposit intent exists', () => pm.expect(Array.isArray(json) ?
+      json.length > 0 : json.id).to.be.ok);
+    language: text/javascript
+order: 1000

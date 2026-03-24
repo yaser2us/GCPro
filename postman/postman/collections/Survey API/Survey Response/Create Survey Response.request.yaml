@@ -1,0 +1,31 @@
+$kind: http-request
+url: "{{base_url}}/v1/survey-responses"
+method: POST
+headers:
+  Idempotency-Key: create-response-{{$randomUUID}}
+  X-User-Id: "{{user_id}}"
+  X-User-Role: USER
+body:
+  type: json
+  content: |-
+    {
+      "survey_version_id": "{{survey_version_id}}",
+      "actor_ref_id": "1",
+      "subject_ref_id": "1",
+      "meta_json": {
+        "source": "web",
+        "campaign": "Q1-2024"
+      }
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      if (pm.response.code === 201) {
+          const response = pm.response.json();
+          pm.environment.set('response_id', response.survey_response_id);
+          pm.test('Survey response created successfully', function() {
+              pm.expect(response.status).to.eql('draft');
+          });
+      }
+    language: text/javascript
+order: 1000

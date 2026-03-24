@@ -1,0 +1,5 @@
+$kind: http-request
+description: Mark message as failed after exhausting all retry attempts
+url: "{{base_url}}/v1/notifications/{{message_id}}/mark-failed"
+method: POST
+order: 5000

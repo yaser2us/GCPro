@@ -1,0 +1,15 @@
+$kind: http-request
+url: "{{base_url}}/v1/permissions"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "code": "user.write",
+      "name": "Write Users",
+      "description": "Allows creating and updating users",
+      "scope": "api"
+    }
+order: 2000

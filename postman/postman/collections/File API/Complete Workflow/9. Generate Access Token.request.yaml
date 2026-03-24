@@ -1,0 +1,20 @@
+$kind: http-request
+url: "{{base_url}}/v1/files/{{workflow_file_id}}/tokens"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "token_type": "download",
+      "expires_in_seconds": 7200,
+      "max_uses": 5
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var jsonData = pm.response.json();
+      pm.environment.set("workflow_token", jsonData.token);
+    language: text/javascript
+order: 9000

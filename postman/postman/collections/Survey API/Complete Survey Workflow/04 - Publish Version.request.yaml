@@ -1,0 +1,15 @@
+$kind: http-request
+url: "{{base_url}}/v1/survey-versions/{{survey_version_id}}/publish"
+method: POST
+headers:
+  Idempotency-Key: workflow-publish-{{$timestamp}}
+  X-User-Id: "{{user_id}}"
+  X-User-Role: ADMIN
+scripts:
+  - type: afterResponse
+    code: |-
+      if (pm.response.code === 200) {
+          console.log('✓ Version published');
+      }
+    language: text/javascript
+order: 4000

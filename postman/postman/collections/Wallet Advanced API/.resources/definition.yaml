@@ -26,3 +26,5 @@ variables:
   batch_id: ""
   batch_item_id: ""
   rule_set_id: ""
+  claimant_wallet_id: ""
+  payout_id: ""

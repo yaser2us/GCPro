@@ -1,0 +1,12 @@
+$kind: http-request
+url: "{{base_url}}/v1/files/{{workflow_file_id}}/tags"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "tag_id": "{{workflow_tag_id}}"
+    }
+order: 7000

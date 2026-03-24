@@ -1,0 +1,4 @@
+$kind: collection
+description: Run all requests in order to test complete survey workflow from
+  creation to response submission.
+order: 8000

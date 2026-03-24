@@ -1,0 +1,14 @@
+$kind: http-request
+description: Validate token and optionally increment usage counter
+url: "{{base_url}}/v1/file-tokens/validate"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "token": "{{access_token}}",
+      "increment_usage": true
+    }
+order: 3000

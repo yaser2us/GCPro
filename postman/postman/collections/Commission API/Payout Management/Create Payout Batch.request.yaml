@@ -1,0 +1,39 @@
+$kind: http-request
+url: "{{base_url}}/api/commission/programs/{{program_id}}/payout-batches"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "batch_code": "PAYOUT-202401",
+      "period_start": "2024-01-01",
+      "period_end": "2024-01-31",
+      "currency": "MYR",
+      "meta_json": {
+        "month": "January 2024",
+        "settlement_cycle": "monthly"
+      }
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      if (pm.response.code === 201) {
+          const response = pm.response.json();
+          if (response.batch_id) {
+              pm.collectionVariables.set('payout_batch_id', response.batch_id);
+              console.log('Saved payout_batch_id:', response.batch_id);
+          }
+      }
+    language: text/javascript
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+order: 1000

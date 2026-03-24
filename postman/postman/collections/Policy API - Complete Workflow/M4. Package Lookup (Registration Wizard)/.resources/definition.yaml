@@ -1,0 +1,12 @@
+$kind: collection
+description: >-
+  M4 — Package Auto-Selection
+
+  GET /api/v1/policy/package-lookup?dob=YYYY-MM-DD&smoker=true|false
+
+
+  Used in the registration wizard to suggest the right package before policy
+  creation.
+
+  No specific permission required — any authenticated actor.
+order: 1000

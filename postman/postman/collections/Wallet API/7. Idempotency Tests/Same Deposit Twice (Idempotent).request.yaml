@@ -1,0 +1,50 @@
+$kind: http-request
+description: >-
+  Tests idempotency: Same deposit with same Idempotency-Key should not
+  double-credit.
+
+
+  **Mechanism:** UNIQUE(idempotency_key) in ledger_txn table
+
+
+  **Try this:**
+
+  1. Note your current balance
+
+  2. Run this request multiple times
+
+  3. Balance should only increase by 25 once (on first call)
+
+  4. Subsequent calls should return the same ledger_txn_id
+url: "{{base_url}}/v1/wallets/{{wallet_id}}/deposit"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{admin_user_id}}"
+  X-User-Role: ADMIN
+  Idempotency-Key: idempotent-deposit-fixed-key
+body:
+  type: text
+  content: |-
+    {
+      "wallet_id": "{{wallet_id}}",
+      "amount": 25,
+      "currency": "COIN",
+      "type": "manual_deposit"
+    }
+scripts:
+  - type: afterResponse
+    code: >-
+      pm.test("Status code is 200", function () {
+          pm.response.to.have.status(200);
+      });
+
+
+      pm.test("Same idempotency key returns same result", function () {
+          var jsonData = pm.response.json();
+          console.log("Ledger Transaction ID: " + jsonData.ledger_txn_id);
+          console.log("Note: Call this request multiple times with same Idempotency-Key.");
+          console.log("The balance should only increase once, not on every retry.");
+      });
+    language: text/javascript
+order: 2000

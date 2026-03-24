@@ -1,0 +1,57 @@
+$kind: http-request
+description: |-
+  Withdraws 30 COIN from the wallet.
+
+  **Spec:** specs/wallet/wallet.pillar.v2.yml lines 840-922
+
+  **Permissions:** wallet:admin, wallet:manage
+
+  **Idempotency:** Via Idempotency-Key header
+
+  **Guards:**
+  - Wallet exists and status='active'
+  - Amount > 0
+  - Available balance >= amount
+
+  **Double-Entry Flow:**
+  1. Debit user account -30 COIN
+  2. Credit system account (id=1) +30 COIN
+  3. Update wallet_balance_snapshot
+
+  **Events Emitted:**
+  - WALLET_DEBITED
+  - LEDGER_TRANSACTION_CREATED
+url: "{{base_url}}/v1/wallets/{{wallet_id}}/withdraw"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{admin_user_id}}"
+  X-User-Role: ADMIN
+  Idempotency-Key: withdraw-30-{{$timestamp}}
+body:
+  type: text
+  content: |-
+    {
+      "wallet_id": "{{wallet_id}}",
+      "amount": 30,
+      "currency": "COIN",
+      "type": "manual_withdrawal",
+      "meta_json": {
+        "reason": "Testing wallet withdrawal"
+      }
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("Status code is 200", function () {
+          pm.response.to.have.status(200);
+      });
+
+      pm.test("Response has ledger_txn_id", function () {
+          var jsonData = pm.response.json();
+          pm.expect(jsonData).to.have.property('ledger_txn_id');
+          pm.expect(jsonData).to.have.property('new_balance');
+          console.log("New balance: " + jsonData.new_balance);
+      });
+    language: text/javascript
+order: 1000

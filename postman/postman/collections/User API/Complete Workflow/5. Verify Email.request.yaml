@@ -1,0 +1,4 @@
+$kind: http-request
+url: "{{base_url}}/v1/users/{{new_user_id}}/verify-email"
+method: POST
+order: 5000

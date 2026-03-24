@@ -1,0 +1,5 @@
+$kind: http-request
+description: Mark email as verified
+url: "{{base_url}}/v1/users/{{user_id}}/verify-email"
+method: POST
+order: 7000

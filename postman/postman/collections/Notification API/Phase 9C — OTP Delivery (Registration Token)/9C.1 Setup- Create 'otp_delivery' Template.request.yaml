@@ -1,0 +1,26 @@
+$kind: http-request
+name: "9C.1 Setup: Create 'otp_delivery' Template"
+description: "Seed the 'otp_delivery' template for SMS channel.
+  RegistrationTokenIssuedHandler looks this up on REGISTRATION_TOKEN_ISSUED.
+  payload_vars: otp, purpose, channel_value, expires_at."
+url: "{{base_url}}/api/v1/notifications/templates"
+method: POST
+headers:
+  Authorization: Bearer {{token}}
+  Content-Type: application/json
+body:
+  type: text
+  content: '{"code": "otp_delivery", "channel": "sms", "title": "Your OTP Code",
+    "body": "Your {{purpose}} OTP is: {{otp}}. Expires at {{expires_at}}. Do not
+    share.", "locale": "en", "version": "v1"}'
+scripts:
+  - type: afterResponse
+    code: >-
+      pm.test('Status 201', () => pm.response.to.have.status(201));
+
+      const json = pm.response.json();
+
+      pm.collectionVariables.set('otp_template_id', json.template_id ||
+      json.id);
+    language: text/javascript
+order: 1000

@@ -1,0 +1,23 @@
+$kind: http-request
+description: |-
+  Create file tag definition
+
+  Idempotency: Via UNIQUE(code)
+url: "{{base_url}}/v1/file-tags"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "code": "confidential",
+      "name": "Confidential Document"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var jsonData = pm.response.json();
+      pm.environment.set("tag_id", jsonData.tag_id);
+    language: text/javascript
+order: 1000

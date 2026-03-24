@@ -1,0 +1,21 @@
+$kind: http-request
+description: |-
+  Update person information.
+
+  L3 — New fields:
+  - income_level: household income band (e.g. <3000, 3000-5000, 5000+)
+  - media_channel: acquisition channel (e.g. facebook, agent, organic, referral)
+url: "{{base_url}}/v1/persons/{{person_id}}"
+method: PUT
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "full_name": "John Doe Updated",
+      "nationality": "MY",
+      "income_level": "3000-5000",
+      "media_channel": "facebook"
+    }
+order: 3000

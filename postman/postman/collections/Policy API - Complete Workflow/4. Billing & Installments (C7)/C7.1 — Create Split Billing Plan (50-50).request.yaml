@@ -1,0 +1,41 @@
+$kind: http-request
+name: C7.1 — Create Split Billing Plan (50/50)
+description: |-
+  C7 — 50/50 split payment.
+
+  Creates 2 installments:
+  - No.1: 4800.00, due now
+  - No.2: 4800.00, due in 30 days
+
+  Policy activates after installment_no=1 paid.
+url: "{{base_url}}/api/v1/policy/{{policy_id}}/billing-plan/create"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "billing_type": "split",
+      "total_amount": 9600.00,
+      "idempotency_key": "billing-split-{{$guid}}"
+    }
+scripts:
+  - type: afterResponse
+    code: >-
+      pm.test('Status 201', function () { pm.response.to.have.status(201); });
+
+      var json = pm.response.json();
+
+      pm.test('installment_count is 2', function () {
+      pm.expect(json.installment_count).to.eql(2); });
+
+      pm.test('billing_type is split', function () {
+      pm.expect(json.billing_type).to.eql('split'); });
+
+      if (json.billing_plan_id) pm.collectionVariables.set('billing_plan_id',
+      json.billing_plan_id);
+    language: text/javascript
+order: 1000

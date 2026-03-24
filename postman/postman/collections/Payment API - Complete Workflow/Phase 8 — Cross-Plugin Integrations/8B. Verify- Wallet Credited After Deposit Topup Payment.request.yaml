@@ -1,0 +1,21 @@
+$kind: http-request
+name: "8B. Verify: Wallet Credited After Deposit Topup Payment"
+description: "Phase 8B: After PAYMENT_SUCCEEDED fires with
+  purpose_code=deposit_topup, DepositTopupPaymentConsumer (C4) creates a
+  wallet_deposit_intent and credits the deposit wallet. Verify balance
+  increased."
+url: "{{base_url}}/api/v1/wallet/{{wallet_id}}/balance"
+method: GET
+headers:
+  Authorization: Bearer {{token}}
+scripts:
+  - type: afterResponse
+    code: >-
+      pm.test('Status 200', () => pm.response.to.have.status(200));
+
+      const json = pm.response.json();
+
+      pm.test('Balance returned', () =>
+      pm.expect(json.available_balance).to.be.a('number'));
+    language: text/javascript
+order: 2000

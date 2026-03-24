@@ -1,0 +1,13 @@
+$kind: http-request
+description: "L10: Resolve how much to pay from GC Wallet vs external payment.
+  Returns wallet_amount, payment_intent_amount, wallet_id, is_split."
+url: "{{base_url}}/api/v1/wallet/payment-source?account_id={{account_id}}&amoun\
+  t=500&currency=MYR"
+method: GET
+headers:
+  Authorization: Bearer {{token}}
+queryParams:
+  account_id: "{{account_id}}"
+  amount: "500"
+  currency: MYR
+order: 1000

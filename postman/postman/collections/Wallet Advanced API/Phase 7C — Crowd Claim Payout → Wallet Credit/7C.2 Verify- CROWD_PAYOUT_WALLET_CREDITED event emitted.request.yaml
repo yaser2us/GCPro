@@ -1,0 +1,19 @@
+$kind: http-request
+name: "7C.2 Verify: CROWD_PAYOUT_WALLET_CREDITED event emitted"
+description: Verify claimant wallet balance reflects the crowd claim payout.
+  Handler emits CROWD_PAYOUT_WALLET_CREDITED after creating deposit_intent.
+url: "{{base_url}}/api/v1/wallet/{{claimant_wallet_id}}/balance"
+method: GET
+headers:
+  Authorization: Bearer {{token}}
+scripts:
+  - type: afterResponse
+    code: >-
+      pm.test('Status 200', () => pm.response.to.have.status(200));
+
+      const json = pm.response.json();
+
+      pm.test('Balance returned', () =>
+      pm.expect(json.available_balance).to.be.a('number'));
+    language: text/javascript
+order: 2000

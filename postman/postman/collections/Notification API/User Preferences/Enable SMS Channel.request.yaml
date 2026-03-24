@@ -1,0 +1,20 @@
+$kind: http-request
+description: Enable and configure SMS notifications
+url: "{{base_url}}/v1/notification-preferences/{{preference_id}}/channels/sms"
+method: PUT
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "channel": "sms",
+      "enabled": true,
+      "destination": "+1234567890",
+      "priority": 2,
+      "meta": {
+        "verified": true,
+        "carrier": "Verizon"
+      }
+    }
+order: 5000

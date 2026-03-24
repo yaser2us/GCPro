@@ -1,0 +1,13 @@
+$kind: http-request
+description: Revoke access token immediately
+url: "{{base_url}}/v1/file-tokens/revoke"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "token": "{{access_token}}"
+    }
+order: 4000

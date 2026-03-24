@@ -1,0 +1,7 @@
+$kind: http-request
+url: "{{base_url}}/v1/surveys/{{survey_id}}/versions"
+method: GET
+headers:
+  X-User-Id: "{{user_id}}"
+  X-User-Role: ADMIN
+order: 3000

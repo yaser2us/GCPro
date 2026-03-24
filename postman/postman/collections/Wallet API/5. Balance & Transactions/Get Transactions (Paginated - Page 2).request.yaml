@@ -1,0 +1,11 @@
+$kind: http-request
+description: Lists transactions for page 2 (skipping first 10).
+url: "{{base_url}}/v1/wallets/{{wallet_id}}/transactions?limit=10&offset=10"
+method: GET
+headers:
+  X-User-Id: "{{test_user_id}}"
+  X-User-Role: USER
+queryParams:
+  limit: "10"
+  offset: "10"
+order: 4000

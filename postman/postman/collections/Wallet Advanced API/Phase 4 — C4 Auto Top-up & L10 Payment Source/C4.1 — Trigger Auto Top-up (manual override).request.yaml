@@ -1,0 +1,14 @@
+$kind: http-request
+description: "C4: Manually trigger auto top-up for a deposit wallet. Creates
+  payment_intent using the account's stored payment method. Emits
+  AUTO_TOPUP_INITIATED or AUTO_TOPUP_NO_PAYMENT_METHOD."
+url: "{{base_url}}/api/v1/wallet/{{wallet_id}}/auto-topup"
+method: POST
+headers:
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+  Idempotency-Key: "{{$guid}}"
+body:
+  type: text
+  content: "{}"
+order: 3000

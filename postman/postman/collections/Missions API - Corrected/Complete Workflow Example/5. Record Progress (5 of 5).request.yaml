@@ -1,0 +1,18 @@
+$kind: http-request
+url: "{{baseUrl}}/v1/missions/assignments/{{assignment_id}}/progress"
+method: POST
+headers:
+  Content-Type: application/json
+  Idempotency-Key: progress-final-{{$timestamp}}
+  X-User-Id: "{{user_id}}"
+  X-User-Role: USER
+body:
+  type: text
+  content: |-
+    {
+      "metric_code": "policies_completed",
+      "current_value": 5,
+      "target_value": 5,
+      "unit": "count"
+    }
+order: 5000

@@ -1,0 +1,4 @@
+$kind: collection
+description: "Phase 7D: CROWD_MEMBER_CHARGED → push notification to insured
+  member via template 'crowd_member_charged'"
+order: 8000

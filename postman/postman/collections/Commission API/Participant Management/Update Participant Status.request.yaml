@@ -1,0 +1,23 @@
+$kind: http-request
+url: "{{base_url}}/api/commission/participants/{{participant_id}}/status"
+method: PUT
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "status": "suspended",
+      "reason": "Performance review required"
+    }
+scripts:
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+order: 2000

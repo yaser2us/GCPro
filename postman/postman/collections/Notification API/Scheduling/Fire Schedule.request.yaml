@@ -1,0 +1,5 @@
+$kind: http-request
+description: Execute scheduled notification (worker endpoint)
+url: "{{base_url}}/v1/notification-schedules/{{schedule_id}}/fire"
+method: POST
+order: 3000

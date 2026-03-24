@@ -1,0 +1,6 @@
+$kind: collection
+description: |-
+  Account creation endpoints.
+
+  Accounts are polymorphic containers that own wallets.
+order: 1000

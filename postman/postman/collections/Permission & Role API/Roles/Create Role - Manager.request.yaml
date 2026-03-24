@@ -1,0 +1,15 @@
+$kind: http-request
+url: "{{base_url}}/v1/roles"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "code": "manager",
+      "name": "Manager",
+      "description": "Team management access",
+      "status": "active"
+    }
+order: 2000

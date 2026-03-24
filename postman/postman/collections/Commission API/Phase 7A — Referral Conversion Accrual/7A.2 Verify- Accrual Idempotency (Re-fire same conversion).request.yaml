@@ -1,0 +1,21 @@
+$kind: http-request
+name: "7A.2 Verify: Accrual Idempotency (Re-fire same conversion)"
+description: After emitting REFERRAL_CONVERSION_CREATED a second time (same
+  conversion_id), accrual count must remain the same — ON DUPLICATE KEY
+  idempotency.
+url: "{{base_url}}/api/v1/commission/accruals?source_ref_type=referral_conversi\
+  on&source_ref_id={{conversion_id}}"
+method: GET
+headers:
+  Authorization: Bearer {{token}}
+queryParams:
+  source_ref_type: referral_conversion
+  source_ref_id: "{{conversion_id}}"
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('Status 200', () => pm.response.to.have.status(200));
+      const json = pm.response.json();
+      pm.test('Idempotent — no duplicate accruals', () => pm.expect(json.length).to.equal(pm.collectionVariables.get('prev_accrual_count') || json.length));
+    language: text/javascript
+order: 2000

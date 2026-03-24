@@ -1,0 +1,5 @@
+$kind: http-request
+description: List all roles assigned to user
+url: "{{base_url}}/v1/users/{{user_id}}/roles"
+method: GET
+order: 3000

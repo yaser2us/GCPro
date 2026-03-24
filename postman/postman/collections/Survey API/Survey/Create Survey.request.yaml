@@ -1,0 +1,27 @@
+$kind: http-request
+url: "{{base_url}}/v1/surveys"
+method: POST
+headers:
+  Idempotency-Key: create-survey-{{$randomUUID}}
+  X-User-Id: "{{user_id}}"
+  X-User-Role: ADMIN
+body:
+  type: json
+  content: |-
+    {
+      "code": "nps-2024-q1",
+      "name": "Net Promoter Score Q1 2024",
+      "description": "Quarterly NPS survey for customer satisfaction"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      if (pm.response.code === 201) {
+          const response = pm.response.json();
+          pm.environment.set('survey_id', response.survey_id);
+          pm.test('Survey created successfully', function() {
+              pm.expect(response.status).to.eql('active');
+          });
+      }
+    language: text/javascript
+order: 1000

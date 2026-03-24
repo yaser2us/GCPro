@@ -1,0 +1,50 @@
+$kind: http-request
+description: Create a new mission definition. Requires missions:admin or
+  missions:manage permission.
+url: "{{baseUrl}}/v1/missions/definitions"
+method: POST
+headers:
+  Content-Type: application/json
+  Idempotency-Key: "{{$guid}}"
+  X-User-Id: "{{actor_user_id}}"
+  X-User-Role: ADMIN
+body:
+  type: text
+  content: |-
+    {
+      "code": "POLICY_5X",
+      "name": "Complete 5 Policy Applications",
+      "description": "Submit and get approved for 5 policy applications",
+      "scope": "global",
+      "cadence": "one_time",
+      "trigger_type": "event",
+      "criteria_json": {
+        "metrics": [
+          {
+            "code": "policies_completed",
+            "target": 5,
+            "operator": ">="
+          }
+        ]
+      },
+      "reward_json": {
+        "type": "FIXED",
+        "amount": 50,
+        "currency": "MYR"
+      },
+      "start_at": "2026-03-10 00:00:00",
+      "end_at": "2026-12-31 23:59:59",
+      "max_per_user": 1,
+      "max_total": 1000
+    }
+scripts:
+  - type: afterResponse
+    code: >-
+      if (pm.response.code === 200 || pm.response.code === 201) {
+          var jsonData = pm.response.json();
+          if (jsonData.mission_definition_id) {
+              pm.collectionVariables.set('mission_definition_id', jsonData.mission_definition_id);
+          }
+      }
+    language: text/javascript
+order: 1000

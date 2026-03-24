@@ -1,0 +1,5 @@
+$kind: http-request
+description: Pick next queued message and prepare for delivery (worker endpoint)
+url: "{{base_url}}/v1/notifications/process-next"
+method: POST
+order: 3000

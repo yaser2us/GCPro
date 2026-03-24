@@ -1,0 +1,39 @@
+$kind: http-request
+url: "{{base_url}}/api/commission/programs"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "code": "SALES_2024",
+      "name": "Sales Commission Program 2024",
+      "currency": "MYR",
+      "settlement_cycle": "monthly",
+      "meta_json": {
+        "description": "Monthly sales commission program",
+        "department": "Sales"
+      }
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      if (pm.response.code === 201) {
+          const response = pm.response.json();
+          if (response.program_id) {
+              pm.collectionVariables.set('program_id', response.program_id);
+              console.log('Saved program_id:', response.program_id);
+          }
+      }
+    language: text/javascript
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+order: 1000

@@ -1,0 +1,26 @@
+$kind: http-request
+url: "{{baseUrl}}/v1/missions/definitions/{{mission_definition_id}}/assignments"
+method: POST
+headers:
+  Content-Type: application/json
+  Idempotency-Key: assign-mission-{{$timestamp}}
+  X-User-Id: "{{actor_user_id}}"
+  X-User-Role: ADMIN
+body:
+  type: text
+  content: |-
+    {
+      "user_id": "{{user_id}}"
+    }
+scripts:
+  - type: afterResponse
+    code: >-
+      if (pm.response.code === 200 || pm.response.code === 201) {
+          var jsonData = pm.response.json();
+          if (jsonData.assignment_id) {
+              pm.collectionVariables.set('assignment_id', jsonData.assignment_id);
+              console.log('Saved assignment_id: ' + jsonData.assignment_id);
+          }
+      }
+    language: text/javascript
+order: 3000

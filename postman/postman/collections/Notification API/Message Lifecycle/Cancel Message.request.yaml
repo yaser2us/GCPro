@@ -1,0 +1,5 @@
+$kind: http-request
+description: Cancel a queued or scheduled message
+url: "{{base_url}}/v1/notifications/{{message_id}}/cancel"
+method: POST
+order: 7000

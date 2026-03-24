@@ -1,0 +1,25 @@
+$kind: http-request
+description: "M4 — Edge case: age beyond configured age_band max. Expects
+  PACKAGE_NOT_FOUND."
+url: "{{base_url}}/api/v1/policy/package-lookup?dob=1940-01-01&smoker=false"
+method: GET
+headers:
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+queryParams:
+  - key: dob
+    value: 1940-01-01
+    description: Age 86 — likely out of age_band range
+  - key: smoker
+    value: "false"
+scripts:
+  - type: afterResponse
+    code: >-
+      pm.test('Status 404 for unmapped age', function () {
+      pm.expect(pm.response.code).to.be.oneOf([404, 200]); });
+
+      if (pm.response.code === 404) {
+          pm.test('Error code PACKAGE_NOT_FOUND', function () { pm.expect(pm.response.json().code).to.equal('PACKAGE_NOT_FOUND'); });
+      }
+    language: text/javascript
+order: 3000

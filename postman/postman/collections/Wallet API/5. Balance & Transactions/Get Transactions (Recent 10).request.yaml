@@ -1,0 +1,11 @@
+$kind: http-request
+description: Lists the 10 most recent transactions.
+url: "{{base_url}}/v1/wallets/{{wallet_id}}/transactions?limit=10&offset=0"
+method: GET
+headers:
+  X-User-Id: "{{test_user_id}}"
+  X-User-Role: USER
+queryParams:
+  limit: "10"
+  offset: "0"
+order: 3000

@@ -1,0 +1,9 @@
+$kind: http-request
+description: Get mission definition by ID. Requires missions:read or
+  missions:admin permission.
+url: "{{baseUrl}}/v1/missions/definitions/{{mission_definition_id}}"
+method: GET
+headers:
+  X-User-Id: "{{actor_user_id}}"
+  X-User-Role: USER
+order: 3000

@@ -1,0 +1,24 @@
+$kind: http-request
+url: "{{base_url}}/v1/survey-answers"
+method: POST
+headers:
+  Idempotency-Key: save-answer-text-{{$randomUUID}}
+  X-User-Id: "{{user_id}}"
+  X-User-Role: USER
+body:
+  type: json
+  content: |-
+    {
+      "response_id": "{{response_id}}",
+      "question_id": "{{question_id}}",
+      "value_text": "Very satisfied with the overall experience"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      if (pm.response.code === 200) {
+          const response = pm.response.json();
+          pm.environment.set('answer_id', response.survey_answer_id);
+      }
+    language: text/javascript
+order: 1000

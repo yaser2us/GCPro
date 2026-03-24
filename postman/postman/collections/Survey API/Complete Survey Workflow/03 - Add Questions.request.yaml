@@ -1,0 +1,36 @@
+$kind: http-request
+url: "{{base_url}}/v1/survey-versions/{{survey_version_id}}/questions/bulk"
+method: POST
+headers:
+  Idempotency-Key: workflow-add-questions-{{$timestamp}}
+  X-User-Id: "{{user_id}}"
+  X-User-Role: ADMIN
+body:
+  type: json
+  content: |-
+    {
+      "questions": [
+        {
+          "code": "overall_satisfaction",
+          "label": "Overall Satisfaction",
+          "answer_type": "scale",
+          "required": true,
+          "sort_order": 1
+        },
+        {
+          "code": "feedback",
+          "label": "Additional Feedback",
+          "answer_type": "text",
+          "required": false,
+          "sort_order": 2
+        }
+      ]
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      if (pm.response.code === 201) {
+          console.log('✓ Questions added');
+      }
+    language: text/javascript
+order: 3000

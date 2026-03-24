@@ -1,0 +1,24 @@
+$kind: collection
+description: |-
+  Complete wallet management API with double-entry accounting
+
+  Based on: specs/wallet/wallet.pillar.v2.yml
+
+  Features:
+  - Account creation
+  - Wallet management
+  - Deposit/Withdraw operations
+  - Balance tracking
+  - Transaction history
+  - Double-entry ledger
+
+  Event Integration:
+  - Automatically credits wallet on mission completion
+  - Listens to MISSION_REWARD_GRANTED events
+variables:
+  base_url: http://localhost:3000
+  admin_user_id: "1"
+  test_user_id: "2"
+  account_id: ""
+  wallet_id: ""
+  ledger_txn_id: ""

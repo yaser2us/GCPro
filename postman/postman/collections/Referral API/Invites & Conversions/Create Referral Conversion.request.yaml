@@ -1,0 +1,38 @@
+$kind: http-request
+description: >-
+  Record a referral conversion when a referred user completes a qualifying
+  action
+
+
+  Spec: specs/referral/referral.pillar.yml lines 1170-1243
+
+
+  Typically called when:
+
+  - A referred user completes registration
+
+  - A referred user makes their first purchase
+
+  - A referred user completes a qualifying action
+url: "{{base_url}}/v1/referral/conversions"
+method: POST
+headers:
+  Content-Type: application/json
+  Idempotency-Key: "{{$randomUUID}}"
+  X-User-Id: system
+  X-User-Role: SYSTEM
+body:
+  type: text
+  content: |-
+    {
+      "invite_token": "{{invite_token}}",
+      "referred_user_id": 100,
+      "conversion_ref_type": "user_registration",
+      "conversion_ref_id": "reg-12345",
+      "meta_json": {
+        "registration_date": "2024-03-17T10:00:00Z",
+        "source": "mobile_app"
+      }
+    }
+examples: ./.resources/Create Referral Conversion.resources/examples
+order: 4000

@@ -1,0 +1,22 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/v1/referral/codes"
+  method: POST
+  body:
+    type: text
+    content: |-
+      {
+        "program_id": 1,
+        "code": "JOHNDOE2024"
+      }
+response:
+  statusCode: 201
+  statusText: Created
+  body:
+    type: json
+    content: |-
+      {
+        "code_id": 1,
+        "status": "active"
+      }
+order: 1000

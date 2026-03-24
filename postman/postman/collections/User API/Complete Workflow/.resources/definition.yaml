@@ -1,0 +1,3 @@
+$kind: collection
+description: Complete user onboarding with RBAC setup
+order: 5000

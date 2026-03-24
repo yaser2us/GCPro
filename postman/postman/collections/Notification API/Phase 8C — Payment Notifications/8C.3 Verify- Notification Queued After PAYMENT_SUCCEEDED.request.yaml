@@ -1,0 +1,24 @@
+$kind: http-request
+name: "8C.3 Verify: Notification Queued After PAYMENT_SUCCEEDED"
+description: After PAYMENT_SUCCEEDED fires, verify a notification_message was
+  queued with message_key=payment_succeeded_intent_{intent_id}. account_id comes
+  directly from the event payload.
+url: "{{base_url}}/api/v1/notifications/messages?trigger_event_id={{intent_id}}\
+  &trigger_event_type=PAYMENT_SUCCEEDED"
+method: GET
+headers:
+  Authorization: Bearer {{token}}
+queryParams:
+  trigger_event_id: "{{intent_id}}"
+  trigger_event_type: PAYMENT_SUCCEEDED
+scripts:
+  - type: afterResponse
+    code: >-
+      pm.test('Status 200', () => pm.response.to.have.status(200));
+
+      const json = pm.response.json();
+
+      pm.test('Notification queued', () => pm.expect(Array.isArray(json) ?
+      json.length > 0 : json.id).to.be.ok);
+    language: text/javascript
+order: 3000

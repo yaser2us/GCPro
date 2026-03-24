@@ -1,0 +1,17 @@
+$kind: http-request
+url: "{{base_url}}/v1/survey-versions/{{survey_version_id}}/questions"
+method: GET
+headers:
+  X-User-Id: "{{user_id}}"
+  X-User-Role: ADMIN
+scripts:
+  - type: afterResponse
+    code: |-
+      if (pm.response.code === 200) {
+          const response = pm.response.json();
+          if (response.items && response.items.length > 0) {
+              pm.environment.set('question_id', response.items[0].id);
+          }
+      }
+    language: text/javascript
+order: 3000

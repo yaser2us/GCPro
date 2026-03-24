@@ -1,5 +1,4 @@
 $kind: collection
-name: User Identity API
 description: >-
   Postman collection for the User Identity pillar — device tokens, registration
   tokens, verification status, onboarding progress.
@@ -13,4 +12,3 @@ variables:
   target_account_id: "2"
   device_token_id: ""
   registration_token_id: ""
-  expire_token_id: ""

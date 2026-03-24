@@ -1,0 +1,24 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/v1/referral/conversions"
+  method: POST
+  body:
+    type: text
+    content: |-
+      {
+        "invite_token": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6",
+        "referred_user_id": 100,
+        "conversion_ref_type": "user_registration",
+        "conversion_ref_id": "reg-12345"
+      }
+response:
+  statusCode: 201
+  statusText: Created
+  body:
+    type: json
+    content: |-
+      {
+        "conversion_id": 1,
+        "status": "converted"
+      }
+order: 1000

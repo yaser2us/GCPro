@@ -1,0 +1,13 @@
+$kind: http-request
+description: Opt out of all notifications
+url: "{{base_url}}/v1/notification-preferences/{{preference_id}}"
+method: PUT
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "status": "inactive"
+    }
+order: 3000

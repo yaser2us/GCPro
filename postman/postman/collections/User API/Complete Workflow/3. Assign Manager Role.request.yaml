@@ -1,0 +1,12 @@
+$kind: http-request
+url: "{{base_url}}/v1/users/{{new_user_id}}/roles"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "role_id": "2"
+    }
+order: 3000

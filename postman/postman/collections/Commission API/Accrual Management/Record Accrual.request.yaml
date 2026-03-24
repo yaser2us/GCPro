@@ -1,0 +1,42 @@
+$kind: http-request
+url: "{{base_url}}/api/commission/accruals"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "participant_id": {{participant_id}},
+      "transaction_ref": "TXN-2024-001",
+      "transaction_type": "sale",
+      "transaction_amount": "1500.00",
+      "commission_amount": "75.00",
+      "currency": "MYR",
+      "transaction_date": "2024-01-15",
+      "meta_json": {
+        "product_category": "Electronics",
+        "sale_id": "SALE-001"
+      }
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      if (pm.response.code === 201) {
+          const response = pm.response.json();
+          if (response.accrual_id) {
+              pm.collectionVariables.set('accrual_id', response.accrual_id);
+              console.log('Saved accrual_id:', response.accrual_id);
+          }
+      }
+    language: text/javascript
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+order: 1000

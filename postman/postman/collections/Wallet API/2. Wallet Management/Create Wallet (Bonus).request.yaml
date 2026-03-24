@@ -1,0 +1,24 @@
+$kind: http-request
+description: |-
+  Creates a BONUS wallet for promotional coins.
+
+  Wallet Types:
+  - MAIN: Primary wallet for regular operations
+  - BONUS: Promotional wallet with special rules
+  - SAVINGS: Long-term storage wallet
+url: "{{base_url}}/v1/wallets"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{admin_user_id}}"
+  X-User-Role: ADMIN
+  Idempotency-Key: create-wallet-bonus-{{$timestamp}}
+body:
+  type: text
+  content: |-
+    {
+      "account_id": "{{account_id}}",
+      "wallet_type": "BONUS",
+      "currency": "COIN"
+    }
+order: 3000

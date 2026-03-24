@@ -1,0 +1,14 @@
+$kind: collection
+description: |-
+  Tests to verify idempotency mechanisms.
+
+  Idempotency ensures:
+  - Safe retries on network failures
+  - No duplicate charges/credits
+  - Consistent system state
+
+  Mechanisms:
+  1. Wallet: UNIQUE(account_id, currency, wallet_type)
+  2. Transactions: UNIQUE(idempotency_key)
+  3. Mission Rewards: mission_reward_{reward_grant_id}
+order: 7000

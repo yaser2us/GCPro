@@ -1,0 +1,18 @@
+$kind: http-request
+description: Creates a MYR (Malaysian Ringgit) wallet for the account.
+url: "{{base_url}}/v1/wallets"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{admin_user_id}}"
+  X-User-Role: ADMIN
+  Idempotency-Key: create-wallet-myr-{{$timestamp}}
+body:
+  type: text
+  content: |-
+    {
+      "account_id": "{{account_id}}",
+      "wallet_type": "MAIN",
+      "currency": "MYR"
+    }
+order: 2000

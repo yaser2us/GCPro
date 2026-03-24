@@ -1,0 +1,9 @@
+$kind: http-request
+description: Get all audit events for an assignment. Requires missions:read or
+  missions:admin permission.
+url: "{{baseUrl}}/v1/missions/assignments/{{assignment_id}}/events"
+method: GET
+headers:
+  X-User-Id: "{{user_id}}"
+  X-User-Role: USER
+order: 4000

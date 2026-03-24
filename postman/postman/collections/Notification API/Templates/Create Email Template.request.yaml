@@ -1,0 +1,27 @@
+$kind: http-request
+description: |-
+  Create a new notification template
+
+  Idempotency: Via UNIQUE(code, version, locale, channel)
+url: "{{base_url}}/v1/notification-templates"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: >-
+    {
+      "code": "order_shipped",
+      "name": "Order Shipped Notification",
+      "channel": "email",
+      "locale": "en",
+      "subject_tpl": "Your order #{{order_id}} has shipped!",
+      "body_tpl": "Hello {{first_name}},\n\nGreat news! Your order #{{order_id}} has been shipped and is on its way.\n\nTrack your order: {{tracking_url}}\n\nThank you for your business!",
+      "variables_schema_json": {
+        "first_name": { "type": "string", "required": true },
+        "order_id": { "type": "string", "required": true },
+        "tracking_url": { "type": "string", "required": true }
+      },
+      "version": "v1"
+    }
+order: 1000

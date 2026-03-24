@@ -1,0 +1,24 @@
+$kind: http-request
+description: |-
+  Link file to mission as proof
+
+  Idempotency: Via UNIQUE(file_id, target_type, target_id, role_code)
+url: "{{base_url}}/v1/files/{{file_id}}/links"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "target_type": "mission",
+      "target_id": "123",
+      "role_code": "proof"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var jsonData = pm.response.json();
+      pm.environment.set("link_id", jsonData.link_id);
+    language: text/javascript
+order: 1000

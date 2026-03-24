@@ -1,0 +1,22 @@
+$kind: http-request
+description: >-
+  Verification step: after POLICY_ACTIVATED fires or POST /rewards/request is
+  called,
+
+  check that referral_reward_grant rows exist with status='requested'.
+
+
+  Event flow:
+    POLICY_ACTIVATED
+      → PolicyActivatedHandler (referral plugin)
+      → upsert referral_reward_grant (referrer + referee)
+      → emit REFERRAL_REWARD_REQUESTED
+      → ReferralRewardConsumer (wallet plugin)
+      → find/create COIN wallet
+      → create wallet_deposit_intent
+      → emit REFERRAL_REWARD_CREDITED
+url: "{{base_url}}/v1/referral/conversions/1"
+method: GET
+headers:
+  Authorization: Bearer {{auth_token}}
+order: 2000

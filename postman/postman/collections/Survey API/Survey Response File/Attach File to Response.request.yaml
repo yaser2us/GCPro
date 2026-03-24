@@ -1,0 +1,28 @@
+$kind: http-request
+url: "{{base_url}}/v1/survey-responses/{{response_id}}/files"
+method: POST
+headers:
+  Idempotency-Key: attach-file-{{$randomUUID}}
+  X-User-Id: "{{user_id}}"
+  X-User-Role: USER
+body:
+  type: json
+  content: |-
+    {
+      "file_upload_id": "999",
+      "kind": "evidence",
+      "sort_order": 1,
+      "meta_json": {
+        "filename": "screenshot.png",
+        "description": "Supporting evidence"
+      }
+    }
+scripts:
+  - type: afterResponse
+    code: >-
+      if (pm.response.code === 201) {
+          const response = pm.response.json();
+          pm.environment.set('response_file_id', response.survey_response_file_id);
+      }
+    language: text/javascript
+order: 1000

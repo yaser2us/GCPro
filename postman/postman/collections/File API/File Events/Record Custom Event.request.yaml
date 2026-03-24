@@ -1,0 +1,18 @@
+$kind: http-request
+description: Record custom file event for audit trail
+url: "{{base_url}}/v1/files/{{file_id}}/events"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "event_type": "File.Downloaded",
+      "event_data": {
+        "download_count": 5,
+        "last_download_ip": "192.168.1.100"
+      },
+      "triggered_by_user_id": 42
+    }
+order: 1000

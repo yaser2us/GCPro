@@ -1,0 +1,26 @@
+$kind: http-request
+description: |-
+  Create a new person record
+
+  Idempotency: Via Idempotency-Key header
+url: "{{base_url}}/v1/persons"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "type": "individual",
+      "full_name": "John Doe",
+      "dob": "1990-05-15",
+      "gender": "male",
+      "nationality": "US"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var jsonData = pm.response.json();
+      pm.environment.set("person_id", jsonData.person_id);
+    language: text/javascript
+order: 1000

@@ -1,0 +1,19 @@
+$kind: http-request
+name: "8C.2 Setup: Create 'payment_failed' Template"
+description: Seed the 'payment_failed' template. PaymentNotificationHandler
+  looks this up on PAYMENT_FAILED.
+url: "{{base_url}}/api/v1/notifications/templates"
+method: POST
+headers:
+  Authorization: Bearer {{token}}
+  Content-Type: application/json
+body:
+  type: text
+  content: '{"code": "payment_failed", "channel": "push", "title": "Payment
+    Failed", "body": "Your payment of {{amount}} {{currency}} could not be
+    processed. Please try again.", "locale": "en", "version": "v1"}'
+scripts:
+  - type: afterResponse
+    code: pm.test('Status 201', () => pm.response.to.have.status(201));
+    language: text/javascript
+order: 2000

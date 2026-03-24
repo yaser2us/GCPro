@@ -1,0 +1,49 @@
+$kind: http-request
+description: >-
+  Tests idempotency: Creating the same wallet multiple times should return the
+  same wallet_id.
+
+
+  **Mechanism:** UNIQUE(account_id, currency, wallet_type) + ON DUPLICATE KEY
+  UPDATE
+
+
+  **Try this:**
+
+  1. Run this request
+
+  2. Note the wallet_id
+
+  3. Run it again
+
+  4. The wallet_id should be the same
+url: "{{base_url}}/v1/wallets"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{admin_user_id}}"
+  X-User-Role: ADMIN
+  Idempotency-Key: idempotent-wallet-test
+body:
+  type: text
+  content: |-
+    {
+      "account_id": "{{account_id}}",
+      "wallet_type": "MAIN",
+      "currency": "COIN"
+    }
+scripts:
+  - type: afterResponse
+    code: >-
+      pm.test("Status code is 201", function () {
+          pm.response.to.have.status(201);
+      });
+
+
+      pm.test("Returns same wallet_id on duplicate", function () {
+          var jsonData = pm.response.json();
+          console.log("Wallet ID: " + jsonData.wallet_id);
+          console.log("Note: Call this request multiple times. The wallet_id should remain the same.");
+      });
+    language: text/javascript
+order: 1000

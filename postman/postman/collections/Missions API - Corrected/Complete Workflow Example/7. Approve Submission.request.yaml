@@ -1,0 +1,15 @@
+$kind: http-request
+url: "{{baseUrl}}/v1/missions/submissions/{{submission_id}}/approve"
+method: POST
+headers:
+  Content-Type: application/json
+  Idempotency-Key: approve-{{$timestamp}}
+  X-User-Id: "{{actor_user_id}}"
+  X-User-Role: ADMIN
+body:
+  type: text
+  content: |-
+    {
+      "feedback": "Great work! All 5 policy applications verified and approved."
+    }
+order: 7000

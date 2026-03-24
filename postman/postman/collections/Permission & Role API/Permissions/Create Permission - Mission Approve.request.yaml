@@ -1,0 +1,15 @@
+$kind: http-request
+url: "{{base_url}}/v1/permissions"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "code": "mission.approve",
+      "name": "Approve Missions",
+      "description": "Allows approving mission submissions",
+      "scope": "api"
+    }
+order: 3000

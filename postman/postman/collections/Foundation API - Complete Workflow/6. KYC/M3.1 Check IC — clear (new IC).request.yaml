@@ -1,0 +1,30 @@
+$kind: http-request
+description: |-
+  M3 — Pre-check a new IC not in the system.
+
+  Expected: { eligible: true, ic_status: 'clear' }
+url: "{{base_url}}/api/v1/foundation/kyc/check-ic"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "ic_no": "991231-14-5678",
+      "id_type": "NRIC"
+    }
+scripts:
+  - type: afterResponse
+    code: >-
+      pm.test('Status 200', function () { pm.response.to.have.status(200); });
+
+      pm.test('eligible true for unknown IC', function () {
+      pm.expect(pm.response.json().eligible).to.equal(true); });
+
+      pm.test('ic_status is clear', function () {
+      pm.expect(pm.response.json().ic_status).to.equal('clear'); });
+    language: text/javascript
+order: 4000

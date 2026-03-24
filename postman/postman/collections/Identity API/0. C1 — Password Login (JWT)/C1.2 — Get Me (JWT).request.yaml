@@ -1,0 +1,7 @@
+$kind: http-request
+description: C1 — Get current user from JWT claims.
+url: "{{base_url}}/v1/auth/me"
+method: GET
+headers:
+  Authorization: Bearer {{jwt_token}}
+order: 2000

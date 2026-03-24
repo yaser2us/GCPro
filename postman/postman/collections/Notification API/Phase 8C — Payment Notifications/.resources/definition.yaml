@@ -1,0 +1,4 @@
+$kind: collection
+description: "Phase 8C: PAYMENT_SUCCEEDED / PAYMENT_FAILED → push notification
+  to account holder via templates 'payment_succeeded' / 'payment_failed'"
+order: 9000

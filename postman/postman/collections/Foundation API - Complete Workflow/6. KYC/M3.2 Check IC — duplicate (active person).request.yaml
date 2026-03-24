@@ -1,0 +1,28 @@
+$kind: http-request
+description: |-
+  M3 — Pre-check an IC already linked to an active person.
+
+  Expected: { eligible: false, ic_status: 'duplicate', person_status: 'active' }
+url: "{{base_url}}/api/v1/foundation/kyc/check-ic"
+method: POST
+headers:
+  Content-Type: application/json
+  x-user-id: "{{admin_user_id}}"
+  x-user-role: "{{admin_user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "ic_no": "850101-10-1234",
+      "id_type": "NRIC"
+    }
+scripts:
+  - type: afterResponse
+    code: >-
+      pm.test('Status 200', function () { pm.response.to.have.status(200); });
+
+      if (pm.response.json().ic_status === 'duplicate') {
+          pm.test('eligible false for active person', function () { pm.expect(pm.response.json().eligible).to.equal(false); });
+      }
+    language: text/javascript
+order: 5000

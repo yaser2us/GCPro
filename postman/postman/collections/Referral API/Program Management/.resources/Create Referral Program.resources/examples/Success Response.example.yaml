@@ -1,0 +1,22 @@
+$kind: http-example
+request:
+  url: "{{base_url}}/v1/referral/programs"
+  method: POST
+  body:
+    type: text
+    content: |-
+      {
+        "code": "WELCOME2024",
+        "name": "Welcome Referral Program"
+      }
+response:
+  statusCode: 201
+  statusText: Created
+  body:
+    type: json
+    content: |-
+      {
+        "program_id": 1,
+        "status": "active"
+      }
+order: 1000

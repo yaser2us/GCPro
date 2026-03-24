@@ -1,0 +1,5 @@
+$kind: http-request
+description: Get person by ID
+url: "{{base_url}}/v1/persons/{{person_id}}"
+method: GET
+order: 2000

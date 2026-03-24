@@ -1,0 +1,19 @@
+$kind: http-request
+description: Deposits 50 COIN into the wallet.
+url: "{{base_url}}/v1/wallets/{{wallet_id}}/deposit"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{admin_user_id}}"
+  X-User-Role: ADMIN
+  Idempotency-Key: deposit-50-{{$timestamp}}
+body:
+  type: text
+  content: |-
+    {
+      "wallet_id": "{{wallet_id}}",
+      "amount": 50,
+      "currency": "COIN",
+      "type": "manual_deposit"
+    }
+order: 2000

@@ -1,0 +1,33 @@
+$kind: http-request
+url: "{{base_url}}/api/commission/programs/{{program_id}}/rules"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+body:
+  type: text
+  content: |-
+    {
+      "rule_code": "TIER1_SALES",
+      "rule_type": "percentage",
+      "tier": 1,
+      "rate_value": "5.00",
+      "qualifying_condition": {
+        "min_sales": 0,
+        "max_sales": 10000
+      },
+      "effective_from": "2024-01-01",
+      "meta_json": {
+        "description": "5% commission for sales up to 10k"
+      }
+    }
+scripts:
+  - type: beforeRequest
+    code: |-
+      pm.request.headers.add({
+          key: 'Idempotency-Key',
+          value: pm.variables.replaceIn('{{$guid}}'),
+      });
+    language: text/javascript
+order: 1000

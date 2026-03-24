@@ -1,0 +1,4 @@
+$kind: collection
+description: "Identity document management. L9: Adding id_type=NRIC
+  auto-populates person.dob and person.gender."
+order: 2000

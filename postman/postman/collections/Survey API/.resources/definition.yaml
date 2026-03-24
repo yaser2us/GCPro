@@ -1,0 +1,16 @@
+$kind: collection
+description: |-
+  Complete API collection for Survey Plugin
+
+  Based on: specs/survey/survey.pillar.v2.yml
+
+  All write operations require Idempotency-Key header.
+variables:
+  base_url: http://localhost:3000
+  user_id: "1"
+  survey_id: ""
+  survey_version_id: ""
+  question_id: ""
+  response_id: ""
+  answer_id: ""
+  response_file_id: ""

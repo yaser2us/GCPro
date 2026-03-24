@@ -1,0 +1,13 @@
+$kind: http-request
+description: Initiate virus scan (sets status='scanning')
+url: "{{base_url}}/v1/files/{{file_id}}/scan/start"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "scan_type": "antivirus"
+    }
+order: 1000

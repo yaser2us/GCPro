@@ -1,0 +1,21 @@
+$kind: http-request
+name: "Phase5: Settle Claim → triggers wallet payout + notification"
+description: "Phase 5: After settle, verify: (1) wallet_deposit_intent created
+  in DB for claimant GC_WALLET; (2) CLAIM_PAYOUT_INITIATED event in outbox; (3)
+  notification_message queued with template_code=claim_settled."
+url: "{{base_url}}/api/v1/claim/{{claim_id}}/settle"
+method: POST
+headers:
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+  Idempotency-Key: "{{$guid}}"
+body:
+  type: text
+  content: |-
+    {
+      "approved_amount": 1500.0,
+      "period_key": "2026-03",
+      "policy_id": "{{policy_id}}",
+      "item_code": "outpatient"
+    }
+order: 1000

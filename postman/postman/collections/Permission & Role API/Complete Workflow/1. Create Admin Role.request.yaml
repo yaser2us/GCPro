@@ -1,0 +1,21 @@
+$kind: http-request
+url: "{{base_url}}/v1/roles"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "code": "super_admin",
+      "name": "Super Administrator",
+      "description": "Full system administrator with all permissions",
+      "status": "active"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var jsonData = pm.response.json();
+      pm.environment.set("admin_role_id", jsonData.role_id);
+    language: text/javascript
+order: 1000

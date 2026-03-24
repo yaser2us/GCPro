@@ -1,0 +1,5 @@
+$kind: collection
+description: |-
+  C1: Password-based login. Returns JWT access token.
+  POST /v1/auth/login + GET /v1/auth/me
+order: 1000

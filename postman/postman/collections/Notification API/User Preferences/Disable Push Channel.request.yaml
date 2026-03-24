@@ -1,0 +1,14 @@
+$kind: http-request
+description: Disable push notifications
+url: "{{base_url}}/v1/notification-preferences/{{preference_id}}/channels/push"
+method: PUT
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "channel": "push",
+      "enabled": false
+    }
+order: 6000

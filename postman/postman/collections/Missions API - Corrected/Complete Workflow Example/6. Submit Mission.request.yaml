@@ -1,0 +1,29 @@
+$kind: http-request
+url: "{{baseUrl}}/v1/missions/assignments/{{assignment_id}}/submissions"
+method: POST
+headers:
+  Content-Type: application/json
+  Idempotency-Key: submit-{{$timestamp}}
+  X-User-Id: "{{user_id}}"
+  X-User-Role: USER
+body:
+  type: text
+  content: |-
+    {
+      "text_content": "I completed all 5 policy applications successfully!",
+      "meta_json": {
+        "evidence": "All applications approved"
+      }
+    }
+scripts:
+  - type: afterResponse
+    code: >-
+      if (pm.response.code === 200 || pm.response.code === 201) {
+          var jsonData = pm.response.json();
+          if (jsonData.submission_id) {
+              pm.collectionVariables.set('submission_id', jsonData.submission_id);
+              console.log('Saved submission_id: ' + jsonData.submission_id);
+          }
+      }
+    language: text/javascript
+order: 6000

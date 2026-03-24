@@ -1,0 +1,31 @@
+$kind: http-request
+description: "Tests guard: amount must be positive."
+url: "{{base_url}}/v1/wallets/{{wallet_id}}/deposit"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{admin_user_id}}"
+  X-User-Role: ADMIN
+  Idempotency-Key: error-negative-{{$timestamp}}
+body:
+  type: text
+  content: |-
+    {
+      "wallet_id": "{{wallet_id}}",
+      "amount": -50,
+      "currency": "COIN",
+      "type": "manual_deposit"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("Status code is 400 (Bad Request)", function () {
+          pm.response.to.have.status(400);
+      });
+
+      pm.test("Error code is INVALID_AMOUNT", function () {
+          var jsonData = pm.response.json();
+          pm.expect(jsonData.error.code).to.eql('INVALID_AMOUNT');
+      });
+    language: text/javascript
+order: 4000

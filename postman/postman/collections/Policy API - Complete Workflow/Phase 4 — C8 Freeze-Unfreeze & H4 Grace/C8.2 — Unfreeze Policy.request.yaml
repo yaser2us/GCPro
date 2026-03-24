@@ -1,0 +1,13 @@
+$kind: http-request
+description: "C8: Unfreeze a policy after deposit is replenished. Sets
+  status=active, emits POLICY_UNFROZEN."
+url: "{{base_url}}/api/v1/policy/{{policy_id}}/unfreeze"
+method: POST
+headers:
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+  Idempotency-Key: "{{$guid}}"
+body:
+  type: text
+  content: "{}"
+order: 2000

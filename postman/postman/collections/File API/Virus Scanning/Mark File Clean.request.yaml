@@ -1,0 +1,5 @@
+$kind: http-request
+description: Mark file as clean (status='clean')
+url: "{{base_url}}/v1/files/{{file_id}}/scan/clean"
+method: POST
+order: 4000

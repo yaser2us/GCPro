@@ -1,0 +1,21 @@
+$kind: http-request
+url: "{{base_url}}/v1/permissions"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "code": "user.write.all",
+      "name": "Write All Users",
+      "description": "Create and modify users",
+      "scope": "api"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var jsonData = pm.response.json();
+      pm.environment.set("perm_user_write", jsonData.permission_id);
+    language: text/javascript
+order: 3000

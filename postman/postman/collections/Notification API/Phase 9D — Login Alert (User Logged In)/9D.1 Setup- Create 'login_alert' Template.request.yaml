@@ -1,0 +1,20 @@
+$kind: http-request
+name: "9D.1 Setup: Create 'login_alert' Template"
+description: Seed the 'login_alert' template for push channel.
+  UserLoggedInHandler looks this up on USER_LOGGED_IN.
+url: "{{base_url}}/api/v1/notifications/templates"
+method: POST
+headers:
+  Authorization: Bearer {{token}}
+  Content-Type: application/json
+body:
+  type: text
+  content: "{\"code\": \"login_alert\", \"channel\": \"push\", \"title\": \"New
+    Login Detected\", \"body\": \"A new login was detected on platform
+    {{platform}}. If this wasn't you, contact support.\", \"locale\": \"en\",
+    \"version\": \"v1\"}"
+scripts:
+  - type: afterResponse
+    code: pm.test('Status 201', () => pm.response.to.have.status(201));
+    language: text/javascript
+order: 1000

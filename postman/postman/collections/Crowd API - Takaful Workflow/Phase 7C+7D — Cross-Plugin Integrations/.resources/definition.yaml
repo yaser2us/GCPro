@@ -1,0 +1,4 @@
+$kind: collection
+description: "Phase 7C: CROWD_CLAIM_PAYOUT_PAID → wallet credit. Phase 7D:
+  CROWD_MEMBER_CHARGED → push notification."
+order: 4000

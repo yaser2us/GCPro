@@ -1,0 +1,60 @@
+$kind: http-request
+description: |-
+  Lists all ledger transactions for the wallet.
+
+  **Spec:** specs/wallet/wallet.pillar.v2.yml lines 951-971
+
+  **Permissions:** wallet:read
+
+  **Query Parameters:**
+  - limit: Number of transactions to return (default: 50)
+  - offset: Pagination offset (default: 0)
+
+  **Transaction Types:**
+  - manual_deposit
+  - manual_withdrawal
+  - mission_reward (automatic from missions)
+  - promotional_bonus
+  - redemption
+  - refund
+  - transfer_in/transfer_out
+
+  **Double-Entry Ledger:**
+  Each transaction has multiple ledger_entry records showing debits and credits.
+url: "{{base_url}}/v1/wallets/{{wallet_id}}/transactions?limit=50&offset=0"
+method: GET
+headers:
+  X-User-Id: "{{test_user_id}}"
+  X-User-Role: USER
+queryParams:
+  limit: "50"
+  offset: "0"
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("Status code is 200", function () {
+          pm.response.to.have.status(200);
+      });
+
+      pm.test("Response has items array", function () {
+          var jsonData = pm.response.json();
+          pm.expect(jsonData).to.have.property('items');
+          pm.expect(jsonData.items).to.be.an('array');
+          
+          console.log("============ TRANSACTIONS ============");
+          console.log("Total transactions: " + jsonData.items.length);
+          
+          jsonData.items.forEach(function(txn, index) {
+              console.log("\nTransaction #" + (index + 1));
+              console.log("  ID: " + txn.id);
+              console.log("  Type: " + txn.type);
+              console.log("  Status: " + txn.status);
+              console.log("  Occurred: " + txn.occurred_at);
+              if (txn.ref_type) {
+                  console.log("  Ref: " + txn.ref_type + " / " + txn.ref_id);
+              }
+          });
+          console.log("=====================================");
+      });
+    language: text/javascript
+order: 2000

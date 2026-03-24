@@ -1,0 +1,12 @@
+$kind: collection
+description: |-
+  Error cases to test validation and guards.
+
+  Common Error Codes:
+  - ACCOUNT_TYPE_REQUIRED (400)
+  - ACCOUNT_NOT_FOUND (404)
+  - WALLET_NOT_FOUND (404)
+  - WALLET_NOT_ACTIVE (409)
+  - INVALID_AMOUNT (400)
+  - INSUFFICIENT_BALANCE (409)
+order: 6000

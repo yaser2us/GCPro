@@ -1,0 +1,24 @@
+$kind: http-request
+url: "{{base_url}}/v1/notification-templates"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: >-
+    {
+      "code": "welcome_email",
+      "name": "Welcome Email",
+      "channel": "email",
+      "locale": "en",
+      "subject_tpl": "Welcome to GCPro, {{first_name}}!",
+      "body_tpl": "Hi {{first_name}},\n\nWelcome to GCPro! We're excited to have you on board.\n\nGet started: {{dashboard_url}}\n\nBest regards,\nThe GCPro Team",
+      "version": "v1"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      var jsonData = pm.response.json();
+      pm.environment.set("template_id", jsonData.template_id);
+    language: text/javascript
+order: 1000

@@ -1,0 +1,23 @@
+$kind: http-request
+description: "Tests validation: type field is required."
+url: "{{base_url}}/v1/accounts"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{admin_user_id}}"
+  X-User-Role: ADMIN
+  Idempotency-Key: error-test-{{$timestamp}}
+body:
+  type: text
+  content: |-
+    {
+      
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("Status code is 400 (Bad Request)", function () {
+          pm.response.to.have.status(400);
+      });
+    language: text/javascript
+order: 1000

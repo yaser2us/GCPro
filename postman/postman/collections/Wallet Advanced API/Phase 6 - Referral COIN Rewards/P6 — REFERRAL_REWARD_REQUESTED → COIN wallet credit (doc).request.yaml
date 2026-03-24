@@ -1,0 +1,19 @@
+$kind: http-request
+description: >-
+  Phase 6: REFERRAL_REWARD_REQUESTED automatically triggers COIN wallet deposit
+  intent creation for the beneficiary. Auto-creates COIN wallet
+  (wallet_type=MAIN, currency=COIN) if not exists. Emits
+  REFERRAL_REWARD_CREDITED.
+
+
+  Event chain:
+    POLICY_ACTIVATED
+    → PolicyActivatedHandler (referral plugin)
+    → referral_reward_grant (referrer + referee)
+    → REFERRAL_REWARD_REQUESTED
+    → ReferralRewardHandler (wallet plugin)
+    → wallet_deposit_intent (COIN)
+    → REFERRAL_REWARD_CREDITED
+url: "{{base_url}}/api/v1/wallet/referral-reward/test"
+method: GET
+order: 1000

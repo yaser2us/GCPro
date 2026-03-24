@@ -1,0 +1,56 @@
+$kind: http-request
+description: |-
+  Deposits 100 COIN into the wallet.
+
+  **Spec:** specs/wallet/wallet.pillar.v2.yml lines 756-839
+
+  **Permissions:** wallet:admin, wallet:manage
+
+  **Idempotency:** Via Idempotency-Key header
+
+  **Double-Entry Flow:**
+  1. Debit system account (id=1) -100 COIN
+  2. Credit user account +100 COIN
+  3. Update wallet_balance_snapshot
+
+  **Events Emitted:**
+  - WALLET_CREDITED
+  - LEDGER_TRANSACTION_CREATED
+url: "{{base_url}}/v1/wallets/{{wallet_id}}/deposit"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{admin_user_id}}"
+  X-User-Role: ADMIN
+  Idempotency-Key: deposit-manual-100-{{$timestamp}}
+body:
+  type: text
+  content: |-
+    {
+      "wallet_id": "{{wallet_id}}",
+      "amount": 100,
+      "currency": "COIN",
+      "type": "manual_deposit",
+      "ref_type": "admin_adjustment",
+      "ref_id": "adj-{{$timestamp}}",
+      "meta_json": {
+        "reason": "Testing wallet deposit",
+        "admin_id": "{{admin_user_id}}"
+      }
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("Status code is 200", function () {
+          pm.response.to.have.status(200);
+      });
+
+      pm.test("Response has ledger_txn_id", function () {
+          var jsonData = pm.response.json();
+          pm.expect(jsonData).to.have.property('ledger_txn_id');
+          pm.expect(jsonData).to.have.property('new_balance');
+          pm.collectionVariables.set("ledger_txn_id", jsonData.ledger_txn_id);
+          console.log("New balance: " + jsonData.new_balance);
+      });
+    language: text/javascript
+order: 1000

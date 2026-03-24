@@ -1,0 +1,13 @@
+$kind: http-request
+url: "{{base_url}}/v1/notifications/process-next"
+method: POST
+scripts:
+  - type: afterResponse
+    code: |-
+      var jsonData = pm.response.json();
+      if (jsonData && jsonData.message_id) {
+        pm.environment.set("message_id", jsonData.message_id);
+        pm.environment.set("attempt_no", jsonData.attempt_no);
+      }
+    language: text/javascript
+order: 3000

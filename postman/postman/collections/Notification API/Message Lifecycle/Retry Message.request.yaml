@@ -1,0 +1,5 @@
+$kind: http-request
+description: Reset failed message for manual retry
+url: "{{base_url}}/v1/notifications/{{message_id}}/retry"
+method: POST
+order: 6000

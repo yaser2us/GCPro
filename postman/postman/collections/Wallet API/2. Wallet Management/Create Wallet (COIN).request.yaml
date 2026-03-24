@@ -1,0 +1,45 @@
+$kind: http-request
+description: >-
+  Creates a COIN wallet for the account.
+
+
+  **Spec:** specs/wallet/wallet.pillar.v2.yml lines 704-755
+
+
+  **Permissions:** wallet:admin, wallet:manage
+
+
+  **Idempotency:** UNIQUE(account_id, currency, wallet_type)
+
+
+  **Note:** Wallet creation is idempotent. Calling this multiple times with the
+  same account_id, currency, and wallet_type will return the same wallet_id.
+url: "{{base_url}}/v1/wallets"
+method: POST
+headers:
+  Content-Type: application/json
+  X-User-Id: "{{admin_user_id}}"
+  X-User-Role: ADMIN
+  Idempotency-Key: create-wallet-coin-{{$timestamp}}
+body:
+  type: text
+  content: |-
+    {
+      "account_id": "{{account_id}}",
+      "wallet_type": "MAIN",
+      "currency": "COIN"
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test("Status code is 201", function () {
+          pm.response.to.have.status(201);
+      });
+
+      pm.test("Response has wallet_id", function () {
+          var jsonData = pm.response.json();
+          pm.expect(jsonData).to.have.property('wallet_id');
+          pm.collectionVariables.set("wallet_id", jsonData.wallet_id);
+      });
+    language: text/javascript
+order: 1000

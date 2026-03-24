@@ -1,0 +1,12 @@
+$kind: http-request
+url: "{{base_url}}/v1/roles/{{admin_role_id}}/permissions"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "permission_id": "{{perm_user_write}}"
+    }
+order: 5000

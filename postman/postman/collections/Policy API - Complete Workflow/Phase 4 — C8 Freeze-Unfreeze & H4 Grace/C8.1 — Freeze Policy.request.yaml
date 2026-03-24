@@ -1,0 +1,16 @@
+$kind: http-request
+description: "C8: Freeze a policy when deposit is critically low. Sets
+  status=frozen, emits POLICY_FROZEN."
+url: "{{base_url}}/api/v1/policy/{{policy_id}}/freeze"
+method: POST
+headers:
+  Content-Type: application/json
+  Authorization: Bearer {{token}}
+  Idempotency-Key: "{{$guid}}"
+body:
+  type: text
+  content: |-
+    {
+      "trigger_code": "deposit_low"
+    }
+order: 1000

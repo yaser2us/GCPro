@@ -1,0 +1,8 @@
+$kind: http-request
+description: Get notification preferences (auto-creates if not exists)
+url: "{{base_url}}/v1/notification-preferences?account_id=1&person_id=100"
+method: GET
+queryParams:
+  account_id: "1"
+  person_id: "100"
+order: 1000

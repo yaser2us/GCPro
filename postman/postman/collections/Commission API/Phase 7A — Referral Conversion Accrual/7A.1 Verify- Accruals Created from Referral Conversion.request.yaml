@@ -1,0 +1,27 @@
+$kind: http-request
+name: "7A.1 Verify: Accruals Created from Referral Conversion"
+description: After REFERRAL_CONVERSION_CREATED fires, verify commission_accrual
+  rows were created for each referral chain ancestor. Expect one per depth level
+  (level_1, level_2, level_3) for active commission_participants.
+url: "{{base_url}}/api/v1/commission/accruals?source_ref_type=referral_conversi\
+  on&source_ref_id={{conversion_id}}"
+method: GET
+headers:
+  Authorization: Bearer {{token}}
+queryParams:
+  source_ref_type: referral_conversion
+  source_ref_id: "{{conversion_id}}"
+scripts:
+  - type: afterResponse
+    code: >-
+      pm.test('Status 200', () => pm.response.to.have.status(200));
+
+      const json = pm.response.json();
+
+      pm.test('Accruals list returned', () =>
+      pm.expect(json).to.be.an('array'));
+
+      pm.test('At least one accrual', () =>
+      pm.expect(json.length).to.be.greaterThan(0));
+    language: text/javascript
+order: 1000

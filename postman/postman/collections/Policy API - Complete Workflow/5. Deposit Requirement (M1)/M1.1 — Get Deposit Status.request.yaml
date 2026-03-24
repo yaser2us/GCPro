@@ -1,0 +1,10 @@
+$kind: http-request
+description: |-
+  M1 — Read current deposit requirement status.
+  Returns stored thresholds + status without recalculating.
+url: "{{base_url}}/api/v1/policy/{{policy_id}}/deposit"
+method: GET
+headers:
+  X-User-Id: "{{user_id}}"
+  X-User-Role: "{{user_role}}"
+order: 1000

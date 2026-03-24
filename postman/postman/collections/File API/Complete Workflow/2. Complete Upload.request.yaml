@@ -1,0 +1,17 @@
+$kind: http-request
+url: "{{base_url}}/v1/files/{{workflow_file_id}}/complete"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "storage_path": "contracts/2026/contract-123.pdf",
+      "original_filename": "service-agreement.pdf",
+      "content_type": "application/pdf",
+      "size_bytes": 2048000,
+      "checksum_sha256": "def789abc456",
+      "extension": "pdf"
+    }
+order: 2000
